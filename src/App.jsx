@@ -96,6 +96,54 @@ const KNOWN = {
   2925: "Octatonic WH",   //  whole-half diminished
 };
 
+function synthKick(ac, vol) {
+  const osc = ac.createOscillator(), g = ac.createGain();
+  const now = ac.currentTime;
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(150, now);
+  osc.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+  g.gain.setValueAtTime(0.8 * vol, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  osc.connect(g); g.connect(ac.destination);
+  osc.start(now); osc.stop(now + 0.25);
+}
+
+function synthSnare(ac, vol) {
+  const buf = ac.createBuffer(1, ac.sampleRate * 0.12, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const filt = ac.createBiquadFilter(); filt.type = "highpass"; filt.frequency.value = 1500;
+  const g = ac.createGain(); const now = ac.currentTime;
+  g.gain.setValueAtTime(0.35 * vol, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  src.connect(filt); filt.connect(g); g.connect(ac.destination);
+  src.start(now); src.stop(now + 0.12);
+}
+
+function synthHat(ac, vol) {
+  const buf = ac.createBuffer(1, ac.sampleRate * 0.05, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const filt = ac.createBiquadFilter(); filt.type = "highpass"; filt.frequency.value = 8000;
+  const g = ac.createGain(); const now = ac.currentTime;
+  g.gain.setValueAtTime(0.12 * vol, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+  src.connect(filt); filt.connect(g); g.connect(ac.destination);
+  src.start(now); src.stop(now + 0.05);
+}
+
+// sub = fraction of a quarter note per step; sw = swing ratio (0 = straight, 1/3 = triplet swing)
+// loop entries: [kick, snare, hat]  — keyed by the same rhythm names used in ARP_RHYTHM_PATS
+const BEAT_PATTERNS = {
+  even:   { sub: 0.5,  sw: 0,    loop: [[1,0,1],[0,0,1],[0,1,1],[0,0,1],[1,0,1],[0,0,1],[0,1,1],[0,0,1]] },
+  swing:  { sub: 0.5,  sw: 1/3,  loop: [[1,0,1],[0,0,1],[0,1,1],[0,0,1],[1,0,1],[0,0,1],[0,1,1],[0,0,1]] },
+  gallop: { sub: 0.5,  sw: 0,    loop: [[1,0,1],[1,0,1],[0,1,1],[0,0,1],[1,0,1],[1,0,1],[0,1,1],[0,0,1]] },
+  waltz:  { sub: 1.0,  sw: 0,    loop: [[1,0,1],[0,1,1],[0,0,1]] },
+  clave:  { sub: 0.25, sw: 0,    loop: [[1,0,0],[0,0,0],[0,0,0],[1,0,0],[0,0,0],[0,0,0],[1,0,0],[0,0,0],[0,0,0],[0,0,0],[1,0,0],[0,0,0],[1,0,0],[0,0,0],[0,0,0],[0,0,0]] },
+};
+
 function buildFamilies() {
   const seen = new Map();
   for (let p = 1; p < 4096; p += 2) {
@@ -526,6 +574,12 @@ export default function Chloe() {
   const [demoLog,     setDemoLog]     = useState([]);
   const [showDemoLog, setShowDemoLog] = useState(false);
   const [autoOn,      setAutoOn]      = useState(false);
+  const [beatOn,      setBeatOn]      = useState(false);
+  const [droneVol,    setDroneVol]    = useState(1.0);
+  const [beatVol,     setBeatVol]     = useState(1.0);
+  const beatStepRef  = useRef(0);
+  const beatTimeout  = useRef(null);
+  const droneGainRef = useRef(null);
   const [favs,       setFavs]       = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("chloe2-favs") || "[]")); }
     catch { return new Set(); }
@@ -551,8 +605,8 @@ export default function Chloe() {
   const arpIdxRef   = useRef(0);
   const rhythmIdxRef = useRef(0);
   const melPrevRef  = useRef(0);
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol]);
 
   const getCtx = useCallback(() => {
     if (!ctxRef.current || ctxRef.current.state === "closed")
@@ -617,19 +671,53 @@ export default function Chloe() {
     const dFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
     osc.frequency.value = dFreq;
     g.gain.value = instrument === "space" ? 0.03 : 0.05;
-    const droneOut = (node) => { node.connect(ac.destination); node.connect(rev.convolver); node.connect(del.delayNode); };
+    const volGain = ac.createGain(); volGain.gain.value = droneVol;
+    droneGainRef.current = volGain;
+    const droneOut = (node) => { node.connect(volGain); volGain.connect(ac.destination); volGain.connect(rev.convolver); volGain.connect(del.delayNode); };
     if (instrument === "space") {
       const o2 = ac.createOscillator(); o2.type = "sine";
       o2.frequency.value = dFreq; o2.detune.value = 5;
       o2.connect(g); o2.start();
       osc.connect(g); g.connect(f); droneOut(f);
       osc.start();
-      return () => { try { osc.stop(); o2.stop(); } catch(e){} };
+      return () => { try { osc.stop(); o2.stop(); } catch(e){} droneGainRef.current = null; };
     }
     osc.connect(g); g.connect(f); droneOut(f);
     osc.start();
-    return () => { try { osc.stop(); } catch (e) {} };
+    return () => { try { osc.stop(); } catch (e) {} droneGainRef.current = null; };
   }, [droneOn, rootIdx, droneOct, aRef, timbre, instrument, getCtx, getOrCreateReverb, getOrCreateDelay]);
+
+  // Keep drone volume in sync with droneVol slider
+  useEffect(() => {
+    if (droneGainRef.current) droneGainRef.current.gain.value = droneVol;
+  }, [droneVol]);
+
+  /* ── Beat ── */
+  useEffect(() => {
+    if (!beatOn) return;
+    beatStepRef.current = 0;
+    let cancelled = false;
+
+    const tick = () => {
+      if (cancelled) return;
+      const { bpm, beatVol: vol, rhythm: patKey } = stRef.current;
+      const pat = BEAT_PATTERNS[patKey] ?? BEAT_PATTERNS.even;
+      const step = beatStepRef.current % pat.loop.length;
+      const [k, s, h] = pat.loop[step];
+      const ac = getCtx();
+      if (k) synthKick(ac, vol);
+      if (s) synthSnare(ac, vol);
+      if (h) synthHat(ac, vol);
+      beatStepRef.current++;
+      const quarterMs = 60000 / bpm;
+      // swing: even steps get (1+sw) fraction, odd steps get (1-sw) fraction
+      const ms = pat.sub * quarterMs * (step % 2 === 1 ? (1 - pat.sw) : (1 + pat.sw));
+      beatTimeout.current = setTimeout(tick, ms);
+    };
+
+    tick();
+    return () => { cancelled = true; clearTimeout(beatTimeout.current); };
+  }, [beatOn, getCtx]);
 
   /* ── Arpeggio / Melody ── */
   useEffect(() => {
@@ -1397,6 +1485,15 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                 ))}
               </div>
             </div>
+            {/* Drone vol */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="Drone volume." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE VOL</span>
+              <input type="range" min={0} max={3} step={0.01} value={droneVol}
+                onChange={e => setDroneVol(+e.target.value)}
+                style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
+              />
+              <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(droneVol * 100)}</span>
+            </div>
             <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
               {[
                 { label: "● Drone", on: droneOn, onClick: () => { wake(); setDroneOn(p => !p); } },
@@ -1411,6 +1508,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                   if (demoOn) { setDemoOn(false); setArpOn(false); setDemoComment(""); }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
+                { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
               ].map(b => (
                 <button key={b.label} onClick={b.onClick} disabled={b.disabled} style={{
                   flex: 1, background: b.on ? K.a : K.bg3,
@@ -1422,6 +1520,15 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                   transition: "all .15s",
                 }}>{b.label}</button>
               ))}
+            </div>
+            {/* Beat vol */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, marginBottom: 2 }}>
+              <span title="Beat volume." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT VOL</span>
+              <input type="range" min={0} max={1} step={0.01} value={beatVol}
+                onChange={e => setBeatVol(+e.target.value)}
+                style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
+              />
+              <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(beatVol * 100)}</span>
             </div>
             {demoKey && !demoOn && !autoOn && !demoKeyInput && (
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
