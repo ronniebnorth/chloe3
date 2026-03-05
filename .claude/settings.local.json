@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(gh auth:*)",
+      "Bash(source:*)",
+      "Bash(snap list)",
+      "Bash(npx:*)",
+      "Bash(curl:*)",
+      "Bash(export:*)",
+      "Bash(grep -v \"cannot move ''.*\\\\.\\\\.'' \")",
+      "Bash(grep -v \"cannot move ''.*\\\\.'' \")",
+      "Bash(rm -rf /home/rnorth/chloe3/tmp)"
+    ]
+  }
+}
