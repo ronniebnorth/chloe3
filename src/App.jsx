@@ -142,12 +142,13 @@ function makeImpulse(ac, duration, decay) {
   return buf;
 }
 
-function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend) {
-  // reverbSend: { wet: GainNode } or null
+function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend) {
+  // reverbSend / delaySend: AudioNode or null
   const dest = ac.destination;
   const connectOut = (node) => {
     node.connect(dest);
     if (reverbSend) node.connect(reverbSend);
+    if (delaySend) node.connect(delaySend);
   };
   const now = ac.currentTime;
 
@@ -483,6 +484,7 @@ export default function Chloe() {
         instrument: ["piano","guitar","xylo","space"].includes(p.get("i")) ? p.get("i") : null,
         noteVol:    parseFloat(p.get("v") ?? "0.7"),
         reverbAmt:  parseFloat(p.get("rv") ?? "0"),
+        delayAmt:   parseFloat(p.get("dl") ?? "0"),
         bpm:        parseInt(p.get("b") ?? "100"),
         filter:     p.get("f") ?? "",
         selId:      p.get("s") ?? null,   // "hep-6.1" style
@@ -500,6 +502,7 @@ export default function Chloe() {
   const [instrument, setInstrument] = useState(_u.instrument ?? null);
   const [noteVol,    setNoteVol]    = useState(_u.noteVol    ?? 0.7);
   const [reverbAmt,  setReverbAmt]  = useState(_u.reverbAmt  ?? 0.0);
+  const [delayAmt,   setDelayAmt]   = useState(_u.delayAmt   ?? 0.0);
   const [bpm,        setBpm]        = useState(_u.bpm        ?? 100);
   const [filter,     setFilter]     = useState(_u.filter     ?? "");
   const [sel,        setSel]        = useState(null); // resolved after FAMILIES built
@@ -543,12 +546,13 @@ export default function Chloe() {
 
   const ctxRef     = useRef(null);
   const reverbRef  = useRef(null); // { convolver, wetGain }
+  const delayRef   = useRef(null); // { delayNode, feedbackGain, wetGain }
   const arpRef      = useRef(null);
   const arpIdxRef   = useRef(0);
   const rhythmIdxRef = useRef(0);
   const melPrevRef  = useRef(0);
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, aRef });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, aRef }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, aRef]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef]);
 
   const getCtx = useCallback(() => {
     if (!ctxRef.current || ctxRef.current.state === "closed")
@@ -573,6 +577,32 @@ export default function Chloe() {
     if (reverbRef.current) reverbRef.current.wetGain.gain.value = reverbAmt;
   }, [reverbAmt]);
 
+  const getOrCreateDelay = useCallback((ac) => {
+    if (delayRef.current && delayRef.current.ac === ac) return delayRef.current;
+    const delayNode = ac.createDelay(2.0);
+    delayNode.delayTime.value = (60 / stRef.current.bpm) * 0.75; // dotted eighth
+    const feedbackGain = ac.createGain();
+    feedbackGain.gain.value = 0.4;
+    const wetGain = ac.createGain();
+    wetGain.gain.value = stRef.current.delayAmt;
+    delayNode.connect(feedbackGain);
+    feedbackGain.connect(delayNode);
+    delayNode.connect(wetGain);
+    wetGain.connect(ac.destination);
+    delayRef.current = { delayNode, feedbackGain, wetGain, ac };
+    return delayRef.current;
+  }, []);
+
+  // Keep delay wet gain in sync with delayAmt slider
+  useEffect(() => {
+    if (delayRef.current) delayRef.current.wetGain.gain.value = delayAmt;
+  }, [delayAmt]);
+
+  // Keep delay time in sync with BPM
+  useEffect(() => {
+    if (delayRef.current) delayRef.current.delayNode.delayTime.value = (60 / bpm) * 0.75;
+  }, [bpm]);
+
   const noteFreq = (semi, ri) => aRef * 2 ** ((60 + OFFS[ri] + semi - 69) / 12);
 
   /* ── Drone ── */
@@ -580,13 +610,14 @@ export default function Chloe() {
     if (!droneOn) return;
     const ac = getCtx();
     const rev = getOrCreateReverb(ac);
+    const del = getOrCreateDelay(ac);
     const osc = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
     f.type = "lowpass"; f.frequency.value = 1200;
     osc.type = instrument ? "sine" : timbre;
     const dFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
     osc.frequency.value = dFreq;
     g.gain.value = instrument === "space" ? 0.06 : 0.1;
-    const droneOut = (node) => { node.connect(ac.destination); node.connect(rev.convolver); };
+    const droneOut = (node) => { node.connect(ac.destination); node.connect(rev.convolver); node.connect(del.delayNode); };
     if (instrument === "space") {
       const o2 = ac.createOscillator(); o2.type = "sine";
       o2.frequency.value = dFreq; o2.detune.value = 5;
@@ -598,7 +629,7 @@ export default function Chloe() {
     osc.connect(g); g.connect(f); droneOut(f);
     osc.start();
     return () => { try { osc.stop(); } catch (e) {} };
-  }, [droneOn, rootIdx, droneOct, aRef, timbre, instrument, getCtx, getOrCreateReverb]);
+  }, [droneOn, rootIdx, droneOct, aRef, timbre, instrument, getCtx, getOrCreateReverb, getOrCreateDelay]);
 
   /* ── Arpeggio / Melody ── */
   useEffect(() => {
@@ -644,9 +675,10 @@ export default function Chloe() {
       const { rootIdx: ri, timbre: t, bpm: b, instrument: inst, noteVol: nv, aRef: ar } = stRef.current;
       const ac = getCtx();
       const rev = getOrCreateReverb(ac);
+      const del = getOrCreateDelay(ac);
       const freq = ar * 2 ** ((60 + OFFS[ri] + semi - 69) / 12);
       const beatDur = (dur * 60 / b / 2);
-      synthNote(ac, freq, vel * nv, inst, t, beatDur, rev.convolver);
+      synthNote(ac, freq, vel * nv, inst, t, beatDur, rev.convolver, del.delayNode);
       setPlaying(semi % 12);
     };
 
@@ -976,6 +1008,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
     if (instrument)  p.set("i",  instrument);
     if (noteVol !== 0.7)   p.set("v",  noteVol.toFixed(2));
     if (reverbAmt)   p.set("rv", reverbAmt.toFixed(2));
+    if (delayAmt)    p.set("dl", delayAmt.toFixed(2));
     if (bpm !== 100) p.set("b",  bpm);
     if (filter)      p.set("f",  filter);
     if (sel)         p.set("s",  sel.id);
@@ -985,7 +1018,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
     if (sidebarW !== 280) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, bpm, filter, sel, aRef, droneOct, melMode, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, bpm, filter, sel, aRef, droneOct, melMode, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -1154,6 +1187,16 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
             <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(reverbAmt * 100)}</span>
+          </div>
+
+          {/* DEL */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+            <span title="Delay wet level. BPM-synced dotted-eighth delay with feedback." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>DEL</span>
+            <input type="range" min={0} max={1} step={0.01} value={delayAmt}
+              onChange={e => setDelayAmt(+e.target.value)}
+              style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
+            />
+            <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(delayAmt * 100)}</span>
           </div>
 
           <div style={{ width: 1, height: 22, background: K.t2, opacity: 0.3, flexShrink: 0 }} />
