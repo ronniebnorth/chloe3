@@ -715,8 +715,8 @@ export default function Chloe() {
   };
 
   /* ── Selection ── */
-  const pick = (fam, mi) => {
-    setSel({ id: `${fam.id}.${mi}`, pattern: fam.modes[mi] });
+  const pick = (fam, origIdx, pattern) => {
+    setSel({ id: `${fam.id}.${origIdx}`, pattern });
     arpIdxRef.current = 0;
   };
 
@@ -988,7 +988,7 @@ export default function Chloe() {
                       const favId = fam.id + "." + origIdx;
                       const isFav = favs.has(favId);
                       return (
-                        <div key={mode} onClick={() => pick(fam, origIdx)} style={{
+                        <div key={mode} onClick={() => pick(fam, origIdx, mode)} style={{
                           padding: "5px 16px 5px 18px",
                           display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
                           background: isSel ? K.ag : brightTint,
