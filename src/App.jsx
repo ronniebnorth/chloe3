@@ -895,46 +895,51 @@ export default function Chloe() {
 
         <div style={{ width: 1, height: 22, background: K.t2, opacity: 0.3, flexShrink: 0 }} />
 
-        {/* VOL */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span title="Note volume. Drone volume is independent." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help" }}>VOL</span>
-          <input type="range" min={0} max={1} step={0.01} value={noteVol}
-            onChange={e => setNoteVol(+e.target.value)}
-            style={{ width: 80, accentColor: K.a, background: K.br, cursor: "pointer" }}
-          />
-          <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(noteVol * 100)}</span>
-        </div>
+        {/* VOL / REV / A= / BPM — flex: 1 so they fill remaining width */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flex: 1 }}>
 
-        {/* REV */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span title="Reverb wet level. Convolution reverb shared by drone and all notes." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help" }}>REV</span>
-          <input type="range" min={0} max={1} step={0.01} value={reverbAmt}
-            onChange={e => setReverbAmt(+e.target.value)}
-            style={{ width: 80, accentColor: K.a, background: K.br, cursor: "pointer" }}
-          />
-          <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(reverbAmt * 100)}</span>
-        </div>
+          {/* VOL */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+            <span title="Note volume. Drone volume is independent." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>VOL</span>
+            <input type="range" min={0} max={1} step={0.01} value={noteVol}
+              onChange={e => setNoteVol(+e.target.value)}
+              style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
+            />
+            <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(noteVol * 100)}</span>
+          </div>
 
-        <div style={{ width: 1, height: 22, background: K.t2, opacity: 0.3, flexShrink: 0 }} />
+          {/* REV */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+            <span title="Reverb wet level. Convolution reverb shared by drone and all notes." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>REV</span>
+            <input type="range" min={0} max={1} step={0.01} value={reverbAmt}
+              onChange={e => setReverbAmt(+e.target.value)}
+              style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
+            />
+            <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(reverbAmt * 100)}</span>
+          </div>
 
-        {/* TUNE */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span title="Concert pitch reference. 440 Hz standard, 432 Hz alternative." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help" }}>A =</span>
-          <input type="range" min={432} max={440} step={1} value={aRef}
-            onChange={e => setARef(+e.target.value)}
-            style={{ width: 60, accentColor: K.a, background: K.br, cursor: "pointer" }}
-          />
-          <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 42 }}>{aRef} Hz</span>
-        </div>
+          <div style={{ width: 1, height: 22, background: K.t2, opacity: 0.3, flexShrink: 0 }} />
 
-        {/* BPM */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span title="Tempo for arpeggio and melody modes (40-240 BPM)." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help" }}>BPM</span>
-          <input type="range" min={40} max={240} value={bpm}
-            onChange={e => setBpm(+e.target.value)}
-            style={{ width: 80, accentColor: K.a, background: K.br, cursor: "pointer" }}
-          />
-          <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 28 }}>{bpm}</span>
+          {/* TUNE */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+            <span title="Concert pitch reference. 440 Hz standard, 432 Hz alternative." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>A =</span>
+            <input type="range" min={432} max={440} step={1} value={aRef}
+              onChange={e => setARef(+e.target.value)}
+              style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
+            />
+            <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 42 }}>{aRef} Hz</span>
+          </div>
+
+          {/* BPM */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+            <span title="Tempo for arpeggio and melody modes (40-240 BPM)." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
+            <input type="range" min={40} max={240} value={bpm}
+              onChange={e => setBpm(+e.target.value)}
+              style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
+            />
+            <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 28 }}>{bpm}</span>
+          </div>
+
         </div>
 
       </div>
