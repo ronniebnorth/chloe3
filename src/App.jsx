@@ -447,6 +447,7 @@ export default function Chloe() {
   const [droneOn,    setDroneOn]    = useState(false);
   const [droneOct,   setDroneOct]   = useState(_u.droneOct   ?? 0);
   const [arpOn,      setArpOn]      = useState(false);
+  const [arpDir,     setArpDir]     = useState("asc"); // "asc" | "desc" | "rand"
   const [melMode,    setMelMode]    = useState(_u.melMode     ?? false);
   const [chordVoice, setChordVoice] = useState("off"); // off | triad | 7th | sus2 | power | all | rand
   const [playing,    setPlaying]    = useState(null);
@@ -477,8 +478,8 @@ export default function Chloe() {
   const arpRef     = useRef(null);
   const arpIdxRef  = useRef(0);
   const melPrevRef = useRef(0);
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, chordVoice, instrument, noteVol, reverbAmt, aRef });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, chordVoice, instrument, noteVol, reverbAmt, aRef }; }, [rootIdx, timbre, bpm, sel, melMode, chordVoice, instrument, noteVol, reverbAmt, aRef]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, chordVoice, instrument, noteVol, reverbAmt, aRef });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, chordVoice, instrument, noteVol, reverbAmt, aRef }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, chordVoice, instrument, noteVol, reverbAmt, aRef]);
 
   const getCtx = useCallback(() => {
     if (!ctxRef.current || ctxRef.current.state === "closed")
@@ -614,8 +615,18 @@ export default function Chloe() {
       const isChord = cv !== "off";  // "rand" also counts as chord
 
       if (!mm) {
-        // Arpeggio/chord step mode — walks up the scale
-        const idx = arpIdxRef.current++ % notes.length;
+        // Arpeggio/chord step mode
+        const { arpDir: ad } = stRef.current;
+        const n = notes.length;
+        let idx;
+        if (ad === "desc") {
+          idx = (n - 1) - (arpIdxRef.current++ % n);
+        } else if (ad === "rand") {
+          arpIdxRef.current = (arpIdxRef.current + (Math.random() < 0.5 ? 1 : n - 1)) % n;
+          idx = arpIdxRef.current;
+        } else {
+          idx = arpIdxRef.current++ % n;
+        }
         if (isChord) {
           playChord(idx, 4, 0.22, notes);
           melTimeout = setTimeout(melTick, eighth * 4); // quarter note per chord
@@ -654,7 +665,7 @@ export default function Chloe() {
 
     melTick();
     return () => { clearTimeout(melTimeout); clearInterval(arpRef.current); };
-  }, [arpOn, sel, rootIdx, timbre, instrument, bpm, melMode, chordVoice, getCtx]);
+  }, [arpOn, sel, rootIdx, timbre, instrument, bpm, melMode, arpDir, chordVoice, getCtx]);
 
   useEffect(() => () => clearInterval(arpRef.current), []);
 
@@ -1094,8 +1105,16 @@ export default function Chloe() {
             </div>
             {/* Arp / Melody toggle */}
             <div style={{ display: "flex", gap: 0, border: `1px solid ${K.br}`, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
-              {[{ l: "↑ Arpeggio", v: false }, { l: "⁓ Melody", v: true }].map(opt => (
-                <button key={opt.l} onClick={() => setMelMode(opt.v)} style={{
+              {[{ l: arpDir === "desc" ? "↓ Arpeggio" : arpDir === "rand" ? "↕ Arpeggio" : "↑ Arpeggio", v: false }, { l: "⁓ Melody", v: true }].map(opt => (
+                <button key={opt.v} onClick={() => {
+                  if (opt.v === false && melMode === false) {
+                    // Already in arpeggio mode — cycle direction
+                    setArpDir(d => d === "asc" ? "desc" : d === "desc" ? "rand" : "asc");
+                  } else {
+                    setMelMode(opt.v);
+                    if (opt.v === false) setArpDir("asc");
+                  }
+                }} style={{
                   flex: 1, background: melMode === opt.v ? K.bg3 : "transparent",
                   color: melMode === opt.v ? K.a : "#c8e4f0",
                   border: "none",
