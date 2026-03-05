@@ -466,6 +466,10 @@ export default function Chloe() {
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 280);
   const [urlCopied,  setUrlCopied]  = useState(false);
   const [showHelp,   setShowHelp]   = useState(false);
+  const [demoOn,      setDemoOn]      = useState(false);
+  const [demoKey,     setDemoKey]     = useState(() => localStorage.getItem("chloe-demo-key") || "");
+  const [demoComment, setDemoComment] = useState("");
+  const [demoKeyInput, setDemoKeyInput] = useState(false);
   const [favs,       setFavs]       = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("chloe2-favs") || "[]")); }
     catch { return new Set(); }
@@ -684,6 +688,92 @@ export default function Chloe() {
   }, [arpOn, sel, rootIdx, timbre, instrument, bpm, melMode, arpDir, rhythm, chordVoice, getCtx]);
 
   useEffect(() => () => clearInterval(arpRef.current), []);
+
+  /* ── Demo mode: Claude autonomously explores scales ── */
+  useEffect(() => {
+    if (!demoOn || !demoKey) return;
+
+    let cancelled = false;
+    let timeout = null;
+
+    const callClaude = async () => {
+      // Build scale catalogue from KNOWN scales
+      const catalogue = [];
+      for (const fam of FAMILIES) {
+        fam.modes.forEach((pat, mi) => {
+          const name = KNOWN[pat];
+          if (name) {
+            const semis = toSemis(pat);
+            const ivs = semis.slice(1).map((v, i) => v - semis[i]).concat(12 - semis[semis.length - 1]);
+            catalogue.push({ familyId: fam.id, modeIdx: mi, name, notes: fam.n, intervals: ivs.join("-") });
+          }
+        });
+      }
+
+      const currentState = {
+        currentScale: stRef.current.sel ? (KNOWN[stRef.current.sel.pattern] || stRef.current.sel.id) : "none",
+        rootNote: CHROMATIC[stRef.current.rootIdx],
+        rhythm: stRef.current.rhythm,
+        arpDir: stRef.current.arpDir,
+        bpm: stRef.current.bpm,
+      };
+
+      const { Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: demoKey, dangerouslyAllowBrowser: true });
+
+      const msg = await client.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 300,
+        system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
+Respond ONLY with valid JSON matching this schema exactly:
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"commentary":"string"}
+scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. commentary is 1-2 sentences about this scale's character.`,
+        messages: [{
+          role: "user",
+          content: `Current state: ${JSON.stringify(currentState)}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore. Vary musically — try contrasting brightness, different note counts, interesting rhythms.`
+        }]
+      });
+
+      if (cancelled) return;
+
+      const raw = msg.content[0].text.trim();
+      const json = raw.replace(/^```json?\n?/, "").replace(/\n?```$/, "");
+      const choice = JSON.parse(json);
+
+      // Ensure AudioContext is running before we trigger the arpeggio effect
+      const ac = getCtx();
+      if (ac.state === "suspended") await ac.resume();
+
+      // Parse scaleId "hep-6.5" → famId="hep-6", modeIdx=5
+      const dotPos = (choice.scaleId || "").lastIndexOf(".");
+      const famId = dotPos > 0 ? choice.scaleId.slice(0, dotPos) : "";
+      const modeIdx = dotPos > 0 ? parseInt(choice.scaleId.slice(dotPos + 1)) : NaN;
+      const fam = FAMILIES.find(f => f.id === famId);
+      if (fam && !isNaN(modeIdx) && fam.modes[modeIdx] !== undefined) {
+        pick(fam, modeIdx, fam.modes[modeIdx]);
+      }
+      setRootIdx(Math.max(0, Math.min(11, choice.rootNote)));
+      setRhythm(choice.rhythm || "even");
+      setArpDir(choice.arpDir || "asc");
+      setChordVoice(choice.chordVoice || "off");
+      setMelMode(!!choice.melMode);
+      setBpm(Math.max(40, Math.min(240, choice.bpm || 100)));
+      setArpOn(true);
+      setDemoComment(choice.commentary || "");
+
+      const delay = 12000 + Math.random() * 4000;
+      timeout = setTimeout(callClaude, delay);
+    };
+
+    callClaude().catch(err => {
+      if (!cancelled) setDemoComment(`Error: ${err.message}`);
+    });
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [demoOn, demoKey, getCtx]); // reads live state via stRef/FAMILIES; getCtx is stable (useCallback [])
 
   /* ── Interval pattern match e.g. "2-2-1" or "2 2 1" ──
      Normalise to array of ints and check if any mode's interval vector starts with or contains it */
@@ -971,6 +1061,18 @@ export default function Chloe() {
 
       </div>
 
+      {demoOn && (
+        <div style={{
+          background: "#0a1a0a", borderBottom: `1px solid #1a3a1a`,
+          padding: "6px 18px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
+        }}>
+          <span style={{ color: K.a, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>★ DEMO</span>
+          <span style={{ color: "#a0c8a0", fontSize: 10, fontStyle: "italic" }}>
+            {demoComment || "Starting…"}
+          </span>
+        </div>
+      )}
+
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
         {/* ══════════════════════════════════════
@@ -1106,7 +1208,12 @@ export default function Chloe() {
             <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
               {[
                 { label: "● Drone", on: droneOn, onClick: () => { wake(); setDroneOn(p => !p); } },
-                { label: arpOn ? "■ Stop" : "▶ Play", on: arpOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
+                { label: arpOn && !demoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
+                { label: demoOn ? "★ Stop Demo" : "★ Demo", on: demoOn, onClick: () => {
+                  if (!demoKey) { setDemoKeyInput(true); return; }
+                  if (demoOn) { setDemoOn(false); setArpOn(false); setDemoComment(""); }
+                  else { wake(); setDemoOn(true); }
+                }},
               ].map(b => (
                 <button key={b.label} onClick={b.onClick} disabled={b.disabled} style={{
                   flex: 1, background: b.on ? K.a : K.bg3,
@@ -1119,6 +1226,25 @@ export default function Chloe() {
                 }}>{b.label}</button>
               ))}
             </div>
+            {demoKeyInput && (
+              <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+                <input type="password" placeholder="sk-ant-..." value={demoKey}
+                  onChange={e => setDemoKey(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && demoKey) { localStorage.setItem("chloe-demo-key", demoKey); setDemoKeyInput(false); setDemoOn(true); } }}
+                  style={{ flex: 1, fontSize: 9, background: K.bg3, border: `1px solid ${K.br}`,
+                           color: K.t1, borderRadius: 3, padding: "4px 6px", fontFamily: "inherit", outline: "none" }}
+                />
+                <button onClick={() => {
+                  if (!demoKey) return;
+                  localStorage.setItem("chloe-demo-key", demoKey);
+                  setDemoKeyInput(false);
+                  setDemoOn(true);
+                }} style={{
+                  fontSize: 9, background: K.a, color: "#000", border: "none",
+                  borderRadius: 3, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600,
+                }}>Go</button>
+              </div>
+            )}
             {/* Arp / Melody toggle */}
             <div style={{ display: "flex", gap: 0, border: `1px solid ${K.br}`, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
               {[{ l: arpDir === "desc" ? "↓ Arpeggio" : arpDir === "rand" ? "↕ Arpeggio" : "↑ Arpeggio", v: false }, { l: "⁓ Melody", v: true }].map(opt => (
