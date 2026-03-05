@@ -522,6 +522,7 @@ export default function Chloe() {
   const [demoKeyInput, setDemoKeyInput] = useState(false);
   const [demoLog,     setDemoLog]     = useState([]);
   const [showDemoLog, setShowDemoLog] = useState(false);
+  const [autoOn,      setAutoOn]      = useState(false);
   const [favs,       setFavs]       = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("chloe2-favs") || "[]")); }
     catch { return new Set(); }
@@ -841,6 +842,60 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
     };
   }, [demoOn, demoKey, getCtx]); // reads live state via stRef/FAMILIES; getCtx is stable (useCallback [])
 
+  /* ── Free auto-demo: random named scale explorer, no API key ── */
+  useEffect(() => {
+    if (!autoOn) return;
+    let cancelled = false;
+    let timeout = null;
+
+    const catalogue = FAMILIES.flatMap(fam =>
+      fam.modes.map((pat, i) => ({ fam, modeIdx: i, pat }))
+    ).filter(({ pat }) => KNOWN[pat]);
+
+    const RHYTHMS = ["even", "swing", "gallop", "waltz", "clave"];
+    const DIRS    = ["asc", "desc", "rand"];
+    const VOICES  = ["off", "off", "off", "power", "sus2", "triad"];
+
+    const pickNext = () => {
+      if (cancelled) return;
+      const { sel: cur } = stRef.current;
+
+      const options = catalogue.filter(e => !cur || e.fam.modes[e.modeIdx] !== cur.pattern);
+      const entry = options[Math.floor(Math.random() * options.length)];
+      const rhythm     = RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
+      const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
+      const chordVoice = VOICES[Math.floor(Math.random() * VOICES.length)];
+      const bpm        = Math.round(65 + Math.random() * 85);
+
+      const ac = getCtx();
+      if (ac.state === "suspended") ac.resume();
+
+      pick(entry.fam, entry.modeIdx, entry.fam.modes[entry.modeIdx]);
+      setRhythm(rhythm);
+      setArpDir(arpDir);
+      setChordVoice(chordVoice);
+      setBpm(bpm);
+      setArpOn(true);
+
+      const scaleName = KNOWN[entry.fam.modes[entry.modeIdx]];
+      setDemoComment(`${scaleName} — ${entry.fam.n} notes · ${rhythm} · ${bpm}bpm`);
+
+      setDemoLog(prev => [{
+        scaleName,
+        famId: entry.fam.id, modeIdx: entry.modeIdx,
+        rootNote: stRef.current.rootIdx,
+        rhythm, arpDir, chordVoice, bpm,
+        commentary: `${scaleName} — ${entry.fam.n} notes · ${rhythm} · ${bpm}bpm`,
+        ts: Date.now(),
+      }, ...prev].slice(0, 12));
+
+      timeout = setTimeout(pickNext, 12000 + Math.random() * 4000);
+    };
+
+    pickNext();
+    return () => { cancelled = true; clearTimeout(timeout); };
+  }, [autoOn]); // reads live state via stRef; getCtx/pick/set* are stable
+
   /* ── Interval pattern match e.g. "2-2-1" or "2 2 1" ──
      Normalise to array of ints and check if any mode's interval vector starts with or contains it */
   const matchesInterval = (pattern, mode) => {
@@ -1127,10 +1182,10 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
       </div>
 
-      {demoOn && (
+      {(demoOn || autoOn) && (
         <div style={{ background: "#0a1a0a", borderBottom: `1px solid #1a3a1a`, flexShrink: 0 }}>
           <div style={{ padding: "6px 18px", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ color: K.a, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>★ DEMO</span>
+            <span style={{ color: K.a, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>{autoOn ? "⟲ AUTO" : "★ DEMO"}</span>
             <span style={{ color: "#a0c8a0", fontSize: 10, fontStyle: "italic", flex: 1 }}>
               {demoComment || "Starting…"}
             </span>
@@ -1302,11 +1357,16 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
             <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
               {[
                 { label: "● Drone", on: droneOn, onClick: () => { wake(); setDroneOn(p => !p); } },
-                { label: arpOn && !demoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
+                { label: arpOn && !demoOn && !autoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn && !autoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
                 { label: demoOn ? "★ Stop Demo" : "★ Demo", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
                   if (demoOn) { setDemoOn(false); setArpOn(false); setDemoComment(""); }
-                  else { wake(); setDemoOn(true); }
+                  else { wake(); setAutoOn(false); setDemoOn(true); }
+                }},
+                { label: autoOn ? "⟲ Stop" : "⟲ Auto", on: autoOn, onClick: () => {
+                  wake();
+                  if (autoOn) { setAutoOn(false); setArpOn(false); setDemoComment(""); }
+                  else { setDemoOn(false); setAutoOn(true); }
                 }},
               ].map(b => (
                 <button key={b.label} onClick={b.onClick} disabled={b.disabled} style={{
@@ -1320,7 +1380,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                 }}>{b.label}</button>
               ))}
             </div>
-            {demoKey && !demoOn && !demoKeyInput && (
+            {demoKey && !demoOn && !autoOn && !demoKeyInput && (
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
                 <button onClick={() => {
                   setDemoKey("");
