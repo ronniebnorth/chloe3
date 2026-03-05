@@ -1330,7 +1330,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
             }}>{showDemoLog ? "▴ log" : `▾ log${demoLog.length ? ` (${demoLog.length})` : ""}`}</button>
           </div>
           {showDemoLog && (
-            <div style={{ borderTop: `1px solid #1a3a1a`, maxHeight: 220, overflowY: "auto" }}>
+            <div style={{ borderTop: `1px solid #1a3a1a`, maxHeight: 440, overflowY: "auto" }}>
               {demoLog.map((e, i) => (
                 <div key={e.ts} onClick={() => {
                   const fam = FAMILIES.find(f => f.id === e.famId);
