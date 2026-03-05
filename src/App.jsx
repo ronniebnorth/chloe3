@@ -531,8 +531,8 @@ export default function Chloe() {
         timbre:     ["sine","triangle","square","sawtooth"].includes(p.get("t")) ? p.get("t") : "sine",
         instrument: ["piano","guitar","xylo","space"].includes(p.get("i")) ? p.get("i") : null,
         noteVol:    parseFloat(p.get("v") ?? "0.7"),
-        reverbAmt:  parseFloat(p.get("rv") ?? "0"),
-        delayAmt:   parseFloat(p.get("dl") ?? "0"),
+        reverbAmt:  parseFloat(p.get("rv") ?? "0.75"),
+        delayAmt:   parseFloat(p.get("dl") ?? "0.15"),
         bpm:        parseInt(p.get("b") ?? "100"),
         filter:     p.get("f") ?? "",
         selId:      p.get("s") ?? null,   // "hep-6.1" style
@@ -549,8 +549,8 @@ export default function Chloe() {
   const [timbre,     setTimbre]     = useState(_u.timbre     ?? "sine");
   const [instrument, setInstrument] = useState(_u.instrument ?? null);
   const [noteVol,    setNoteVol]    = useState(_u.noteVol    ?? 0.7);
-  const [reverbAmt,  setReverbAmt]  = useState(_u.reverbAmt  ?? 0.0);
-  const [delayAmt,   setDelayAmt]   = useState(_u.delayAmt   ?? 0.0);
+  const [reverbAmt,  setReverbAmt]  = useState(_u.reverbAmt  ?? 0.75);
+  const [delayAmt,   setDelayAmt]   = useState(_u.delayAmt   ?? 0.15);
   const [bpm,        setBpm]        = useState(_u.bpm        ?? 100);
   const [filter,     setFilter]     = useState(_u.filter     ?? "");
   const [sel,        setSel]        = useState(null); // resolved after FAMILIES built
@@ -1098,8 +1098,8 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
     if (timbre !== "sine") p.set("t", timbre);
     if (instrument)  p.set("i",  instrument);
     if (noteVol !== 0.7)   p.set("v",  noteVol.toFixed(2));
-    if (reverbAmt)   p.set("rv", reverbAmt.toFixed(2));
-    if (delayAmt)    p.set("dl", delayAmt.toFixed(2));
+    if (reverbAmt !== 0.75) p.set("rv", reverbAmt.toFixed(2));
+    if (delayAmt  !== 0.15) p.set("dl", delayAmt.toFixed(2));
     if (bpm !== 100) p.set("b",  bpm);
     if (filter)      p.set("f",  filter);
     if (sel)         p.set("s",  sel.id);
