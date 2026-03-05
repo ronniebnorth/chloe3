@@ -520,6 +520,8 @@ export default function Chloe() {
   const [demoKey,     setDemoKey]     = useState(() => localStorage.getItem("chloe-demo-key") || "");
   const [demoComment, setDemoComment] = useState("");
   const [demoKeyInput, setDemoKeyInput] = useState(false);
+  const [demoLog,     setDemoLog]     = useState([]);
+  const [showDemoLog, setShowDemoLog] = useState(false);
   const [favs,       setFavs]       = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("chloe2-favs") || "[]")); }
     catch { return new Set(); }
@@ -802,14 +804,28 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
       if (fam && !isNaN(modeIdx) && fam.modes[modeIdx] !== undefined) {
         pick(fam, modeIdx, fam.modes[modeIdx]);
       }
-      setRootIdx(Math.max(0, Math.min(11, choice.rootNote)));
-      setRhythm(choice.rhythm || "even");
-      setArpDir(choice.arpDir || "asc");
-      setChordVoice(choice.chordVoice || "off");
+      const rootNote = Math.max(0, Math.min(11, choice.rootNote));
+      const rhythm   = choice.rhythm    || "even";
+      const arpDir   = choice.arpDir    || "asc";
+      const chordVoice = choice.chordVoice || "off";
+      const bpm      = Math.max(40, Math.min(240, choice.bpm || 100));
+      setRootIdx(rootNote);
+      setRhythm(rhythm);
+      setArpDir(arpDir);
+      setChordVoice(chordVoice);
       setMelMode(!!choice.melMode);
-      setBpm(Math.max(40, Math.min(240, choice.bpm || 100)));
+      setBpm(bpm);
       setArpOn(true);
       setDemoComment(choice.commentary || "");
+
+      if (fam && !isNaN(modeIdx)) {
+        setDemoLog(prev => [{
+          scaleName: KNOWN[fam.modes[modeIdx]] || choice.scaleId,
+          famId, modeIdx, rootNote, rhythm, arpDir, chordVoice, bpm,
+          commentary: choice.commentary || "",
+          ts: Date.now(),
+        }, ...prev].slice(0, 12));
+      }
 
       const delay = 12000 + Math.random() * 4000;
       timeout = setTimeout(callClaude, delay);
@@ -1112,14 +1128,42 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
       </div>
 
       {demoOn && (
-        <div style={{
-          background: "#0a1a0a", borderBottom: `1px solid #1a3a1a`,
-          padding: "6px 18px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
-        }}>
-          <span style={{ color: K.a, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>★ DEMO</span>
-          <span style={{ color: "#a0c8a0", fontSize: 10, fontStyle: "italic" }}>
-            {demoComment || "Starting…"}
-          </span>
+        <div style={{ background: "#0a1a0a", borderBottom: `1px solid #1a3a1a`, flexShrink: 0 }}>
+          <div style={{ padding: "6px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ color: K.a, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>★ DEMO</span>
+            <span style={{ color: "#a0c8a0", fontSize: 10, fontStyle: "italic", flex: 1 }}>
+              {demoComment || "Starting…"}
+            </span>
+            <button onClick={() => setShowDemoLog(p => !p)} style={{
+              background: "none", border: `1px solid #1a3a1a`, color: "#5a9a5a",
+              fontSize: 9, padding: "2px 7px", cursor: "pointer", borderRadius: 3, flexShrink: 0,
+            }}>{showDemoLog ? "▴ log" : `▾ log${demoLog.length ? ` (${demoLog.length})` : ""}`}</button>
+          </div>
+          {showDemoLog && (
+            <div style={{ borderTop: `1px solid #1a3a1a`, maxHeight: 220, overflowY: "auto" }}>
+              {demoLog.map((e, i) => (
+                <div key={e.ts} onClick={() => {
+                  const fam = FAMILIES.find(f => f.id === e.famId);
+                  if (fam && fam.modes[e.modeIdx] !== undefined) pick(fam, e.modeIdx, fam.modes[e.modeIdx]);
+                  setRootIdx(e.rootNote);
+                  setRhythm(e.rhythm);
+                  setArpDir(e.arpDir);
+                  setChordVoice(e.chordVoice);
+                  setBpm(e.bpm);
+                  setArpOn(true);
+                }} style={{
+                  padding: "5px 18px", cursor: "pointer", display: "flex", gap: 10, alignItems: "baseline",
+                  borderBottom: `1px solid #0f2a0f`,
+                  background: i === 0 ? "#0d220d" : "transparent",
+                }}>
+                  <span style={{ color: K.a, fontSize: 10, fontWeight: "bold", minWidth: 130 }}>{e.scaleName}</span>
+                  <span style={{ color: "#7ab87a", fontSize: 9 }}>{CHROMATIC[e.rootNote]}</span>
+                  <span style={{ color: "#5a8a5a", fontSize: 9 }}>{e.bpm}bpm {e.rhythm} {e.arpDir} {e.chordVoice !== "off" ? e.chordVoice : ""}</span>
+                  <span style={{ color: "#3a6a3a", fontSize: 9, fontStyle: "italic", flex: 1 }}>{e.commentary}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
