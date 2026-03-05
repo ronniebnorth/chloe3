@@ -616,7 +616,7 @@ export default function Chloe() {
     osc.type = instrument ? "sine" : timbre;
     const dFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
     osc.frequency.value = dFreq;
-    g.gain.value = instrument === "space" ? 0.06 : 0.1;
+    g.gain.value = instrument === "space" ? 0.03 : 0.05;
     const droneOut = (node) => { node.connect(ac.destination); node.connect(rev.convolver); node.connect(del.delayNode); };
     if (instrument === "space") {
       const o2 = ac.createOscillator(); o2.type = "sine";
