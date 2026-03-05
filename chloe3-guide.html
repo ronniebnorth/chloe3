@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chloe3 — Scale Explorer Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #060a0e;
+    --bg2:     #0a1219;
+    --bg3:     #0e1822;
+    --br:      #162030;
+    --t1:      #aabec8;
+    --t2:      #3e5868;
+    --amber:   #e8922a;
+    --green:   #7ab87a;
+    --blue:    #5ab8d8;
+    --page-bg: #f5f2ed;
+    --ink:     #1a1410;
+    --ink2:    #4a3f35;
+    --ink3:    #8a7a6a;
+    --rule:    #d8cfc4;
+    --accent:  #c47820;
+    --accent2: #2a6888;
+  }
+
+  html { font-size: 15px; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--page-bg);
+    color: var(--ink);
+    line-height: 1.65;
+    padding: 0;
+  }
+
+  /* ── Cover ── */
+  .cover {
+    background: var(--bg);
+    color: var(--t1);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 80px 80px 60px;
+    page-break-after: always;
+  }
+
+  .cover-eyebrow {
+    font-size: 11px;
+    letter-spacing: 4px;
+    color: var(--t2);
+    text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+
+  .cover-title {
+    font-size: 72px;
+    font-weight: 700;
+    color: var(--amber);
+    letter-spacing: -2px;
+    line-height: 1;
+    margin-bottom: 16px;
+  }
+
+  .cover-sub {
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--t1);
+    margin-bottom: 60px;
+    letter-spacing: 0.5px;
+  }
+
+  .cover-desc {
+    font-size: 15px;
+    color: var(--t2);
+    max-width: 520px;
+    line-height: 1.8;
+    margin-bottom: 80px;
+  }
+
+  .cover-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    max-width: 440px;
+    margin-bottom: 80px;
+  }
+
+  .cover-pill {
+    background: var(--bg3);
+    border: 1px solid var(--br);
+    border-radius: 4px;
+    padding: 6px 0;
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--t2);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .cover-footer {
+    font-size: 11px;
+    color: #1e3040;
+    letter-spacing: 1px;
+  }
+
+  /* ── Page layout ── */
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 72px 60px;
+  }
+
+  /* ── Section headers ── */
+  .section {
+    margin-bottom: 52px;
+    page-break-inside: avoid;
+  }
+
+  .section-number {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--ink3);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .section-title {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.5px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--accent);
+    display: inline-block;
+  }
+
+  .section-intro {
+    font-size: 15px;
+    color: var(--ink2);
+    margin-bottom: 24px;
+    max-width: 620px;
+  }
+
+  /* ── Body text ── */
+  p {
+    margin-bottom: 16px;
+    color: var(--ink2);
+    font-size: 15px;
+  }
+
+  /* ── Divider ── */
+  hr {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 48px 0;
+  }
+
+  /* ── Two-col layout ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    margin-bottom: 28px;
+  }
+
+  /* ── Feature cards ── */
+  .card {
+    background: white;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 20px 22px;
+  }
+
+  .card-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 8px;
+  }
+
+  .card-body {
+    font-size: 13px;
+    color: var(--ink3);
+    line-height: 1.6;
+  }
+
+  /* ── Scale list ── */
+  .scale-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 20px 0;
+  }
+
+  .scale-item {
+    background: white;
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 7px 12px;
+    font-size: 12px;
+    color: var(--ink2);
+  }
+
+  .scale-item .scale-cat {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--ink3);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  /* ── Mono code ── */
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: white;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 2px 6px;
+    color: var(--accent2);
+  }
+
+  /* ── Parameter table ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 13px;
+  }
+
+  th {
+    text-align: left;
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink3);
+    padding: 8px 12px;
+    border-bottom: 2px solid var(--rule);
+  }
+
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    color: var(--ink2);
+  }
+
+  td:first-child {
+    font-weight: 600;
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  /* ── Callout ── */
+  .callout {
+    background: white;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 16px 20px;
+    margin: 24px 0;
+    font-size: 14px;
+    color: var(--ink2);
+    line-height: 1.65;
+  }
+
+  .callout strong { color: var(--accent); }
+
+  /* ── Binary visual ── */
+  .binary-demo {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin: 16px 0;
+    flex-wrap: wrap;
+  }
+
+  .bit {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .bit-on  { background: var(--accent); color: white; }
+  .bit-off { background: white; border: 1px solid var(--rule); color: var(--ink3); }
+
+  .bit-label {
+    font-size: 9px;
+    text-align: center;
+    color: var(--ink3);
+    margin-top: 3px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .bit-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+
+  /* ── Dark terminal block ── */
+  .terminal {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 20px 0;
+    color: var(--t1);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.9;
+  }
+
+  .terminal .dim  { color: var(--t2); }
+  .terminal .amb  { color: var(--amber); }
+  .terminal .grn  { color: var(--green); }
+  .terminal .blu  { color: var(--blue); }
+
+  /* ── Chapter heading ── */
+  .chapter {
+    background: var(--ink);
+    color: white;
+    padding: 48px 60px;
+    margin: 0 -60px 52px;
+    page-break-before: always;
+  }
+
+  .chapter-num {
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: #5a6a78;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .chapter-title {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--amber);
+    letter-spacing: -0.5px;
+  }
+
+  /* ── Print ── */
+  @media print {
+    body { background: white; }
+    .cover { min-height: 100vh; page-break-after: always; }
+    .chapter { margin: 0 -60px 52px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .card, .terminal, .callout { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .bit-on { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+     COVER
+════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-eyebrow">A guide to</div>
+  <div class="cover-title">Chloe3</div>
+  <div class="cover-sub">Scale Explorer</div>
+  <div class="cover-desc">
+    A browser-based tool for exploring the full universe of musical scales —
+    hearing them, comparing them, and understanding what makes each one
+    sound the way it does.
+  </div>
+  <div class="cover-grid">
+    <div class="cover-pill">piano</div>
+    <div class="cover-pill">guitar</div>
+    <div class="cover-pill">xylo</div>
+    <div class="cover-pill">space</div>
+    <div class="cover-pill">beat</div>
+    <div class="cover-pill">drone</div>
+    <div class="cover-pill">arpeggio</div>
+    <div class="cover-pill">melody</div>
+    <div class="cover-pill">chords</div>
+    <div class="cover-pill">AI demo</div>
+  </div>
+  <div class="cover-footer">ronniebnorth.github.io/chloe3</div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     CHAPTER 1 — WHAT IS CHLOE?
+════════════════════════════════════════════ -->
+<div class="page">
+  <div class="chapter">
+    <div class="chapter-num">Chapter 1</div>
+    <div class="chapter-title">What is Chloe?</div>
+  </div>
+
+  <div class="section">
+    <p>
+      A musical scale is a set of notes chosen from the 12 semitones of the chromatic scale.
+      Western music mostly uses two of them — the major scale and the minor scale — but there
+      are thousands of others, each with its own mood, colour, and cultural history.
+    </p>
+    <p>
+      Chloe generates <strong>every mathematically valid scale from 3 to 8 notes</strong> and lets
+      you hear them all. It filters out scales with three consecutive semitones (which tend to sound
+      like chromatic noise rather than a scale), leaving a catalogue of musically interesting
+      structures, including many you'll recognise and many you won't have encountered before.
+    </p>
+
+    <div class="callout">
+      <strong>The core idea:</strong> Drone a root note and step through a scale. Listen to what
+      makes Lydian sound dreamy, Phrygian sound tense, a Japanese pentatonic sound sparse, or
+      an octatonic diminished scale sound like a film score. Chloe makes that exploration immediate
+      and tactile.
+    </div>
+
+    <p>
+      All sound is synthesised live in your browser using the Web Audio API — no samples,
+      no downloads, no plugins. Open the page and it just works.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-number">1.1</div>
+    <div class="section-title">The scale catalogue</div>
+    <p>
+      Scales are organised into <strong>families</strong>. A family is a group of scales that share
+      the same interval structure — they're rotations of each other, the way C major and D Dorian
+      are both rotations of the same seven-note pattern. Each rotation is called a <strong>mode</strong>.
+    </p>
+    <p>
+      Within a family, modes are sorted from brightest to darkest. Brightness is calculated by summing
+      the semitone positions of the active notes — more sharps means brighter. This naturally produces
+      the familiar Lydian → Ionian → Mixolydian → Dorian → Aeolian → Phrygian → Locrian ordering for
+      the seven standard modes.
+    </p>
+    <p>
+      Families are named by note count and a number: <code>hep-6</code> means the 6th heptatonic
+      (7-note) family, which is the standard diatonic family containing all the church modes.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-number">1.2</div>
+    <div class="section-title">Named scales</div>
+    <p>
+      45 scales in the catalogue have recognised names, covering all the families most musicians
+      encounter. The rest are unnamed — valid and playable, just obscure.
+    </p>
+    <div class="scale-grid">
+      <div class="scale-item"><span class="scale-cat">Diatonic modes</span>Lydian, Ionian, Mixolydian, Dorian, Aeolian, Phrygian, Locrian</div>
+      <div class="scale-item"><span class="scale-cat">Harmonic minor</span>Harm. Minor, Locrian ♯6, Ionian ♯5, Ukrainian Dorian, Phrygian Dom., Lydian ♯2, Altered Dim.</div>
+      <div class="scale-item"><span class="scale-cat">Melodic minor</span>Mel. Minor, Dorian ♭2, Lydian Aug., Lydian Dom., Hindu, Locrian ♮2, Altered</div>
+      <div class="scale-item"><span class="scale-cat">Harmonic major</span>Harmonic Major, Lydian Diminished</div>
+      <div class="scale-item"><span class="scale-cat">Other heptatonics</span>Double Harmonic, Neapolitan Min., Neapolitan Maj., Hungarian Major</div>
+      <div class="scale-item"><span class="scale-cat">Pentatonics</span>Major, Minor, Ritusen, Egyptian, Man Gong, Insen, Iwato, Hirajoshi, Kumoi, In Scale, Pelog</div>
+      <div class="scale-item"><span class="scale-cat">Hexatonics</span>Blues, Whole Tone, Augmented, Prometheus, Tritone Scale, Istrian</div>
+      <div class="scale-item"><span class="scale-cat">Octatonics</span>Octatonic HW, Octatonic WH</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     CHAPTER 2 — BINARY NOTATION
+════════════════════════════════════════════ -->
+<div class="page">
+  <div class="chapter">
+    <div class="chapter-num">Chapter 2</div>
+    <div class="chapter-title">Binary Notation</div>
+  </div>
+
+  <div class="section">
+    <p>
+      Every scale in Chloe is represented as a <strong>12-bit binary string</strong> — one bit
+      for each semitone of the chromatic scale, starting from the root note. A <strong>1</strong>
+      means that semitone is active in the scale; a <strong>0</strong> means it's skipped.
+    </p>
+    <p>
+      Reading from left to right: bit 0 is the root (always 1), bit 1 is one semitone up,
+      bit 2 is a whole tone, and so on up to bit 11 (a major seventh).
+    </p>
+
+    <p><strong>Example: C Ionian (C major)</strong> — notes C D E F G A B</p>
+    <div class="binary-demo">
+      <div class="bit-col"><div class="bit bit-on">1</div><div class="bit-label">C</div></div>
+      <div class="bit-col"><div class="bit bit-off">0</div><div class="bit-label">C♯</div></div>
+      <div class="bit-col"><div class="bit bit-on">1</div><div class="bit-label">D</div></div>
+      <div class="bit-col"><div class="bit bit-off">0</div><div class="bit-label">D♯</div></div>
+      <div class="bit-col"><div class="bit bit-on">1</div><div class="bit-label">E</div></div>
+      <div class="bit-col"><div class="bit bit-on">1</div><div class="bit-label">F</div></div>
+      <div class="bit-col"><div class="bit bit-off">0</div><div class="bit-label">F♯</div></div>
+      <div class="bit-col"><div class="bit bit-on">1</div><div class="bit-label">G</div></div>
+      <div class="bit-col"><div class="bit bit-off">0</div><div class="bit-label">G♯</div></div>
+      <div class="bit-col"><div class="bit bit-on">1</div><div class="bit-label">A</div></div>
+      <div class="bit-col"><div class="bit bit-off">0</div><div class="bit-label">A♯</div></div>
+      <div class="bit-col"><div class="bit bit-on">1</div><div class="bit-label">B</div></div>
+    </div>
+    <p>
+      The binary string is <code>101011010101</code>, which equals <strong>2741</strong> in decimal.
+      This number is a compact, unique fingerprint for each scale — independent of root note or
+      key, since it describes the interval pattern, not the specific pitches.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-number">2.1</div>
+    <div class="section-title">The scale wheel</div>
+    <p>
+      Chloe displays each selected scale as a polygon on a chromatic circle — twelve points arranged
+      clockwise, one per semitone. Active scale tones are highlighted in amber and connected by lines.
+    </p>
+    <p>
+      The shape of the polygon gives you an immediate visual feel for the scale's character:
+    </p>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-label">Sparse scales</div>
+        <div class="card-title">Wide polygons</div>
+        <div class="card-body">Pentatonics produce a loose, open shape — five widely spaced points. Easy to navigate, forgiving, a lot of air between notes.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Dense scales</div>
+        <div class="card-title">Compact polygons</div>
+        <div class="card-body">Octatonic and chromatic-heavy scales produce tight, almost circular shapes. More tension, more colour, less obvious resolution.</div>
+      </div>
+    </div>
+    <p>
+      The root note is always at the top. Rotating the root (using the key selector) rotates the
+      whole polygon — the shape stays the same because the interval structure doesn't change.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-number">2.2</div>
+    <div class="section-title">Searching the catalogue</div>
+    <p>
+      The filter bar accepts several types of search, comma-separated:
+    </p>
+    <table>
+      <tr><th>Type</th><th>Example</th><th>Finds</th></tr>
+      <tr><td>Scale name</td><td>Dorian</td><td>All scales with "Dorian" in the name</td></tr>
+      <tr><td>Family ID</td><td>hep-6</td><td>All modes of that specific family</td></tr>
+      <tr><td>Group prefix</td><td>pen</td><td>All pentatonics</td></tr>
+      <tr><td>Decimal value</td><td>2741</td><td>Exact scale match</td></tr>
+      <tr><td>Binary fragment</td><td>101011</td><td>Scales containing that bit pattern</td></tr>
+      <tr><td>Interval run</td><td>2-2-1</td><td>Scales containing that interval sequence</td></tr>
+    </table>
+    <p>
+      You can also star individual scales with the ★ button and use the favs toggle in the header
+      to filter down to your saved favourites across sessions.
+    </p>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     CHAPTER 3 — PLAYBACK
+════════════════════════════════════════════ -->
+<div class="page">
+  <div class="chapter">
+    <div class="chapter-num">Chapter 3</div>
+    <div class="chapter-title">Playback</div>
+  </div>
+
+  <div class="section">
+    <p>
+      Chloe's playback is designed to let you <em>hear</em> a scale in context rather than just
+      reading its notes. There are several layers you can combine freely.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-number">3.1</div>
+    <div class="section-title">Drone</div>
+    <p>
+      The drone sustains the root note continuously while you explore the scale above it. This
+      is the most direct way to hear the modal character of a scale — each note in the arpeggio
+      or melody is heard against a fixed tonal centre, making the tensions and resolutions
+      audible rather than theoretical.
+    </p>
+    <p>
+      The <strong>DRONE OCT</strong> control drops the drone 1, 2, or 3 octaves below the
+      playing register, giving it weight as a bass foundation. The <strong>DRONE VOL</strong>
+      slider sets its level independently of the notes.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-number">3.2</div>
+    <div class="section-title">Arpeggio and Melody</div>
+    <p>
+      The <strong>Play</strong> button starts stepping through the scale. It has two modes:
+    </p>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-label">Mode</div>
+        <div class="card-title">Arpeggio</div>
+        <div class="card-body">Steps through scale notes in order — ascending, descending, or random. Predictable and pattern-focused. Direction is set by the arrow controls.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Mode</div>
+        <div class="card-title">Melody</div>
+        <div class="card-body">A weighted random walk — favours stepwise motion but occasionally leaps an octave or reverses direction. More organic and phrase-like.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-number">3.3</div>
+    <div class="section-title">Rhythm</div>
+    <p>
+      The <strong>RHYTHM</strong> control sets the note-spacing pattern for arpeggio mode.
+      All rhythms are BPM-synced at eighth-note resolution.
+    </p>
+    <table>
+      <tr><th>Rhythm</th><th>Pattern</th><th>Feel</th></tr>
+      <tr><td>Even</td><td>straight quarters</td><td>Steady, neutral, classical</td></tr>
+      <tr><td>Swing</td><td>long–short (3:1)</td><td>Jazz, blues, loose groove</td></tr>
+      <tr><td>Gallop</td><td>short–short–long</td><td>Forward momentum, rock, energetic</td></tr>
+      <tr><td>Waltz</td><td>half + quarter + quarter</td><td>3/4 feel, flowing, dance-like</td></tr>
+      <tr><td>Clave</td><td>son clave pattern</td><td>Afro-Cuban, syncopated, polyrhythmic</td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-number">3.4</div>
+    <div class="section-title">Chord Voicing</div>
+    <p>
+      Instead of single notes, the arpeggio can play chords built from the current scale at
+      each step. Available voicings:
+    </p>
+    <table>
+      <tr><th>Voicing</th><th>Intervals</th><th>Character</th></tr>
+      <tr><td>Off</td><td>—</td><td>Single notes</td></tr>
+      <tr><td>Power</td><td>root + 5th</td><td>Open, ambiguous, rock</td></tr>
+      <tr><td>Sus2</td><td>root + 2nd + 5th</td><td>Airy, unresolved, modern</td></tr>
+      <tr><td>Triad</td><td>root + 3rd + 5th</td><td>Full harmony, classical</td></tr>
+      <tr><td>7th</td><td>root + 3rd + 5th + 7th</td><td>Jazz, complexity, colour</td></tr>
+      <tr><td>All</td><td>all scale tones</td><td>Cluster, textural, ambient</td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-number">3.5</div>
+    <div class="section-title">Beat</div>
+    <p>
+      The <strong>Beat</strong> button adds a percussion track — kick, snare, and hi-hat —
+      synthesised live in the browser (no samples). It runs independently of the arpeggio so
+      you can combine them freely.
+    </p>
+    <p>
+      The beat automatically follows the RHYTHM setting: Even gives a straight rock beat, Swing
+      adds triplet groove, Gallop drives a double-kick pattern, Waltz plays in 3/4, and Clave
+      runs the son clave rhythm at 16th-note resolution. BPM changes take effect on the next step.
+    </p>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     CHAPTER 4 — SOUND
+════════════════════════════════════════════ -->
+<div class="page">
+  <div class="chapter">
+    <div class="chapter-num">Chapter 4</div>
+    <div class="chapter-title">Sound</div>
+  </div>
+
+  <div class="section">
+    <p>
+      All audio is synthesised in real time using the Web Audio API. There are no sample files —
+      every sound is built from oscillators, noise, filters, and envelopes in JavaScript.
+    </p>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-label">Instrument</div>
+        <div class="card-title">Piano</div>
+        <div class="card-body">Three detuned triangle oscillators with a second and third harmonic overlay. Low-pass filtered with a sharp exponential decay. Sounds clean and bell-like.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Instrument</div>
+        <div class="card-title">Guitar</div>
+        <div class="card-body">Karplus-Strong synthesis — a noise burst fed into a delay loop tuned to the target frequency. Produces a plucked string character.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Instrument</div>
+        <div class="card-title">Xylo</div>
+        <div class="card-body">Multiple sine partials tuned to marimba-like ratios (1×, 4×, 10×…) with staggered decays. Bright, percussive, idiomatic for scale runs.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Instrument</div>
+        <div class="card-title">Space</div>
+        <div class="card-body">Two detuned sine oscillators with LFO vibrato. Slow attack, long release. The drone in space mode is particularly effective for meditative listening.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-number">4.1</div>
+    <div class="section-title">Effects</div>
+    <table>
+      <tr><th>Control</th><th>What it does</th></tr>
+      <tr><td>VOL</td><td>Note volume — controls the melodic/arpeggio layer only</td></tr>
+      <tr><td>DRONE VOL</td><td>Drone volume — independent, can go up to 3× for bass-heavy drones</td></tr>
+      <tr><td>BEAT VOL</td><td>Percussion volume — independent of notes and drone</td></tr>
+      <tr><td>REV</td><td>Convolution reverb wet level — shared by drone and notes</td></tr>
+      <tr><td>DEL</td><td>BPM-synced dotted-eighth delay with feedback</td></tr>
+      <tr><td>BPM</td><td>Tempo — affects arpeggio, melody, beat, and delay time simultaneously</td></tr>
+      <tr><td>A=</td><td>Concert pitch reference — 432 to 440 Hz. Retunes everything live.</td></tr>
+    </table>
+
+    <div class="callout">
+      The beat track runs <strong>dry</strong> by design — it bypasses reverb and delay so the
+      kick and snare stay punchy and present while the melodic layer can be as wet and spacious
+      as you like.
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-number">4.2</div>
+    <div class="section-title">Timbre</div>
+    <p>
+      For the piano, guitar, and xylo instruments, the <strong>TIMBRE</strong> control shifts
+      the oscillator waveform between sine, triangle, sawtooth, and square — from warm and
+      smooth to bright and buzzy. Less relevant for guitar (which uses noise synthesis) and
+      disabled for the space instrument, which has its own fixed character.
+    </p>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     CHAPTER 5 — AUTO AND DEMO MODES
+════════════════════════════════════════════ -->
+<div class="page">
+  <div class="chapter">
+    <div class="chapter-num">Chapter 5</div>
+    <div class="chapter-title">Auto &amp; Demo Modes</div>
+  </div>
+
+  <div class="section">
+    <div class="section-number">5.1</div>
+    <div class="section-title">Auto mode</div>
+    <p>
+      The <strong>Auto</strong> button makes Chloe explore autonomously — cycling through named
+      scales every 12–16 seconds, randomising root note, rhythm, arpeggio direction, chord
+      voicing, and BPM each time. It covers the full catalogue of 45 named scales, always
+      choosing something different from the current scale.
+    </p>
+    <p>
+      This is useful as a background listening mode, or as a way to quickly survey scales you
+      haven't spent time with. The current scale and settings appear in the status banner.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-number">5.2</div>
+    <div class="section-title">Demo mode — Claude AI</div>
+    <p>
+      The <strong>Claude</strong> button enables AI-driven exploration. This uses the
+      Claude Haiku model via the Anthropic API to make musical choices — not just randomising,
+      but actively thinking about contrast, variety, and musical interest as it moves between scales.
+    </p>
+    <p>
+      Each turn, Claude receives the current state (scale, root, rhythm, BPM) and the full
+      catalogue of named scales with their interval patterns. It returns a JSON choice including
+      a short piece of commentary on the scale's character, which appears in the banner.
+    </p>
+
+    <div class="terminal">
+      <span class="dim">★ DEMO  </span><span class="grn">Lydian Dominant — a Mixolydian with a raised fourth, sitting</span><br>
+      <span class="grn">        between brightness and blues tension. Overtone series in miniature.</span><br>
+      <span class="dim">        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="amb">✦ It would be interesting to hear microtonal tuning variants of these scales.</span>
+    </div>
+
+    <p>
+      Claude can also leave <strong>feature requests</strong> — if it notices something missing
+      or imagines a capability the app doesn't have, it can write a brief note in amber alongside
+      its commentary. These requests accumulate in the demo log so you can review what it's been
+      asking for over a session.
+    </p>
+
+    <div class="callout">
+      <strong>API key required.</strong> Click ★ Claude and enter an Anthropic API key
+      (available at console.anthropic.com under API Keys — this requires separate billing from
+      Claude.ai subscriptions). Your key is stored in your browser's local storage only and is
+      never sent anywhere except directly to the Anthropic API.
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-number">5.3</div>
+    <div class="section-title">The demo log</div>
+    <p>
+      Both Auto and Demo modes maintain a log of recent scale choices, accessible via the
+      <strong>▾ log</strong> button in the banner. Each entry shows the scale name, root note,
+      BPM, rhythm, and commentary. Clicking any entry replays that exact combination.
+    </p>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     CHAPTER 6 — SHARING AND URL STATE
+════════════════════════════════════════════ -->
+<div class="page">
+  <div class="chapter">
+    <div class="chapter-num">Chapter 6</div>
+    <div class="chapter-title">Sharing &amp; URL State</div>
+  </div>
+
+  <div class="section">
+    <p>
+      Every setting in Chloe is encoded into the URL. The <strong>Share</strong> button
+      (top right) builds a URL encoding the current scale, root note, instrument, BPM, tuning,
+      rhythm, chord voicing, arpeggio direction, reverb, delay, and sidebar width — then copies
+      it to your clipboard.
+    </p>
+    <p>
+      Paste or bookmark the URL to restore the exact session later, or send it to someone else
+      so they hear exactly what you were hearing. The URL is human-readable: each parameter has
+      a short key, and the values are compact enough that the full URL stays shareable.
+    </p>
+
+    <div class="terminal">
+      <span class="dim">https://ronniebnorth.github.io/chloe3/?</span><br>
+      <span class="blu">sel</span>=hep-6.3&amp;<span class="blu">r</span>=7&amp;<span class="blu">i</span>=piano&amp;<span class="blu">b</span>=112&amp;<span class="blu">rh</span>=swing&amp;<span class="blu">cv</span>=triad&amp;<span class="blu">rv</span>=0.30
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-number">6.1</div>
+    <div class="section-title">Quick reference</div>
+    <table>
+      <tr><th>What you want to do</th><th>How</th></tr>
+      <tr><td>Open Chloe</td><td>ronniebnorth.github.io/chloe3</td></tr>
+      <tr><td>Hear a scale</td><td>Click any scale in the list, then click Play</td></tr>
+      <tr><td>Change root note</td><td>Click any note in the KEYS row</td></tr>
+      <tr><td>Hear modal colour</td><td>Turn on Drone, then Play</td></tr>
+      <tr><td>Find a specific scale</td><td>Type its name in the filter bar</td></tr>
+      <tr><td>Save a scale for later</td><td>Click ★ on the row, then use Favs filter</td></tr>
+      <tr><td>Share what you're hearing</td><td>Click Share — URL is copied to clipboard</td></tr>
+      <tr><td>Let AI explore for you</td><td>Click ★ Claude, enter Anthropic API key</td></tr>
+      <tr><td>Add a beat</td><td>Click ♩ Beat — follows the current Rhythm setting</td></tr>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>
