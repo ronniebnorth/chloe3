@@ -38,13 +38,62 @@ const toBin = (p) => Array.from({ length: 12 }, (_, i) => (p >> i) & 1).join("")
 const CHROMATIC = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
 
 const KNOWN = {
-  2773: "Lydian",       2741: "Ionian",      1717: "Mixolydian",
-  1709: "Dorian",       1453: "Aeolian",      1451: "Phrygian",
-  1387: "Locrian",      2477: "Harm. Minor",  2733: "Mel. Minor",
-  2906: "Phrygian Dom.", 2483: "Hungarian Min.", 2508: "Neapolitan Maj.",
-  2509: "Neapolitan Min.", 661: "Maj. Pentatonic", 1193: "Min. Pentatonic",
-  1257: "Blues",        2184: "Whole Tone",   1755: "Octatonic WH",
-  3549: "Octatonic HW", 2457: "Double Harm.", 2483: "Hungarian Min.",
+  // ── Diatonic modes ──────────────────────────────
+  2773: "Lydian",          2741: "Ionian",         1717: "Mixolydian",
+  1709: "Dorian",          1453: "Aeolian",         1451: "Phrygian",
+  1387: "Locrian",
+
+  // ── Harmonic minor & modes ───────────────────────
+  2477: "Harm. Minor",
+  1643: "Locrian ♯6",      // mode 2  — 0 1 3 5 6 9 10
+  2869: "Ionian ♯5",       // mode 3  — 0 2 4 5 8 9 11
+  1741: "Ukrainian Dorian",// mode 4  — 0 2 3 6 7 9 10  (= Dorian ♯4, Romanian)
+  1459: "Phrygian Dom.",   // mode 5  — 0 1 4 5 7 8 10
+  2777: "Lydian ♯2",       // mode 6  — 0 3 4 6 7 9 11
+  731:  "Altered Dim.",    // mode 7  — 0 1 3 4 6 7 9
+
+  // ── Melodic minor & modes ────────────────────────
+  2733: "Mel. Minor",
+  1707: "Dorian ♭2",       // mode 2  — 0 1 3 5 7 9 10
+  2901: "Lydian Aug.",     // mode 3  — 0 2 4 6 8 9 11
+  1749: "Lydian Dom.",     // mode 4  — 0 2 4 6 7 9 10  (= Acoustic, Overtone)
+  1461: "Hindu",           // mode 5  — 0 2 4 5 7 8 10  (= Mixolydian ♭6)
+  1389: "Locrian ♮2",      // mode 6  — 0 2 3 5 6 8 10  (= Half-Diminished)
+  1371: "Altered",         // mode 7  — 0 1 3 4 6 8 10  (= Super Locrian)
+
+  // ── Harmonic major & modes ───────────────────────
+  2485: "Harmonic Major",  //           0 2 4 5 7 8 11
+  2765: "Lydian Diminished",// mode 4  — 0 2 3 6 7 9 11
+
+  // ── Other named heptatonics ──────────────────────
+  2483: "Double Harmonic", //           0 1 4 5 7 8 11  (= Byzantine, Bhairav)
+  2475: "Neapolitan Min.", //           0 1 3 5 7 8 11
+  2731: "Neapolitan Maj.", //           0 1 3 5 7 9 11
+  1753: "Hungarian Major", //           0 3 4 6 7 9 10
+
+  // ── Pentatonics ──────────────────────────────────
+  661:  "Maj. Pentatonic", 1193: "Min. Pentatonic",
+  677:  "Ritusen",         //  0 2 5 7 9   (= Yo)
+  1189: "Egyptian",        //  0 2 5 7 10  (Suspended pent.)
+  1321: "Man Gong",        //  0 3 5 8 10
+  1187: "Insen",           //  0 1 5 7 10
+  1123: "Iwato",           //  0 1 5 6 10
+  397:  "Hirajoshi",       //  0 2 3 7 8
+  653:  "Kumoi",           //  0 2 3 7 9
+  419:  "In Scale",        //  0 1 5 7 8
+  395:  "Pelog",           //  0 1 3 7 8
+
+  // ── Hexatonics ───────────────────────────────────
+  1257: "Blues",
+  1365: "Whole Tone",      //  0 2 4 6 8 10
+  2457: "Augmented",       //  0 3 4 7 8 11
+  1621: "Prometheus",      //  0 2 4 6 9 10
+  1235: "Tritone Scale",   //  0 1 4 6 7 10
+  219:  "Istrian",         //  0 1 3 4 6 7
+
+  // ── Octatonics ───────────────────────────────────
+  1755: "Octatonic HW",   //  half-whole diminished
+  2925: "Octatonic WH",   //  whole-half diminished
 };
 
 function buildFamilies() {
