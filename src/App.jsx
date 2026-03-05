@@ -948,7 +948,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
           commentary: choice.commentary || "",
           request: choice.request || "",
           ts: Date.now(),
-        }, ...prev].slice(0, 12));
+        }, ...prev]);
       }
 
       const delay = 12000 + Math.random() * 4000;
@@ -1010,7 +1010,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
         rhythm, arpDir, chordVoice, bpm,
         commentary: `${scaleName} — ${entry.fam.n} notes · ${rhythm} · ${bpm}bpm`,
         ts: Date.now(),
-      }, ...prev].slice(0, 12));
+      }, ...prev]);
 
       timeout = setTimeout(pickNext, 12000 + Math.random() * 4000);
     };
