@@ -570,6 +570,7 @@ export default function Chloe() {
   const [demoOn,      setDemoOn]      = useState(false);
   const [demoKey,     setDemoKey]     = useState(() => localStorage.getItem("chloe-demo-key") || "");
   const [demoComment, setDemoComment] = useState("");
+  const [demoRequest, setDemoRequest] = useState("");
   const [demoKeyInput, setDemoKeyInput] = useState(false);
   const [demoLog,     setDemoLog]     = useState([]);
   const [showDemoLog, setShowDemoLog] = useState(false);
@@ -896,11 +897,11 @@ export default function Chloe() {
 
       const msg = await client.messages.create({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
+        max_tokens: 400,
         system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
 Respond ONLY with valid JSON matching this schema exactly:
-{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"commentary":"string"}
-scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. commentary is 1-2 sentences about this scale's character.`,
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"commentary":"string","request":"string"}
+scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. commentary is 1-2 sentences about this scale's character. request is optional — if there is a capability, scale type, instrument, or musical feature you wish the app had, describe it briefly here. Omit the field entirely if you have no request.`,
         messages: [{
           role: "user",
           content: `Current state: ${JSON.stringify(currentState)}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore. Vary musically — try contrasting brightness, different note counts, interesting rhythms.`
@@ -938,12 +939,14 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
       setBpm(bpm);
       setArpOn(true);
       setDemoComment(choice.commentary || "");
+      setDemoRequest(choice.request || "");
 
       if (fam && !isNaN(modeIdx)) {
         setDemoLog(prev => [{
           scaleName: KNOWN[fam.modes[modeIdx]] || choice.scaleId,
           famId, modeIdx, rootNote, rhythm, arpDir, chordVoice, bpm,
           commentary: choice.commentary || "",
+          request: choice.request || "",
           ts: Date.now(),
         }, ...prev].slice(0, 12));
       }
@@ -1317,8 +1320,9 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
         <div style={{ background: "#0a1a0a", borderBottom: `1px solid #1a3a1a`, flexShrink: 0 }}>
           <div style={{ padding: "6px 18px", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ color: K.a, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>{autoOn ? "⟲ AUTO" : "★ DEMO"}</span>
-            <span style={{ color: "#a0c8a0", fontSize: 10, fontStyle: "italic", flex: 1 }}>
-              {demoComment || "Starting…"}
+            <span style={{ fontSize: 10, flex: 1 }}>
+              <span style={{ color: "#a0c8a0", fontStyle: "italic" }}>{demoComment || "Starting…"}</span>
+              {demoRequest && <span style={{ color: K.a, fontStyle: "italic" }}> · ✦ {demoRequest}</span>}
             </span>
             <button onClick={() => setShowDemoLog(p => !p)} style={{
               background: "none", border: `1px solid #1a3a1a`, color: "#5a9a5a",
@@ -1346,6 +1350,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                   <span style={{ color: "#7ab87a", fontSize: 9 }}>{CHROMATIC[e.rootNote]}</span>
                   <span style={{ color: "#5a8a5a", fontSize: 9 }}>{e.bpm}bpm {e.rhythm} {e.arpDir} {e.chordVoice !== "off" ? e.chordVoice : ""}</span>
                   <span style={{ color: "#3a6a3a", fontSize: 9, fontStyle: "italic", flex: 1 }}>{e.commentary}</span>
+                  {e.request && <span style={{ color: K.a, fontSize: 9, fontStyle: "italic", opacity: 0.8 }}>✦ {e.request}</span>}
                 </div>
               ))}
             </div>
@@ -1500,12 +1505,12 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                 { label: arpOn && !demoOn && !autoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn && !autoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
                 { label: autoOn ? "⟲ Stop" : "⟲ Auto", on: autoOn, onClick: () => {
                   wake();
-                  if (autoOn) { setAutoOn(false); setArpOn(false); setDemoComment(""); }
+                  if (autoOn) { setAutoOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); }
                   else { setDemoOn(false); setAutoOn(true); }
                 }},
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
-                  if (demoOn) { setDemoOn(false); setArpOn(false); setDemoComment(""); }
+                  if (demoOn) { setDemoOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
                 { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
