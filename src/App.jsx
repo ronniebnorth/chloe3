@@ -326,6 +326,16 @@ const INSTRUMENTS = ["piano", "guitar", "xylo", "space"];
 const GRP_NAME = { 3: "Tritonic", 4: "Tetratonic", 5: "Pentatonic", 6: "Hexatonic", 7: "Heptatonic", 8: "Octatonic" };
 const GRP_PFX  = { 3: "tri", 4: "tet", 5: "pen", 6: "hex", 7: "hep", 8: "oct" };
 
+// Arpeggio rhythm patterns: arrays of step durations in eighth-note units.
+// Single notes use each value directly; chords use value × 2.
+const ARP_RHYTHM_PATS = {
+  even:   [2],           // straight quarters
+  swing:  [3, 1],        // dotted-eighth + sixteenth (3:1 swing)
+  gallop: [1, 1, 2],     // 16th-16th-8th forward gallop
+  waltz:  [4, 2, 2],     // half + quarter + quarter (3/4 feel)
+  clave:  [3, 3, 4, 2, 4], // son clave
+};
+
 const K = {
   bg:  "#060a0e", bg2: "#0a1219", bg3: "#0e1822",
   br:  "#162030", t1:  "#aabec8", t2:  "#3e5868",
@@ -448,6 +458,7 @@ export default function Chloe() {
   const [droneOct,   setDroneOct]   = useState(_u.droneOct   ?? 0);
   const [arpOn,      setArpOn]      = useState(false);
   const [arpDir,     setArpDir]     = useState("asc"); // "asc" | "desc" | "rand"
+  const [rhythm,     setRhythm]     = useState("even");
   const [melMode,    setMelMode]    = useState(_u.melMode     ?? false);
   const [chordVoice, setChordVoice] = useState("off"); // off | triad | 7th | sus2 | power | all | rand
   const [playing,    setPlaying]    = useState(null);
@@ -475,11 +486,12 @@ export default function Chloe() {
 
   const ctxRef     = useRef(null);
   const reverbRef  = useRef(null); // { convolver, wetGain }
-  const arpRef     = useRef(null);
-  const arpIdxRef  = useRef(0);
-  const melPrevRef = useRef(0);
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, chordVoice, instrument, noteVol, reverbAmt, aRef });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, chordVoice, instrument, noteVol, reverbAmt, aRef }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, chordVoice, instrument, noteVol, reverbAmt, aRef]);
+  const arpRef      = useRef(null);
+  const arpIdxRef   = useRef(0);
+  const rhythmIdxRef = useRef(0);
+  const melPrevRef  = useRef(0);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, aRef });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, aRef }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, aRef]);
 
   const getCtx = useCallback(() => {
     if (!ctxRef.current || ctxRef.current.state === "closed")
@@ -537,6 +549,7 @@ export default function Chloe() {
     setPlaying(null);
     if (!arpOn || !sel) return;
     arpIdxRef.current = 0;
+    rhythmIdxRef.current = 0;
     melPrevRef.current = 0;
 
     // Rhythm subdivisions: multiples of one 8th note (60000/bpm/2 ms)
@@ -616,7 +629,7 @@ export default function Chloe() {
 
       if (!mm) {
         // Arpeggio/chord step mode
-        const { arpDir: ad } = stRef.current;
+        const { arpDir: ad, rhythm: rhy } = stRef.current;
         const n = notes.length;
         let idx;
         if (ad === "desc") {
@@ -627,12 +640,15 @@ export default function Chloe() {
         } else {
           idx = arpIdxRef.current++ % n;
         }
+        const pat = ARP_RHYTHM_PATS[rhy] || ARP_RHYTHM_PATS.even;
+        const mult = pat[rhythmIdxRef.current % pat.length];
+        rhythmIdxRef.current++;
         if (isChord) {
-          playChord(idx, 4, 0.22, notes);
-          melTimeout = setTimeout(melTick, eighth * 4); // quarter note per chord
+          playChord(idx, mult * 2, 0.22, notes);
+          melTimeout = setTimeout(melTick, eighth * mult * 2);
         } else {
-          playNote(notes[idx], 2, 0.22);
-          melTimeout = setTimeout(melTick, eighth * 2);
+          playNote(notes[idx], mult, 0.22);
+          melTimeout = setTimeout(melTick, eighth * mult);
         }
       } else {
         // Melody mode
@@ -665,7 +681,7 @@ export default function Chloe() {
 
     melTick();
     return () => { clearTimeout(melTimeout); clearInterval(arpRef.current); };
-  }, [arpOn, sel, rootIdx, timbre, instrument, bpm, melMode, arpDir, chordVoice, getCtx]);
+  }, [arpOn, sel, rootIdx, timbre, instrument, bpm, melMode, arpDir, rhythm, chordVoice, getCtx]);
 
   useEffect(() => () => clearInterval(arpRef.current), []);
 
@@ -1125,6 +1141,27 @@ export default function Chloe() {
                   transition: "all .15s",
                 }}>{opt.l}</button>
               ))}
+            </div>
+            {/* Rhythm — only applies in arpeggio mode */}
+            <div style={{ marginBottom: 8, opacity: melMode ? 0.35 : 1, transition: "opacity .2s" }}>
+              <div title="Arpeggio rhythm pattern. Even = straight quarters. Swing = long-short. Gallop = short-short-long. Waltz = 3/4 feel. Clave = son clave." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>RHYTHM</div>
+              <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                {[
+                  { l: "even",   v: "even" },
+                  { l: "swing",  v: "swing" },
+                  { l: "gallop", v: "gallop" },
+                  { l: "waltz",  v: "waltz" },
+                  { l: "clave",  v: "clave" },
+                ].map(opt => (
+                  <button key={opt.v} onClick={() => setRhythm(opt.v)} style={{
+                    background: rhythm === opt.v ? K.a : K.bg3,
+                    color: rhythm === opt.v ? "#000" : "#c8e4f0",
+                    border: `1px solid ${rhythm === opt.v ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 7px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                  }}>{opt.l}</button>
+                ))}
+              </div>
             </div>
             {/* Chord voicing */}
             <div style={{ marginBottom: 2 }}>
