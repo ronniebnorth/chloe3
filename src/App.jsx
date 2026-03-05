@@ -380,6 +380,7 @@ const HELP_SECTIONS = [
   { title: "PLAYBACK", body: "Drone sustains the root note. DRONE OCT drops it 1-3 octaves. Play steps through the scale in Arpeggio or Melody mode. Click the Arpeggio button repeatedly to cycle direction: ↑ ascending, ↓ descending, ↕ random walk. RHYTHM sets the note spacing pattern for arpeggio: even (straight quarters), swing (long-short), gallop (short-short-long), waltz (3/4 feel), or clave (son clave). Melody uses a weighted random walk with its own rhythm variation and octave leaps. CHORD layers multiple scale tones per step - power (root+5th), sus2, triad, 7th, or all notes at once." },
   { title: "SOUND", body: "All instruments are synthesised in the browser using Web Audio. piano = detuned triangle oscillators with harmonic decay. guitar = Karplus-Strong style noise burst. xylo = marimba-ratio harmonic partials. space = detuned sines with LFO vibrato. VOL sets note volume. REV adds convolution reverb. A= sets concert pitch (432-440 Hz). BPM sets tempo." },
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
+  { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales — picking which scale to play, root note, rhythm, arpeggio direction, chord voicing, and BPM every 12-16 seconds, with live commentary in the banner. Click ★ Demo and enter your Anthropic API key (get one at console.anthropic.com under API Keys — requires separate billing from Claude.ai subscriptions). Your key is stored in your browser only and never sent anywhere except the Anthropic API. To change or clear your key, click the key icon that appears next to the Demo button when a key is saved." },
 ];
 
 function HelpModal({ onClose }) {
@@ -1226,6 +1227,19 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                 }}>{b.label}</button>
               ))}
             </div>
+            {demoKey && !demoOn && !demoKeyInput && (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+                <button onClick={() => {
+                  setDemoKey("");
+                  localStorage.removeItem("chloe-demo-key");
+                  setDemoKeyInput(true);
+                }} style={{
+                  background: "none", border: "none", color: K.t2, fontSize: 9,
+                  cursor: "pointer", fontFamily: "inherit", padding: "0 2px",
+                  letterSpacing: 0.5,
+                }} title="Change or clear API key">⚿ change key</button>
+              </div>
+            )}
             {demoKeyInput && (
               <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
                 <input type="password" placeholder="sk-ant-..." value={demoKey}
