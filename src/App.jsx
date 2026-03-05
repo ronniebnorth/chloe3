@@ -1358,15 +1358,15 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
               {[
                 { label: "● Drone", on: droneOn, onClick: () => { wake(); setDroneOn(p => !p); } },
                 { label: arpOn && !demoOn && !autoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn && !autoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
-                { label: demoOn ? "★ Stop Demo" : "★ Demo", on: demoOn, onClick: () => {
-                  if (!demoKey) { setDemoKeyInput(true); return; }
-                  if (demoOn) { setDemoOn(false); setArpOn(false); setDemoComment(""); }
-                  else { wake(); setAutoOn(false); setDemoOn(true); }
-                }},
                 { label: autoOn ? "⟲ Stop" : "⟲ Auto", on: autoOn, onClick: () => {
                   wake();
                   if (autoOn) { setAutoOn(false); setArpOn(false); setDemoComment(""); }
                   else { setDemoOn(false); setAutoOn(true); }
+                }},
+                { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
+                  if (!demoKey) { setDemoKeyInput(true); return; }
+                  if (demoOn) { setDemoOn(false); setArpOn(false); setDemoComment(""); }
+                  else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
               ].map(b => (
                 <button key={b.label} onClick={b.onClick} disabled={b.disabled} style={{
