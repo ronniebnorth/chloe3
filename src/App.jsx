@@ -314,9 +314,8 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
    SCALE WHEEL COMPONENT
 ═══════════════════════════════════════════════════════ */
 
-function ScaleWheel({ active, rootOffset, playing, size = 180 }) {
+function ScaleWheel({ active, rootOffset, playing, size = 180, K }) {
   const cx = size / 2, cy = size / 2, R = size * 0.4, rDot = size * 0.067;
-  const AMB = "#e8922a";
   const notes = CHROMATIC.map((_, i) => (i + rootOffset) % 12);
 
   // points for each of the 12 positions (clockwise from top)
@@ -333,13 +332,13 @@ function ScaleWheel({ active, rootOffset, playing, size = 180 }) {
   return (
     <svg width={size} height={size} style={{ display: "block", margin: "0 auto", transition: "width .1s, height .1s" }}>
       {/* outer ring */}
-      <circle cx={cx} cy={cy} r={R + rDot + 4} fill="none" stroke="#2a4055" strokeWidth="1" />
-      <circle cx={cx} cy={cy} r={R - rDot - 4} fill="none" stroke="#2a4055" strokeWidth="1" />
+      <circle cx={cx} cy={cy} r={R + rDot + 4} fill="none" stroke={K.whBr} strokeWidth="1" />
+      <circle cx={cx} cy={cy} r={R - rDot - 4} fill="none" stroke={K.whBr} strokeWidth="1" />
 
       {/* polygon */}
       {poly && (
         <polygon points={poly}
-          fill={`${AMB}18`} stroke={AMB} strokeWidth="1.5"
+          fill={K.a + "18"} stroke={K.a} strokeWidth="1.5"
           strokeLinejoin="round" />
       )}
 
@@ -353,15 +352,15 @@ function ScaleWheel({ active, rootOffset, playing, size = 180 }) {
         return (
           <g key={i}>
             <circle cx={x} cy={y} r={rDot - 1}
-              fill={isPlaying ? AMB : isActive ? `${AMB}30` : "#0a1219"}
-              stroke={isActive ? AMB : "#1e3040"}
+              fill={isPlaying ? K.a : isActive ? K.a + "30" : K.wh}
+              stroke={isActive ? K.a : K.whBr}
               strokeWidth={isActive ? 1.5 : 1}
             />
             <text x={x} y={y + 0.5} textAnchor="middle" dominantBaseline="middle"
               fontSize={Math.max(6, Math.round(rDot * 0.62))}
               fontFamily="'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace"
               fontWeight={isActive ? 600 : 400}
-              fill={isPlaying ? "#000" : isActive ? AMB : "#5a8499"}>
+              fill={isPlaying ? "#000" : isActive ? K.a : K.whTxt}>
               {label}
             </text>
           </g>
@@ -378,8 +377,7 @@ function ScaleWheel({ active, rootOffset, playing, size = 180 }) {
 const WHITE_KEYS = [0, 2, 4, 5, 7, 9, 11];
 const BLACK_KEYS = [{ s: 1, x: 0.67 }, { s: 3, x: 1.67 }, { s: 6, x: 3.67 }, { s: 8, x: 4.67 }, { s: 10, x: 5.67 }];
 
-function Piano({ active, playing }) {
-  const AMB = "#e8922a";
+function Piano({ active, playing, K }) {
   return (
     <div style={{ position: "relative", height: 72, width: "100%", userSelect: "none" }}>
       {WHITE_KEYS.map((s, i) => {
@@ -388,10 +386,10 @@ function Piano({ active, playing }) {
           <div key={s} style={{
             position: "absolute", left: `${(i / 7) * 100}%`,
             width: `calc(${100 / 7}% - 2px)`, height: "100%",
-            background: pl ? AMB : on ? "rgba(240,160,64,0.55)" : "#c8dde4",
-            border: `1px solid ${on || pl ? "rgba(240,160,64,0.7)" : "#8ab0bc"}`,
+            background: pl ? K.a : on ? K.a + "8c" : K.keyW,
+            border: `1px solid ${on || pl ? K.a + "b3" : K.keyWBr}`,
             borderRadius: "0 0 5px 5px",
-            boxShadow: pl ? `0 0 14px ${AMB}60` : on ? "0 0 5px rgba(232,146,42,0.28)" : "none",
+            boxShadow: pl ? `0 0 14px ${K.a}60` : on ? `0 0 5px ${K.a}47` : "none",
             transition: "background .08s, box-shadow .08s",
           }} />
         );
@@ -402,9 +400,9 @@ function Piano({ active, playing }) {
           <div key={s} style={{
             position: "absolute", left: `calc(${(x / 7) * 100}% - 1px)`,
             width: `${(0.6 / 7) * 100}%`, height: "62%",
-            background: pl ? AMB : on ? "#9a5010" : "#0e161b",
+            background: pl ? K.a : on ? K.a + "88" : K.keyB,
             borderRadius: "0 0 4px 4px", zIndex: 2,
-            boxShadow: pl ? `0 0 10px ${AMB}50` : on ? "0 0 4px rgba(232,146,42,0.35)" : "none",
+            boxShadow: pl ? `0 0 10px ${K.a}50` : on ? `0 0 4px ${K.a}59` : "none",
             transition: "background .08s",
           }} />
         );
@@ -434,10 +432,28 @@ const ARP_RHYTHM_PATS = {
   clave:  [3, 3, 4, 2, 4], // son clave
 };
 
-const K = {
+const DARK_K = {
   bg:  "#060a0e", bg2: "#0a1219", bg3: "#0e1822",
   br:  "#162030", t1:  "#aabec8", t2:  "#3e5868",
   a:   "#e8922a", ag:  "rgba(232,146,42,0.07)",
+  txt: "#c8e4f0", lbl: "#a0c8dc", title: "#d8eaf2",
+  demoB: "#0a1a0a", demoBr: "#1a3a1a", demoT: "#a0c8a0", demoT2: "#7ab87a", demoT3: "#5a8a5a", demoT4: "#3a6a3a",
+  demoEL: "#0f2a0f", demoE1: "#0d220d",
+  wh: "#0a1219", whBr: "#2a4055", whTxt: "#5a8499",
+  keyW: "#c8dde4", keyWBr: "#8ab0bc", keyB: "#0e161b",
+  modB: "#0d1520", modBr: "#2a3f54", modT: "#d8eaf2", modST: "#6a8fa0",
+};
+
+const LIGHT_K = {
+  bg:  "#f0f4f7", bg2: "#ffffff", bg3: "#e4eaef",
+  br:  "#c0cdd6", t1:  "#1a2830", t2:  "#5a7888",
+  a:   "#d07818", ag:  "rgba(208,120,24,0.10)",
+  txt: "#1a2830", lbl: "#3a6070", title: "#0a1820",
+  demoB: "#edf8f0", demoBr: "#9ed4aa", demoT: "#2a7040", demoT2: "#3a8a50", demoT3: "#4a7060", demoT4: "#2a5a40",
+  demoEL: "#b0dcc0", demoE1: "#d8f0e0",
+  wh: "#e8eef4", whBr: "#9ab8cc", whTxt: "#5a7888",
+  keyW: "#f0f4f6", keyWBr: "#a8c4d0", keyB: "#2a3a44",
+  modB: "#ffffff", modBr: "#c0d0dc", modT: "#0a1820", modST: "#4a6878",
 };
 
 const PRESETS = [
@@ -452,10 +468,10 @@ const PRESETS = [
    HELPER COMPONENTS
 ═══════════════════════════════════════════════════════ */
 
-function Sec({ label, children }) {
+function Sec({ label, children, K }) {
   return (
     <div style={{ padding: "10px 14px", borderBottom: `1px solid ${K.br}`, flexShrink: 0 }}>
-      <div style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 3, marginBottom: 7, display: "flex", alignItems: "center" }}>
+      <div style={{ color: K.lbl, fontSize: 8, letterSpacing: 3, marginBottom: 7, display: "flex", alignItems: "center" }}>
         {label}
       </div>
       {children}
@@ -463,8 +479,8 @@ function Sec({ label, children }) {
   );
 }
 
-function Lbl({ children }) {
-  return <div style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 3, marginBottom: 5 }}>{children}</div>;
+function Lbl({ children, K }) {
+  return <div style={{ color: K.lbl, fontSize: 8, letterSpacing: 3, marginBottom: 5 }}>{children}</div>;
 }
 
 
@@ -481,7 +497,7 @@ const HELP_SECTIONS = [
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales — picking which scale to play, root note, rhythm, arpeggio direction, chord voicing, and BPM every 12-16 seconds, with live commentary in the banner. Claude can also leave feature requests (shown in amber with ✦) if it notices something it wishes the app could do — these accumulate in the log. Click ★ Demo and enter your Anthropic API key (get one at console.anthropic.com under API Keys — requires separate billing from Claude.ai subscriptions). Your key is stored in your browser only and never sent anywhere except the Anthropic API. To change or clear your key, click the key icon that appears next to the Demo button when a key is saved." },
 ];
 
-function HelpModal({ onClose }) {
+function HelpModal({ onClose, K }) {
   return (
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)",
@@ -489,24 +505,24 @@ function HelpModal({ onClose }) {
       padding: 24,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: "#0d1520", border: "1px solid #2a3f54",
+        background: K.modB, border: `1px solid ${K.modBr}`,
         borderRadius: 8, width: "100%", maxWidth: 660, maxHeight: "80vh",
         display: "flex", flexDirection: "column", overflow: "hidden",
         boxShadow: "0 24px 64px rgba(0,0,0,0.8)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "14px 20px", borderBottom: "1px solid #2a3f54", flexShrink: 0 }}>
-          <div style={{ fontFamily: "'Trebuchet MS', sans-serif", fontSize: 16, fontWeight: 800, letterSpacing: 3, color: "#d8eaf2" }}>CHLOE</div>
-          <div style={{ color: "#6a8fa0", fontSize: 9, letterSpacing: 4, marginLeft: 10, marginTop: 2 }}>HELP</div>
-          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: "#8cb4c8", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "0 4px" }}>x</button>
+        <div style={{ display: "flex", alignItems: "center", padding: "14px 20px", borderBottom: `1px solid ${K.modBr}`, flexShrink: 0 }}>
+          <div style={{ fontFamily: "'Trebuchet MS', sans-serif", fontSize: 16, fontWeight: 800, letterSpacing: 3, color: K.modT }}>CHLOE</div>
+          <div style={{ color: K.modST, fontSize: 9, letterSpacing: 4, marginLeft: 10, marginTop: 2 }}>HELP</div>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: K.t2, cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "0 4px" }}>x</button>
         </div>
         <div style={{ overflowY: "auto", padding: "16px 20px", flex: 1 }}>
           {HELP_SECTIONS.map(sec => (
             <div key={sec.title} style={{ marginBottom: 22 }}>
-              <div style={{ color: "#f0a040", fontSize: 9, letterSpacing: 3, fontWeight: 600, marginBottom: 6 }}>{sec.title}</div>
-              <div style={{ color: "#c8e4f0", fontSize: 11, lineHeight: 1.8 }}>{sec.body}</div>
+              <div style={{ color: K.a, fontSize: 9, letterSpacing: 3, fontWeight: 600, marginBottom: 6 }}>{sec.title}</div>
+              <div style={{ color: K.txt, fontSize: 11, lineHeight: 1.8 }}>{sec.body}</div>
             </div>
           ))}
-          <div style={{ color: "#3e5868", fontSize: 9, marginTop: 8, borderTop: "1px solid #1a2a38", paddingTop: 12 }}>
+          <div style={{ color: K.t2, fontSize: 9, marginTop: 8, borderTop: `1px solid ${K.br}`, paddingTop: 12 }}>
             Click outside or press Esc to close
           </div>
         </div>
@@ -574,6 +590,7 @@ export default function Chloe() {
   const [demoKeyInput, setDemoKeyInput] = useState(false);
   const [demoLog,     setDemoLog]     = useState([]);
   const [showDemoLog, setShowDemoLog] = useState(false);
+  const [logCopied,   setLogCopied]   = useState(false);
   const [autoOn,      setAutoOn]      = useState(false);
   const [beatOn,      setBeatOn]      = useState(false);
   const [droneVol,    setDroneVol]    = useState(1.0);
@@ -581,12 +598,17 @@ export default function Chloe() {
   const beatStepRef  = useRef(0);
   const beatTimeout  = useRef(null);
   const droneGainRef = useRef(null);
+  const demoLogRef   = useRef([]);
+  useEffect(() => { demoLogRef.current = demoLog; }, [demoLog]);
   const [favs,       setFavs]       = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("chloe2-favs") || "[]")); }
     catch { return new Set(); }
   }); // Set of "fam.id.mi" strings
   const [favsOnly,   setFavsOnly]   = useState(false);
+  const [theme,      setTheme]      = useState(() => localStorage.getItem("chloe-theme") || "dark");
   const dragRef = useRef(null); // { startX, startW }
+
+  const K = theme === "dark" ? DARK_K : LIGHT_K;
 
   // Restore sel from URL once FAMILIES is available
   useEffect(() => {
@@ -892,6 +914,10 @@ export default function Chloe() {
         bpm: stRef.current.bpm,
       };
 
+      const recentHistory = demoLogRef.current.slice(0, 3).map(e =>
+        `ID="${e.famId}.${e.modeIdx}" name="${e.scaleName}" root=${CHROMATIC[e.rootNote]} rhythm=${e.rhythm} bpm=${e.bpm}`
+      );
+
       const { Anthropic } = await import('@anthropic-ai/sdk');
       const client = new Anthropic({ apiKey: demoKey, dangerouslyAllowBrowser: true });
 
@@ -904,7 +930,7 @@ Respond ONLY with valid JSON matching this schema exactly:
 scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. commentary is 1-2 sentences about this scale's character. request is optional — if there is a capability, scale type, instrument, or musical feature you wish the app had, describe it briefly here. Omit the field entirely if you have no request.`,
         messages: [{
           role: "user",
-          content: `Current state: ${JSON.stringify(currentState)}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore. Vary musically — try contrasting brightness, different note counts, interesting rhythms.`
+          content: `Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore. Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played.`
         }]
       });
 
@@ -1150,7 +1176,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
   return (
     <div style={{ background: K.bg, color: K.t1, height: "100vh", fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace", display: "flex", flexDirection: "column", fontSize: 12, overflow: "hidden" }}>
-      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} K={K} />}
       <style>{`
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 3px; }
@@ -1164,7 +1190,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
       {/* ── HEADER ── */}
       <div style={{ background: K.bg2, borderBottom: `1px solid ${K.br}`, padding: "10px 18px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
         <div style={{ userSelect: "none" }}>
-          <div style={{ fontFamily: "'Trebuchet MS', 'Gill Sans', 'Century Gothic', sans-serif", fontSize: 20, fontWeight: 800, letterSpacing: 4, color: "#d8eaf2", lineHeight: 1 }}>CHLOE</div>
+          <div style={{ fontFamily: "'Trebuchet MS', 'Gill Sans', 'Century Gothic', sans-serif", fontSize: 20, fontWeight: 800, letterSpacing: 4, color: K.title, lineHeight: 1 }}>CHLOE</div>
           <div style={{ fontSize: 7, color: K.t2, letterSpacing: 5 }}>SCALE EXPLORER</div>
         </div>
 
@@ -1174,7 +1200,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
           {PRESETS.map(p => (
             <button key={p.l} onClick={() => setFilter(f => f === p.f ? "" : p.f)} style={{
               background: filter === p.f ? K.a : K.bg3,
-              color: filter === p.f ? "#000" : "#c8e4f0",
+              color: filter === p.f ? "#000" : K.txt,
               border: `1px solid ${filter === p.f ? K.a : K.br}`,
               borderRadius: 3, padding: "4px 9px",
               fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
@@ -1184,7 +1210,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
         <button onClick={() => setFavsOnly(p => !p)} style={{
           background: favsOnly ? K.a : K.bg3,
-          color: favsOnly ? "#000" : favs.size > 0 ? K.a : "#c8e4f0",
+          color: favsOnly ? "#000" : favs.size > 0 ? K.a : K.txt,
           border: `1px solid ${favsOnly ? K.a : favs.size > 0 ? K.a + "88" : K.br}`,
           borderRadius: 3, padding: "4px 9px", fontSize: 10,
           cursor: "pointer", fontFamily: "inherit", letterSpacing: 1, flexShrink: 0,
@@ -1207,19 +1233,30 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
         <button onClick={copyURL} style={{
           background: urlCopied ? K.a : K.bg3,
-          color: urlCopied ? "#000" : "#c8e4f0",
+          color: urlCopied ? "#000" : K.txt,
           border: `1px solid ${urlCopied ? K.a : K.br}`,
           borderRadius: 3, padding: "5px 12px",
           fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
           transition: "all .2s", flexShrink: 0,
         }}>{urlCopied ? "✓ copied!" : "⬡ share"}</button>
         <button onClick={() => setShowHelp(true)} style={{
-          background: K.bg3, color: "#c8e4f0",
+          background: K.bg3, color: K.txt,
           border: `1px solid ${K.br}`,
           borderRadius: "50%", width: 26, height: 26,
           fontSize: 12, cursor: "pointer", fontFamily: "inherit",
           flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
         }}>?</button>
+        <button onClick={() => {
+          const next = theme === "dark" ? "light" : "dark";
+          setTheme(next);
+          localStorage.setItem("chloe-theme", next);
+        }} style={{
+          background: K.bg3, color: K.t1,
+          border: `1px solid ${K.br}`,
+          borderRadius: "50%", width: 26, height: 26,
+          fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+          flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+        }}>{theme === "dark" ? "☀" : "☾"}</button>
         <div style={{ color: K.t2, fontSize: 9, letterSpacing: 1, flexShrink: 0, opacity: 0.8 }}>{filtered.length} fam.</div>
       </div>
 
@@ -1232,7 +1269,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
           {INSTRUMENTS.map(inst => (
             <button key={inst} onClick={() => setInstrument(p => p === inst ? null : inst)} style={{
               background: instrument === inst ? K.a : K.bg3,
-              color: instrument === inst ? "#000" : "#c8e4f0",
+              color: instrument === inst ? "#000" : K.txt,
               border: `1px solid ${instrument === inst ? K.a : K.br}`,
               borderRadius: 3, padding: "4px 9px",
               fontSize: 9, cursor: "pointer", fontFamily: "inherit",
@@ -1247,7 +1284,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
           {TIMBRES.map(t => (
             <button key={t} onClick={() => { setTimbre(t); setInstrument(null); }} style={{
               background: !instrument && timbre === t ? K.a : K.bg3,
-              color: !instrument && timbre === t ? "#000" : "#c8e4f0",
+              color: !instrument && timbre === t ? "#000" : K.txt,
               border: `1px solid ${!instrument && timbre === t ? K.a : K.br}`,
               borderRadius: 3, padding: "4px 9px",
               fontSize: 9, cursor: "pointer", fontFamily: "inherit",
@@ -1262,7 +1299,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
           {/* VOL */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
-            <span title="Note volume. Drone volume is independent." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>VOL</span>
+            <span title="Note volume. Drone volume is independent." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>VOL</span>
             <input type="range" min={0} max={1} step={0.01} value={noteVol}
               onChange={e => setNoteVol(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -1272,7 +1309,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
           {/* REV */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
-            <span title="Reverb wet level. Convolution reverb shared by drone and all notes." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>REV</span>
+            <span title="Reverb wet level. Convolution reverb shared by drone and all notes." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>REV</span>
             <input type="range" min={0} max={1} step={0.01} value={reverbAmt}
               onChange={e => setReverbAmt(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -1282,7 +1319,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
           {/* DEL */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
-            <span title="Delay wet level. BPM-synced dotted-eighth delay with feedback." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>DEL</span>
+            <span title="Delay wet level. BPM-synced dotted-eighth delay with feedback." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>DEL</span>
             <input type="range" min={0} max={1} step={0.01} value={delayAmt}
               onChange={e => setDelayAmt(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -1294,7 +1331,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
           {/* TUNE */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
-            <span title="Concert pitch reference. 440 Hz standard, 432 Hz alternative." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>A =</span>
+            <span title="Concert pitch reference. 440 Hz standard, 432 Hz alternative." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>A =</span>
             <input type="range" min={432} max={440} step={1} value={aRef}
               onChange={e => setARef(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -1304,7 +1341,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
           {/* BPM */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
-            <span title="Tempo for arpeggio and melody modes (40-240 BPM)." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
+            <span title="Tempo for arpeggio and melody modes (40-240 BPM)." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
             <input type="range" min={40} max={240} value={bpm}
               onChange={e => setBpm(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -1317,20 +1354,34 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
       </div>
 
       {(demoOn || autoOn) && (
-        <div style={{ background: "#0a1a0a", borderBottom: `1px solid #1a3a1a`, flexShrink: 0 }}>
+        <div style={{ background: K.demoB, borderBottom: `1px solid ${K.demoBr}`, flexShrink: 0 }}>
           <div style={{ padding: "6px 18px", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ color: K.a, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>{autoOn ? "⟲ AUTO" : "★ DEMO"}</span>
             <span style={{ fontSize: 10, flex: 1 }}>
-              <span style={{ color: "#a0c8a0", fontStyle: "italic" }}>{demoComment || "Starting…"}</span>
+              <span style={{ color: K.demoT, fontStyle: "italic" }}>{demoComment || "Starting…"}</span>
               {demoRequest && <span style={{ color: K.a, fontStyle: "italic" }}> · ✦ {demoRequest}</span>}
             </span>
+            {demoLog.length > 0 && (
+              <button onClick={() => {
+                const text = demoLog.slice().reverse().map(e =>
+                  `${e.scaleName} · ${CHROMATIC[e.rootNote]} · ${e.rhythm} · ${e.bpm}bpm · ${e.arpDir}${e.chordVoice !== "off" ? " · " + e.chordVoice : ""}${e.commentary ? "\n  " + e.commentary : ""}${e.request ? "\n  ✦ " + e.request : ""}`
+                ).join("\n\n");
+                navigator.clipboard?.writeText(text).catch(() => {});
+                setLogCopied(true);
+                setTimeout(() => setLogCopied(false), 2000);
+              }} style={{
+                background: "none", border: `1px solid ${K.demoBr}`, color: logCopied ? K.a : K.demoT2,
+                fontSize: 9, padding: "2px 7px", cursor: "pointer", borderRadius: 3, flexShrink: 0,
+                transition: "color .2s",
+              }}>{logCopied ? "✓ copied" : "⎘ copy"}</button>
+            )}
             <button onClick={() => setShowDemoLog(p => !p)} style={{
-              background: "none", border: `1px solid #1a3a1a`, color: "#5a9a5a",
+              background: "none", border: `1px solid ${K.demoBr}`, color: K.demoT2,
               fontSize: 9, padding: "2px 7px", cursor: "pointer", borderRadius: 3, flexShrink: 0,
             }}>{showDemoLog ? "▴ log" : `▾ log${demoLog.length ? ` (${demoLog.length})` : ""}`}</button>
           </div>
           {showDemoLog && (
-            <div style={{ borderTop: `1px solid #1a3a1a`, maxHeight: 440, overflowY: "auto" }}>
+            <div style={{ borderTop: `1px solid ${K.demoBr}`, maxHeight: 440, overflowY: "auto" }}>
               {demoLog.map((e, i) => (
                 <div key={e.ts} onClick={() => {
                   const fam = FAMILIES.find(f => f.id === e.famId);
@@ -1343,13 +1394,13 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                   setArpOn(true);
                 }} style={{
                   padding: "5px 18px", cursor: "pointer", display: "flex", gap: 10, alignItems: "baseline",
-                  borderBottom: `1px solid #0f2a0f`,
-                  background: i === 0 ? "#0d220d" : "transparent",
+                  borderBottom: `1px solid ${K.demoEL}`,
+                  background: i === 0 ? K.demoE1 : "transparent",
                 }}>
                   <span style={{ color: K.a, fontSize: 10, fontWeight: "bold", minWidth: 130 }}>{e.scaleName}</span>
-                  <span style={{ color: "#7ab87a", fontSize: 9 }}>{CHROMATIC[e.rootNote]}</span>
-                  <span style={{ color: "#5a8a5a", fontSize: 9 }}>{e.bpm}bpm {e.rhythm} {e.arpDir} {e.chordVoice !== "off" ? e.chordVoice : ""}</span>
-                  <span style={{ color: "#3a6a3a", fontSize: 9, fontStyle: "italic", flex: 1 }}>{e.commentary}</span>
+                  <span style={{ color: K.demoT2, fontSize: 9 }}>{CHROMATIC[e.rootNote]}</span>
+                  <span style={{ color: K.demoT3, fontSize: 9 }}>{e.bpm}bpm {e.rhythm} {e.arpDir} {e.chordVoice !== "off" ? e.chordVoice : ""}</span>
+                  <span style={{ color: K.demoT4, fontSize: 9, fontStyle: "italic", flex: 1 }}>{e.commentary}</span>
                   {e.request && <span style={{ color: K.a, fontSize: 9, fontStyle: "italic", opacity: 0.8 }}>✦ {e.request}</span>}
                 </div>
               ))}
@@ -1375,16 +1426,16 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                   position: "sticky", top: 0, zIndex: 10, userSelect: "none",
                 }}>
                   <span style={{ color: K.a, fontSize: 9, letterSpacing: 3, fontWeight: 600 }}>{GRP_NAME[n].toUpperCase()}</span>
-                  <span style={{ color: "#c8e4f0", fontSize: 9 }}>{fams.length} scale{fams.length !== 1 ? "s" : ""}</span>
-                  <span style={{ marginLeft: "auto", color: "#c8e4f0", fontSize: 11 }}>{exp ? "▾" : "▸"}</span>
+                  <span style={{ color: K.txt, fontSize: 9 }}>{fams.length} scale{fams.length !== 1 ? "s" : ""}</span>
+                  <span style={{ marginLeft: "auto", color: K.txt, fontSize: 11 }}>{exp ? "▾" : "▸"}</span>
                 </div>
 
                 {exp && fams.map(fam => (
                   <div key={fam.id}>
                     {/* Family label */}
                     <div style={{ padding: "2px 16px", background: K.bg3, borderBottom: `1px solid ${K.br}`, display: "flex", gap: 10, alignItems: "center" }}>
-                      <span style={{ color: "#c8e4f0", fontSize: 9, letterSpacing: 2 }}>{fam.id}</span>
-                      <span style={{ color: "#8ab4c8", fontSize: 9 }}>{fam.modes.length}m</span>
+                      <span style={{ color: K.txt, fontSize: 9, letterSpacing: 2 }}>{fam.id}</span>
+                      <span style={{ color: K.t2, fontSize: 9 }}>{fam.modes.length}m</span>
                     </div>
 
                     {/* Modes */}
@@ -1413,15 +1464,15 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                           <button onClick={e => toggleFav(e, favId)} style={{
                             background: "none", border: "none", padding: "0 4px",
                             cursor: "pointer", fontSize: 14, lineHeight: 1, flexShrink: 0,
-                            color: isFav ? K.a : "#7a9fb8",
+                            color: isFav ? K.a : K.t2,
                             transition: "color .15s",
                           }}>{isFav ? "★" : "☆"}</button>
-                          <span style={{ color: isSel ? K.a : "#c8e4f0", fontSize: 10, letterSpacing: 1.5, fontWeight: isSel ? 500 : 300, minWidth: 130, fontFamily: "inherit" }}>
+                          <span style={{ color: isSel ? K.a : K.txt, fontSize: 10, letterSpacing: 1.5, fontWeight: isSel ? 500 : 300, minWidth: 130, fontFamily: "inherit" }}>
                             {toBin(mode)}
                           </span>
-                          <span style={{ color: "#6a9fb5", fontSize: 9, minWidth: 40 }}>({mode})</span>
+                          <span style={{ color: K.t2, fontSize: 9, minWidth: 40 }}>({mode})</span>
                           {name && (
-                            <span style={{ color: isSel ? K.a : "#7ab8cc", fontSize: 10 }}>{name}</span>
+                            <span style={{ color: isSel ? K.a : K.t1, fontSize: 10 }}>{name}</span>
                           )}
                         </div>
                       );
@@ -1455,12 +1506,12 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
           />
 
           {/* Root Note */}
-          <Sec label="ROOT NOTE">
+          <Sec label="ROOT NOTE" K={K}>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(32px, 1fr))`, gap: 3 }}>
               {ROOTS.map((r, i) => (
                 <button key={i} onClick={() => { wake(); setRootIdx(i); }} style={{
                   background: rootIdx === i ? K.a : K.bg3,
-                  color: rootIdx === i ? "#000" : "#c8e4f0",
+                  color: rootIdx === i ? "#000" : K.txt,
                   border: `1px solid ${rootIdx === i ? K.a : K.br}`,
                   borderRadius: 3, padding: "4px 0",
                   fontSize: 10, cursor: "pointer", fontFamily: "inherit",
@@ -1473,7 +1524,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
 
 
           {/* Playback */}
-          <Sec label="PLAYBACK">
+          <Sec label="PLAYBACK" K={K}>
             {/* Drone octave */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
               <span title="Drop the drone 1-3 octaves for a deep bass foundation." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE OCT</span>
@@ -1481,7 +1532,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                 {[0, -12, -24, -36].map(o => (
                   <button key={o} onClick={() => setDroneOct(o)} style={{
                     background: droneOct === o ? K.a : K.bg3,
-                    color: droneOct === o ? "#000" : "#c8e4f0",
+                    color: droneOct === o ? "#000" : K.txt,
                     border: `1px solid ${droneOct === o ? K.a : K.br}`,
                     borderRadius: 3, padding: "3px 7px",
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
@@ -1517,7 +1568,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
               ].map(b => (
                 <button key={b.label} onClick={b.onClick} disabled={b.disabled} style={{
                   flex: 1, background: b.on ? K.a : K.bg3,
-                  color: b.on ? "#000" : b.disabled ? "#c8e4f028" : "#c8e4f0",
+                  color: b.on ? "#000" : b.disabled ? K.txt + "28" : K.txt,
                   border: `1px solid ${b.on ? K.a : K.br}`,
                   borderRadius: 3, padding: "7px 4px",
                   fontSize: 10, cursor: b.disabled ? "default" : "pointer",
@@ -1580,7 +1631,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                   }
                 }} style={{
                   flex: 1, background: melMode === opt.v ? K.bg3 : "transparent",
-                  color: melMode === opt.v ? K.a : "#c8e4f0",
+                  color: melMode === opt.v ? K.a : K.txt,
                   border: "none",
                   borderRight: opt.v ? "none" : `1px solid ${K.br}`,
                   padding: "5px 4px", fontSize: 9, cursor: "pointer",
@@ -1592,7 +1643,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
             </div>
             {/* Rhythm — only applies in arpeggio mode */}
             <div style={{ marginBottom: 8, opacity: melMode ? 0.35 : 1, transition: "opacity .2s" }}>
-              <div title="Arpeggio rhythm pattern. Even = straight quarters. Swing = long-short. Gallop = short-short-long. Waltz = 3/4 feel. Clave = son clave." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>RHYTHM</div>
+              <div title="Arpeggio rhythm pattern. Even = straight quarters. Swing = long-short. Gallop = short-short-long. Waltz = 3/4 feel. Clave = son clave." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>RHYTHM</div>
               <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                 {[
                   { l: "even",   v: "even" },
@@ -1603,7 +1654,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                 ].map(opt => (
                   <button key={opt.v} onClick={() => setRhythm(opt.v)} style={{
                     background: rhythm === opt.v ? K.a : K.bg3,
-                    color: rhythm === opt.v ? "#000" : "#c8e4f0",
+                    color: rhythm === opt.v ? "#000" : K.txt,
                     border: `1px solid ${rhythm === opt.v ? K.a : K.br}`,
                     borderRadius: 3, padding: "3px 7px",
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
@@ -1613,7 +1664,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
             </div>
             {/* Chord voicing */}
             <div style={{ marginBottom: 2 }}>
-              <div title="Chord voicing: off, power (root+5th), sus2, triad, 7th, all (whole scale). Notes strum with a slight delay." style={{ color: "#a0c8dc", fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>CHORD</div>
+              <div title="Chord voicing: off, power (root+5th), sus2, triad, 7th, all (whole scale). Notes strum with a slight delay." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>CHORD</div>
               <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                 {[
                   { l: "off",   v: "off" },
@@ -1626,7 +1677,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                 ].map(opt => (
                   <button key={opt.v} onClick={() => setChordVoice(opt.v)} style={{
                     background: chordVoice === opt.v ? K.a : K.bg3,
-                    color: chordVoice === opt.v ? "#000" : "#c8e4f0",
+                    color: chordVoice === opt.v ? "#000" : K.txt,
                     border: `1px solid ${chordVoice === opt.v ? K.a : K.br}`,
                     borderRadius: 3, padding: "4px 7px",
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
@@ -1651,20 +1702,20 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                   {ROOTS[rootIdx]} · {selNotes.join("  ")}
                 </div>
 
-                <Lbl>INTERVALS</Lbl>
+                <Lbl K={K}>INTERVALS</Lbl>
                 <div style={{ color: K.a, fontSize: 14, letterSpacing: 3, fontWeight: 500, marginBottom: 14 }}>
                   {selIvs.join(" - ")}
                 </div>
 
-                <Lbl>BINARY PATTERN</Lbl>
+                <Lbl K={K}>BINARY PATTERN</Lbl>
                 <div style={{ color: K.t2, fontSize: 10, letterSpacing: 2, marginBottom: 2 }}>{toBin(sel.pattern)}</div>
                 <div style={{ color: K.t2, fontSize: 9, opacity: 0.6, marginBottom: 14 }}>decimal {sel.pattern}</div>
 
-                <Lbl>SCALE SHAPE</Lbl>
-                <ScaleWheel active={selSemis} rootOffset={rootIdx} playing={playing} size={Math.min(sidebarW - 30, 320)} />
+                <Lbl K={K}>SCALE SHAPE</Lbl>
+                <ScaleWheel active={selSemis} rootOffset={rootIdx} playing={playing} size={Math.min(sidebarW - 30, 320)} K={K} />
 
-                <Lbl style={{ marginTop: 14 }}>KEYBOARD</Lbl>
-                <Piano active={selSemis} playing={playing} />
+                <Lbl style={{ marginTop: 14 }} K={K}>KEYBOARD</Lbl>
+                <Piano active={selSemis} playing={playing} K={K} />
                 <div style={{ display: "flex", marginTop: 5, marginBottom: 16 }}>
                   {CHROMATIC.map((n, i) => (
                     <span key={i} style={{ color: selSemis.has(i) ? K.a : K.t2 + "35", fontSize: 7, width: `${100 / 12}%`, textAlign: "center" }}>{n}</span>
@@ -1672,7 +1723,7 @@ scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=
                 </div>
 
                 {/* Octave reference */}
-                <Lbl>ALL OCTAVES</Lbl>
+                <Lbl K={K}>ALL OCTAVES</Lbl>
                 <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                   {selNotes.map((n, i) => (
                     <span key={i} style={{ background: K.bg3, border: `1px solid ${K.br}`, color: K.a, padding: "3px 7px", borderRadius: 3, fontSize: 10 }}>{n}</span>
