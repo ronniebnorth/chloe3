@@ -2061,10 +2061,7 @@ The app already has: drone (sustained root note, independently volume-controlled
                 <div style={{ color: K.t2, fontSize: 10, letterSpacing: 2, marginBottom: 2 }}>{toBin(sel.pattern)}</div>
                 <div style={{ color: K.t2, fontSize: 9, opacity: 0.6, marginBottom: 14 }}>decimal {sel.pattern}</div>
 
-                <Lbl K={K}>SCALE SHAPE</Lbl>
-                <ScaleWheel active={selSemis} rootOffset={rootIdx} playing={playing} size={Math.min(sidebarW - 30, 320)} K={K} />
-
-                <Lbl style={{ marginTop: 14 }} K={K}>KEYBOARD</Lbl>
+                <Lbl K={K}>KEYBOARD</Lbl>
                 <Piano active={selSemis} playing={playing} K={K} />
                 <div style={{ display: "flex", marginTop: 5, marginBottom: 16 }}>
                   {CHROMATIC.map((n, i) => (
