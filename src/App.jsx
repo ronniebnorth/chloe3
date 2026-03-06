@@ -537,7 +537,7 @@ function HelpModal({ onClose, K }) {
    VISUALIZER
 ═══════════════════════════════════════════════════════ */
 
-function Visualizer({ analyserRef, playing, rootIdx, K }) {
+function Visualizer({ analyserRef, playing, rootIdx, active, K }) {
   const canvasRef  = useRef(null);
   const rafRef     = useRef(null);
   const KRef       = useRef(K);
@@ -546,6 +546,8 @@ function Visualizer({ analyserRef, playing, rootIdx, K }) {
   useEffect(() => { playingRef.current = playing; }, [playing]);
   const rootIdxRef = useRef(rootIdx);
   useEffect(() => { rootIdxRef.current = rootIdx; }, [rootIdx]);
+  const activeRef  = useRef(active);
+  useEffect(() => { activeRef.current = active; }, [active]);
   const hueRef     = useRef(0); // smoothly lerped current hue
 
   // Draw loop
@@ -559,7 +561,8 @@ function Visualizer({ analyserRef, playing, rootIdx, K }) {
       rafRef.current = requestAnimationFrame(draw);
       const W = canvas.width, H = canvas.height;
       if (!W || !H) return;
-      const { whBr } = KRef.current;
+      const Kc = KRef.current;
+      const { whBr } = Kc;
 
       ctx.clearRect(0, 0, W, H);
       const cx = W / 2, cy = H / 2;
@@ -598,28 +601,105 @@ function Visualizer({ analyserRef, playing, rootIdx, K }) {
       ctx.stroke();
 
       const analyser = analyserRef.current?.node;
-      if (!analyser) return;
-      analyser.getByteTimeDomainData(data);
-      const N = data.length;
+      if (analyser) {
+        analyser.getByteTimeDomainData(data);
+        const N = data.length;
 
-      // Waveform ring
-      ctx.beginPath();
-      for (let i = 0; i <= N; i++) {
-        const idx = i % N;
-        const v = (data[idx] / 128.0) - 1.0;
-        const r = R + v * R * 0.55;
-        const angle = (idx / N) * Math.PI * 2 - Math.PI / 2;
-        const x = cx + r * Math.cos(angle);
-        const y = cy + r * Math.sin(angle);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        // Waveform ring
+        ctx.beginPath();
+        for (let i = 0; i <= N; i++) {
+          const idx = i % N;
+          const v = (data[idx] / 128.0) - 1.0;
+          const r = R + v * R * 0.55;
+          const angle = (idx / N) * Math.PI * 2 - Math.PI / 2;
+          const x = cx + r * Math.cos(angle);
+          const y = cy + r * Math.sin(angle);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = noteColor;
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = noteColor;
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
       }
-      ctx.closePath();
-      ctx.strokeStyle = noteColor;
-      ctx.lineWidth = 1.5;
-      ctx.shadowColor = noteColor;
-      ctx.shadowBlur = 12;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+
+      // Scale wheel
+      const act = activeRef.current;
+      if (act) {
+        const wheelR = R * 0.60;
+        const dotR   = Math.max(5, wheelR * 0.155);
+        const rootOff = rootIdxRef.current ?? 0;
+
+        // Dark background fill
+        ctx.beginPath();
+        ctx.arc(cx, cy, wheelR + dotR + 6, 0, Math.PI * 2);
+        ctx.fillStyle = Kc.bg;
+        ctx.globalAlpha = 0.92;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Outer ring
+        ctx.beginPath();
+        ctx.arc(cx, cy, wheelR + dotR + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = whBr;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Inner ring
+        ctx.beginPath();
+        ctx.arc(cx, cy, wheelR - dotR - 4, 0, Math.PI * 2);
+        ctx.strokeStyle = whBr;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Polygon
+        const activePts = [];
+        for (let i = 0; i < 12; i++) {
+          if (act.has(i)) {
+            const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+            activePts.push([cx + wheelR * Math.cos(a), cy + wheelR * Math.sin(a)]);
+          }
+        }
+        if (activePts.length >= 2) {
+          ctx.beginPath();
+          ctx.moveTo(activePts[0][0], activePts[0][1]);
+          for (let i = 1; i < activePts.length; i++) ctx.lineTo(activePts[i][0], activePts[i][1]);
+          ctx.closePath();
+          ctx.fillStyle = Kc.a + "18";
+          ctx.fill();
+          ctx.strokeStyle = Kc.a;
+          ctx.lineWidth = 1.5;
+          ctx.lineJoin = "round";
+          ctx.stroke();
+        }
+
+        // Dots + labels
+        const fontSize = Math.max(7, Math.round(dotR * 0.75));
+        ctx.font = `500 ${fontSize}px 'JetBrains Mono', monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+          const x = cx + wheelR * Math.cos(a);
+          const y = cy + wheelR * Math.sin(a);
+          const isActive = act.has(i);
+          const isPlaying = playingRef.current === i;
+          const label = CHROMATIC[(rootOff + i) % 12];
+
+          ctx.beginPath();
+          ctx.arc(x, y, dotR - 1, 0, Math.PI * 2);
+          ctx.fillStyle = isPlaying ? Kc.a : isActive ? Kc.a + "30" : Kc.wh;
+          ctx.fill();
+          ctx.strokeStyle = isActive ? Kc.a : whBr;
+          ctx.lineWidth = isActive ? 1.5 : 1;
+          ctx.stroke();
+
+          ctx.fillStyle = isPlaying ? "#000" : isActive ? Kc.a : Kc.whTxt;
+          ctx.fillText(label, x, y + 0.5);
+        }
+      }
     };
 
     canvas.width  = canvas.offsetWidth;
@@ -1753,7 +1833,7 @@ The app already has: drone (sustained root note, independently volume-controlled
           </div>
           <div style={{ flex: 1, overflow: "hidden" }}>
             {centerTab === "viz"
-              ? <Visualizer analyserRef={analyserRef} playing={playing} rootIdx={rootIdx} K={K} />
+              ? <Visualizer analyserRef={analyserRef} playing={playing} rootIdx={rootIdx} active={selSemis} K={K} />
               : <ScaleInfo sel={sel} selName={selName} selIvs={selIvs} selNotes={selNotes} demoKey={demoKey} K={K} />
             }
           </div>
