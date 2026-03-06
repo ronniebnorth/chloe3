@@ -1369,6 +1369,13 @@ The app already has: drone (sustained root note, independently volume-controlled
           )}
         </div>
 
+        <a href="https://ko-fi.com/ronnienorth" target="_blank" rel="noreferrer" style={{
+          background: K.bg3, color: K.txt,
+          border: `1px solid ${K.br}`,
+          borderRadius: 3, padding: "5px 12px",
+          fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
+          flexShrink: 0, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5,
+        }}>☕ tip</a>
         <button onClick={copyURL} style={{
           background: urlCopied ? K.a : K.bg3,
           color: urlCopied ? "#000" : K.txt,
