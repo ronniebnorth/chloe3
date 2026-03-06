@@ -780,10 +780,10 @@
       but actively thinking about contrast, variety, and musical interest as it moves between scales.
     </p>
     <p>
-      Each turn, Claude receives the current state (scale, root, rhythm, BPM), the last three
-      scales it played, and the full catalogue of named scales with their interval patterns. The
-      history lets it contrast musically — varying brightness, note density, and feel rather than
-      wandering randomly. It returns a JSON choice including a short piece of commentary on the
+      Each turn, Claude receives the current state (scale, root, rhythm, BPM), the full history
+      of scales played this session (up to 20), and the full catalogue of named scales with their
+      interval patterns. The history lets it contrast musically — varying brightness, note density,
+      and feel, and avoiding scales it has recently explored. It returns a JSON choice including a short piece of commentary on the
       scale's character, which appears in the banner.
     </p>
 

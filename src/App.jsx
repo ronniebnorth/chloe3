@@ -914,7 +914,7 @@ export default function Chloe() {
         bpm: stRef.current.bpm,
       };
 
-      const recentHistory = demoLogRef.current.slice(0, 3).map(e =>
+      const recentHistory = demoLogRef.current.slice(0, 20).map(e =>
         `ID="${e.famId}.${e.modeIdx}" name="${e.scaleName}" root=${CHROMATIC[e.rootNote]} rhythm=${e.rhythm} bpm=${e.bpm}`
       );
 
