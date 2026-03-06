@@ -805,7 +805,7 @@ function ScaleInfo({ sel, selName, selIvs, selNotes, demoKey, K }) {
         </div>
       ) : !demoKey ? (
         <div style={{ color: K.t2, fontSize: 10, fontStyle: "italic" }}>
-          Enter an API key via ★ Demo to enable AI-generated scale info.
+          Enter an API key via ★ Claude to enable AI-generated scale info.
         </div>
       ) : null}
     </div>
