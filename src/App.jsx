@@ -1375,7 +1375,7 @@ The app already has: drone (sustained root note, independently volume-controlled
           borderRadius: 3, padding: "5px 12px",
           fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
           flexShrink: 0, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5,
-        }}><span style={{color:"#e03030"}}>♥</span> tip</a>
+        }}><span style={{color:"#e03030", fontSize:16, lineHeight:1}}>♥</span> tip</a>
         <button onClick={copyURL} style={{
           background: urlCopied ? K.a : K.bg3,
           color: urlCopied ? "#000" : K.txt,
