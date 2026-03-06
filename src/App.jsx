@@ -877,6 +877,7 @@ export default function Chloe() {
   const [beatOn,      setBeatOn]      = useState(false);
   const [droneVol,    setDroneVol]    = useState(1.0);
   const [droneTone,   setDroneTone]   = useState(0.5);
+  const [droneWave,   setDroneWave]   = useState("sine");
   const [beatVol,     setBeatVol]     = useState(1.0);
   const beatStepRef  = useRef(0);
   const beatTimeout  = useRef(null);
@@ -986,25 +987,17 @@ export default function Chloe() {
     const osc = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
     f.type = "lowpass"; f.frequency.value = 200 * Math.pow(40, droneTone);
     droneFilterRef.current = f;
-    osc.type = instrument ? "sine" : timbre;
+    osc.type = droneWave;
     const dFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
     osc.frequency.value = dFreq;
-    g.gain.value = instrument === "space" ? 0.03 : 0.05;
+    g.gain.value = 0.05;
     const volGain = ac.createGain(); volGain.gain.value = droneVol;
     droneGainRef.current = volGain;
     const droneOut = (node) => { node.connect(volGain); volGain.connect(ac.destination); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node); };
-    if (instrument === "space") {
-      const o2 = ac.createOscillator(); o2.type = "sine";
-      o2.frequency.value = dFreq; o2.detune.value = 5;
-      o2.connect(g); o2.start();
-      osc.connect(g); g.connect(f); droneOut(f);
-      osc.start();
-      return () => { try { osc.stop(); o2.stop(); } catch(e){} droneGainRef.current = null; droneFilterRef.current = null; };
-    }
     osc.connect(g); g.connect(f); droneOut(f);
     osc.start();
     return () => { try { osc.stop(); } catch (e) {} droneGainRef.current = null; droneFilterRef.current = null; };
-  }, [droneOn, rootIdx, droneOct, aRef, timbre, instrument, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
+  }, [droneOn, rootIdx, droneOct, droneWave, aRef, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
 
   // Keep drone volume in sync with droneVol slider
   useEffect(() => {
@@ -1916,6 +1909,19 @@ The app already has: drone (sustained root note, independently volume-controlled
                 style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
               />
               <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(droneTone * 100)}</span>
+            </div>
+            {/* Drone wave */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="Drone waveform — sine is pure, triangle is slightly brighter, square and sawtooth are richer/buzzier." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE WAVE</span>
+              <select value={droneWave} onChange={e => setDroneWave(e.target.value)} style={{
+                marginLeft: "auto", background: K.bg3, color: K.txt, border: `1px solid ${K.br}`,
+                borderRadius: 3, padding: "3px 6px", fontSize: 9, fontFamily: "inherit",
+                cursor: "pointer", letterSpacing: 1,
+              }}>
+                {["sine", "triangle", "square", "sawtooth"].map(w => (
+                  <option key={w} value={w}>{w}</option>
+                ))}
+              </select>
             </div>
             <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
               {[
