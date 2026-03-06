@@ -11,6 +11,7 @@ An interactive musical scale explorer. Browse hundreds of scales organized by in
 - Reverb, delay, and drone controls
 - Piano keyboard and scale wheel visualizations
 - AI demo mode — Claude improvises through scales with commentary
+- AI-generated scale info — mood, history, and famous uses for each named scale
 - Audio visualizer with chromatic note colors
 - Light and dark themes
 

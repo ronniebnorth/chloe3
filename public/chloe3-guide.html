@@ -396,6 +396,8 @@
     <div class="cover-pill">melody</div>
     <div class="cover-pill">chords</div>
     <div class="cover-pill">AI demo</div>
+    <div class="cover-pill">visualizer</div>
+    <div class="cover-pill">info</div>
   </div>
   <div class="cover-footer">ronniebnorth.github.io/chloe3</div>
 </div>
@@ -565,6 +567,31 @@
     <p>
       You can also star individual scales with the ★ button and use the favs toggle in the header
       to filter down to your saved favourites across sessions.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-number">2.3</div>
+    <div class="section-title">Audio Visualiser</div>
+    <p>
+      The centre panel shows a real-time circular waveform that responds to every note played.
+      The waveform ring pulses outward with amplitude and its colour smoothly tracks the chromatic
+      pitch of the current note — each of the 12 pitch classes has a distinct hue, lerping to the
+      new colour each time a note changes. A faint outer ring shows the full chromatic colour wheel
+      for reference.
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-number">2.4</div>
+    <div class="section-title">Scale Info Panel</div>
+    <p>
+      The two tabs above the centre panel (<strong>◎ visualizer</strong> / <strong>ℹ info</strong>)
+      switch between the visualiser and a scale information view. The info panel always shows the
+      scale's notes, interval pattern, and decimal value. For named scales, if you have entered a
+      Demo API key, it fetches a short AI-generated guide from Claude covering the scale's mood and
+      character, its origins, and notable songs or genres that use it. Results are cached for the
+      session so switching tabs is instant after the first load.
     </p>
   </div>
 </div>
@@ -815,6 +842,8 @@
       Both Auto and Demo modes maintain a log of recent scale choices, accessible via the
       <strong>▾ log</strong> button in the banner. Each entry shows the scale name, root note,
       BPM, rhythm, and commentary. Clicking any entry replays that exact combination.
+      The <strong>⎘ copy</strong> button exports the full log as plain text to your clipboard —
+      useful for noting down interesting scales Claude discovered during a session.
     </p>
   </div>
 </div>
@@ -862,6 +891,9 @@
       <tr><td>Share what you're hearing</td><td>Click Share — URL is copied to clipboard</td></tr>
       <tr><td>Let AI explore for you</td><td>Click ★ Claude, enter Anthropic API key</td></tr>
       <tr><td>Add a beat</td><td>Click ♩ Beat — follows the current Rhythm setting</td></tr>
+      <tr><td>Toggle light/dark theme</td><td>Click ☀/☾ in the top-right corner of the header</td></tr>
+      <tr><td>See scale info</td><td>Click a scale, then switch to the ℹ info tab in the centre panel</td></tr>
+      <tr><td>Export demo log</td><td>Click ⎘ copy in the demo banner</td></tr>
     </table>
   </div>
 </div>
