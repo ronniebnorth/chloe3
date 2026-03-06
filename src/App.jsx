@@ -874,6 +874,9 @@ export default function Chloe() {
   const [showDemoLog, setShowDemoLog] = useState(false);
   const [logCopied,   setLogCopied]   = useState(false);
   const [autoOn,      setAutoOn]      = useState(false);
+  const [loopOn,      setLoopOn]      = useState(false);
+  const loopOnRef = useRef(false);
+  useEffect(() => { loopOnRef.current = loopOn; }, [loopOn]);
   const [beatOn,      setBeatOn]      = useState(false);
   const [droneVol,    setDroneVol]    = useState(1.0);
   const [droneTone,   setDroneTone]   = useState(0.5);
@@ -1189,6 +1192,7 @@ export default function Chloe() {
     let timeout = null;
 
     const callClaude = async () => {
+      if (loopOnRef.current) { timeout = setTimeout(callClaude, 1000); return; }
       // Build scale catalogue from KNOWN scales
       const catalogue = [];
       for (const fam of FAMILIES) {
@@ -1304,6 +1308,7 @@ The app already has: drone (sustained root note, independently volume-controlled
 
     const pickNext = () => {
       if (cancelled) return;
+      if (loopOnRef.current) { timeout = setTimeout(pickNext, 1000); return; }
       const { sel: cur } = stRef.current;
 
       const options = catalogue.filter(e => !cur || e.fam.modes[e.modeIdx] !== cur.pattern);
@@ -1929,12 +1934,12 @@ The app already has: drone (sustained root note, independently volume-controlled
                 { label: arpOn && !demoOn && !autoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn && !autoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
                 { label: autoOn ? "⟲ Stop" : "⟲ Auto", on: autoOn, onClick: () => {
                   wake();
-                  if (autoOn) { setAutoOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); }
+                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); }
                   else { setDemoOn(false); setAutoOn(true); }
                 }},
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
-                  if (demoOn) { setDemoOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); }
+                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
                 { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
@@ -1950,6 +1955,20 @@ The app already has: drone (sustained root note, independently volume-controlled
                 }}>{b.label}</button>
               ))}
             </div>
+            {/* Loop button — visible when Demo or Auto is running */}
+            {(demoOn || autoOn) && (
+              <div style={{ display: "flex", marginBottom: 6 }}>
+                <button onClick={() => setLoopOn(p => !p)} style={{
+                  flex: 1, background: loopOn ? K.a : K.bg3,
+                  color: loopOn ? "#000" : K.txt,
+                  border: `1px solid ${loopOn ? K.a : K.br}`,
+                  borderRadius: 3, padding: "7px 4px",
+                  fontSize: 10, cursor: "pointer",
+                  fontFamily: "inherit", fontWeight: loopOn ? 600 : 400,
+                  transition: "all .15s",
+                }}>⟳ {loopOn ? "Looping — click to advance" : "Loop this scale"}</button>
+              </div>
+            )}
             {/* Beat vol */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, marginBottom: 2 }}>
               <span title="Beat volume." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT VOL</span>
