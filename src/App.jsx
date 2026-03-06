@@ -522,8 +522,9 @@ function HelpModal({ onClose, K }) {
               <div style={{ color: K.txt, fontSize: 11, lineHeight: 1.8 }}>{sec.body}</div>
             </div>
           ))}
-          <div style={{ color: K.t2, fontSize: 9, marginTop: 8, borderTop: `1px solid ${K.br}`, paddingTop: 12 }}>
-            Click outside or press Esc to close
+          <div style={{ color: K.t2, fontSize: 9, marginTop: 8, borderTop: `1px solid ${K.br}`, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>Click outside or press Esc to close</span>
+            <a href="chloe3-guide.html" target="_blank" rel="noreferrer" style={{ color: K.a, textDecoration: "none", letterSpacing: 1 }}>full guide ↗</a>
           </div>
         </div>
       </div>
