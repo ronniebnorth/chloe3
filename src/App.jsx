@@ -644,6 +644,95 @@ function Visualizer({ analyserRef, playing, rootIdx, K }) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   SCALE INFO PANEL
+═══════════════════════════════════════════════════════ */
+
+function ScaleInfo({ sel, selName, selIvs, selNotes, demoKey, K }) {
+  const [aiText,  setAiText]  = useState(null);
+  const [loading, setLoading] = useState(false);
+  const cacheRef = useRef({});
+
+  useEffect(() => {
+    if (!sel || !selName) { setAiText(null); setLoading(false); return; }
+    const key = sel.pattern;
+    if (cacheRef.current[key]) { setAiText(cacheRef.current[key]); setLoading(false); return; }
+    if (!demoKey) { setAiText(null); setLoading(false); return; }
+
+    setLoading(true);
+    setAiText(null);
+    let cancelled = false;
+
+    (async () => {
+      const { Anthropic } = await import("@anthropic-ai/sdk");
+      const client = new Anthropic({ apiKey: demoKey, dangerouslyAllowBrowser: true });
+      const msg = await client.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 400,
+        system: "You are a music theory expert. Write concisely for a musician who wants to understand a scale's character and practical use. Each paragraph should be 1-2 sentences.",
+        messages: [{ role: "user", content: `Give me a short musical guide to the ${selName} scale. In 3 short paragraphs cover: (1) its mood and character, (2) its origins and history, (3) notable songs, genres, or composers associated with it. Be specific with examples. Keep it brief and engaging.` }],
+      });
+      if (cancelled) return;
+      const result = msg.content[0].text.trim();
+      cacheRef.current[key] = result;
+      setAiText(result);
+      setLoading(false);
+    })().catch(err => {
+      if (!cancelled) { setAiText(`Error: ${err.message}`); setLoading(false); }
+    });
+
+    return () => { cancelled = true; };
+  }, [sel?.pattern, selName, demoKey]);
+
+  const noteCount = selNotes ? selNotes.length : 0;
+  const grpName = GRP_NAME[noteCount] || "";
+  const ivStr = selIvs ? selIvs.join("–") : "";
+
+  if (!sel) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: K.t2, fontSize: 11 }}>
+      Select a scale to see information
+    </div>
+  );
+
+  return (
+    <div style={{ padding: "28px 32px", overflowY: "auto", height: "100%" }}>
+      <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: 4, color: selName ? K.a : K.t1, marginBottom: 4 }}>
+        {selName || "Unnamed Scale"}
+      </div>
+      <div style={{ fontSize: 9, color: K.t2, letterSpacing: 3, marginBottom: 24 }}>
+        {grpName.toUpperCase()}{sel.id ? ` · ${sel.id}` : ""}
+      </div>
+
+      <div style={{ background: K.bg3, border: `1px solid ${K.br}`, borderRadius: 6, padding: "14px 18px", marginBottom: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "max-content 1fr", gap: "8px 20px", fontSize: 10 }}>
+          <span style={{ color: K.lbl, letterSpacing: 2, fontSize: 9 }}>NOTES</span>
+          <span style={{ color: K.txt, letterSpacing: 3 }}>{selNotes?.join("  ")}</span>
+          <span style={{ color: K.lbl, letterSpacing: 2, fontSize: 9 }}>INTERVALS</span>
+          <span style={{ color: K.txt }}>{ivStr}</span>
+          <span style={{ color: K.lbl, letterSpacing: 2, fontSize: 9 }}>DECIMAL</span>
+          <span style={{ color: K.t2 }}>{sel.pattern}</span>
+        </div>
+      </div>
+
+      {!selName ? (
+        <div style={{ color: K.t2, fontSize: 10, fontStyle: "italic" }}>This scale doesn't have a name in the catalogue.</div>
+      ) : loading ? (
+        <div style={{ color: K.t2, fontSize: 10, fontStyle: "italic" }}>Loading…</div>
+      ) : aiText ? (
+        <div style={{ fontSize: 11, lineHeight: 1.9, color: K.txt }}>
+          {aiText.split(/\n\n+/).map((para, i) => (
+            <p key={i} style={{ marginBottom: 16, marginTop: 0 }}>{para}</p>
+          ))}
+        </div>
+      ) : !demoKey ? (
+        <div style={{ color: K.t2, fontSize: 10, fontStyle: "italic" }}>
+          Enter an API key via ★ Demo to enable AI-generated scale info.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    MAIN APP
 ═══════════════════════════════════════════════════════ */
 
@@ -728,6 +817,7 @@ export default function Chloe() {
   }); // Set of "fam.id.mi" strings
   const [favsOnly,   setFavsOnly]   = useState(false);
   const [theme,      setTheme]      = useState(() => localStorage.getItem("chloe-theme") || "dark");
+  const [centerTab,  setCenterTab]  = useState("viz");
   const dragRef = useRef(null); // { startX, startW }
 
   const K = theme === "dark" ? DARK_K : LIGHT_K;
@@ -1645,10 +1735,28 @@ The app already has: drone (sustained root note, independently volume-controlled
         </div>
 
         {/* ══════════════════════════════════════
-            VISUALIZER (CENTRE)
+            CENTRE PANEL
         ══════════════════════════════════════ */}
-        <div style={{ flex: 1, overflow: "hidden", background: K.bg, borderRight: `1px solid ${K.br}` }}>
-          <Visualizer analyserRef={analyserRef} playing={playing} rootIdx={rootIdx} K={K} />
+        <div style={{ flex: 1, overflow: "hidden", background: K.bg, borderRight: `1px solid ${K.br}`, display: "flex", flexDirection: "column" }}>
+          {/* Tab strip */}
+          <div style={{ display: "flex", borderBottom: `1px solid ${K.br}`, flexShrink: 0, background: K.bg2 }}>
+            {[["viz", "◎ visualizer"], ["info", "ℹ info"]].map(([id, label]) => (
+              <button key={id} onClick={() => setCenterTab(id)} style={{
+                background: "none", border: "none",
+                borderBottom: `2px solid ${centerTab === id ? K.a : "transparent"}`,
+                color: centerTab === id ? K.a : K.t2,
+                cursor: "pointer", fontFamily: "inherit",
+                fontSize: 9, letterSpacing: 2, padding: "8px 16px",
+                transition: "color .15s",
+              }}>{label}</button>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            {centerTab === "viz"
+              ? <Visualizer analyserRef={analyserRef} playing={playing} rootIdx={rootIdx} K={K} />
+              : <ScaleInfo sel={sel} selName={selName} selIvs={selIvs} selNotes={selNotes} demoKey={demoKey} K={K} />
+            }
+          </div>
         </div>
 
         {/* ══════════════════════════════════════
