@@ -96,7 +96,7 @@ const KNOWN = {
   2925: "Octatonic WH",   //  whole-half diminished
 };
 
-function synthKick(ac, vol) {
+function synthKick(ac, vol, an) {
   const osc = ac.createOscillator(), g = ac.createGain();
   const now = ac.currentTime;
   osc.type = "sine";
@@ -104,11 +104,11 @@ function synthKick(ac, vol) {
   osc.frequency.exponentialRampToValueAtTime(40, now + 0.08);
   g.gain.setValueAtTime(0.8 * vol, now);
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-  osc.connect(g); g.connect(ac.destination);
+  osc.connect(g); g.connect(ac.destination); if (an) g.connect(an);
   osc.start(now); osc.stop(now + 0.25);
 }
 
-function synthSnare(ac, vol) {
+function synthSnare(ac, vol, an) {
   const buf = ac.createBuffer(1, ac.sampleRate * 0.12, ac.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -117,11 +117,11 @@ function synthSnare(ac, vol) {
   const g = ac.createGain(); const now = ac.currentTime;
   g.gain.setValueAtTime(0.35 * vol, now);
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-  src.connect(filt); filt.connect(g); g.connect(ac.destination);
+  src.connect(filt); filt.connect(g); g.connect(ac.destination); if (an) g.connect(an);
   src.start(now); src.stop(now + 0.12);
 }
 
-function synthHat(ac, vol) {
+function synthHat(ac, vol, an) {
   const buf = ac.createBuffer(1, ac.sampleRate * 0.05, ac.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -130,7 +130,7 @@ function synthHat(ac, vol) {
   const g = ac.createGain(); const now = ac.currentTime;
   g.gain.setValueAtTime(0.12 * vol, now);
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-  src.connect(filt); filt.connect(g); g.connect(ac.destination);
+  src.connect(filt); filt.connect(g); g.connect(ac.destination); if (an) g.connect(an);
   src.start(now); src.stop(now + 0.05);
 }
 
@@ -190,13 +190,14 @@ function makeImpulse(ac, duration, decay) {
   return buf;
 }
 
-function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend) {
-  // reverbSend / delaySend: AudioNode or null
+function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend, analyserSend) {
+  // reverbSend / delaySend / analyserSend: AudioNode or null
   const dest = ac.destination;
   const connectOut = (node) => {
     node.connect(dest);
     if (reverbSend) node.connect(reverbSend);
     if (delaySend) node.connect(delaySend);
+    if (analyserSend) node.connect(analyserSend);
   };
   const now = ac.currentTime;
 
@@ -533,6 +534,116 @@ function HelpModal({ onClose, K }) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   VISUALIZER
+═══════════════════════════════════════════════════════ */
+
+function Visualizer({ analyserRef, playing, rootIdx, K }) {
+  const canvasRef  = useRef(null);
+  const rafRef     = useRef(null);
+  const KRef       = useRef(K);
+  useEffect(() => { KRef.current = K; }, [K]);
+  const playingRef = useRef(playing);
+  useEffect(() => { playingRef.current = playing; }, [playing]);
+  const rootIdxRef = useRef(rootIdx);
+  useEffect(() => { rootIdxRef.current = rootIdx; }, [rootIdx]);
+  const hueRef     = useRef(0); // smoothly lerped current hue
+
+  // Draw loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const data = new Uint8Array(2048);
+
+    const draw = () => {
+      rafRef.current = requestAnimationFrame(draw);
+      const W = canvas.width, H = canvas.height;
+      if (!W || !H) return;
+      const { whBr } = KRef.current;
+
+      ctx.clearRect(0, 0, W, H);
+      const cx = W / 2, cy = H / 2;
+      const R = Math.min(W, H) * 0.36;
+
+      // Lerp hue toward the current note's chromatic colour
+      const p = playingRef.current;
+      if (p !== null) {
+        const targetHue = ((rootIdxRef.current ?? 0) + p) % 12 * 30;
+        let diff = targetHue - hueRef.current;
+        if (diff > 180) diff -= 360;
+        if (diff < -180) diff += 360;
+        hueRef.current = (hueRef.current + diff * 0.07 + 360) % 360;
+      }
+      const noteColor = `hsl(${hueRef.current.toFixed(1)}, 80%, 62%)`;
+
+      // 12-segment chromatic colour wheel (faint outer ring)
+      const gap = 0.04;
+      for (let i = 0; i < 12; i++) {
+        const a0 = (i / 12) * Math.PI * 2 - Math.PI / 2 + gap;
+        const a1 = ((i + 1) / 12) * Math.PI * 2 - Math.PI / 2 - gap;
+        ctx.beginPath();
+        ctx.arc(cx, cy, R + 10, a0, a1);
+        ctx.strokeStyle = `hsl(${i * 30}, 70%, 55%)`;
+        ctx.lineWidth = 4;
+        ctx.globalAlpha = 0.28;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      // Ghost ring
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.strokeStyle = whBr;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const analyser = analyserRef.current?.node;
+      if (!analyser) return;
+      analyser.getByteTimeDomainData(data);
+      const N = data.length;
+
+      // Waveform ring
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const idx = i % N;
+        const v = (data[idx] / 128.0) - 1.0;
+        const r = R + v * R * 0.55;
+        const angle = (idx / N) * Math.PI * 2 - Math.PI / 2;
+        const x = cx + r * Math.cos(angle);
+        const y = cy + r * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = noteColor;
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = noteColor;
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    };
+
+    canvas.width  = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    draw();
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [analyserRef]);
+
+  // Keep canvas sized to its container
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver(() => {
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    });
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, []);
+
+  return <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />;
+}
+
+/* ═══════════════════════════════════════════════════════
    MAIN APP
 ═══════════════════════════════════════════════════════ */
 
@@ -601,6 +712,15 @@ export default function Chloe() {
   const droneGainRef = useRef(null);
   const demoLogRef   = useRef([]);
   useEffect(() => { demoLogRef.current = demoLog; }, [demoLog]);
+  const analyserRef  = useRef(null);
+  const getOrCreateAnalyser = useCallback((ac) => {
+    if (analyserRef.current && analyserRef.current.ac === ac) return analyserRef.current;
+    const node = ac.createAnalyser();
+    node.fftSize = 2048;
+    node.smoothingTimeConstant = 0.85;
+    analyserRef.current = { node, ac };
+    return analyserRef.current;
+  }, []);
   const [favs,       setFavs]       = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("chloe2-favs") || "[]")); }
     catch { return new Set(); }
@@ -689,6 +809,7 @@ export default function Chloe() {
     const ac = getCtx();
     const rev = getOrCreateReverb(ac);
     const del = getOrCreateDelay(ac);
+    const an = getOrCreateAnalyser(ac);
     const osc = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
     f.type = "lowpass"; f.frequency.value = 1200;
     osc.type = instrument ? "sine" : timbre;
@@ -697,7 +818,7 @@ export default function Chloe() {
     g.gain.value = instrument === "space" ? 0.03 : 0.05;
     const volGain = ac.createGain(); volGain.gain.value = droneVol;
     droneGainRef.current = volGain;
-    const droneOut = (node) => { node.connect(volGain); volGain.connect(ac.destination); volGain.connect(rev.convolver); volGain.connect(del.delayNode); };
+    const droneOut = (node) => { node.connect(volGain); volGain.connect(ac.destination); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node); };
     if (instrument === "space") {
       const o2 = ac.createOscillator(); o2.type = "sine";
       o2.frequency.value = dFreq; o2.detune.value = 5;
@@ -709,7 +830,7 @@ export default function Chloe() {
     osc.connect(g); g.connect(f); droneOut(f);
     osc.start();
     return () => { try { osc.stop(); } catch (e) {} droneGainRef.current = null; };
-  }, [droneOn, rootIdx, droneOct, aRef, timbre, instrument, getCtx, getOrCreateReverb, getOrCreateDelay]);
+  }, [droneOn, rootIdx, droneOct, aRef, timbre, instrument, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
 
   // Keep drone volume in sync with droneVol slider
   useEffect(() => {
@@ -729,9 +850,10 @@ export default function Chloe() {
       const step = beatStepRef.current % pat.loop.length;
       const [k, s, h] = pat.loop[step];
       const ac = getCtx();
-      if (k) synthKick(ac, vol);
-      if (s) synthSnare(ac, vol);
-      if (h) synthHat(ac, vol);
+      const an = getOrCreateAnalyser(ac);
+      if (k) synthKick(ac, vol, an.node);
+      if (s) synthSnare(ac, vol, an.node);
+      if (h) synthHat(ac, vol, an.node);
       beatStepRef.current++;
       const quarterMs = 60000 / bpm;
       // swing: even steps get (1+sw) fraction, odd steps get (1-sw) fraction
@@ -741,7 +863,7 @@ export default function Chloe() {
 
     tick();
     return () => { cancelled = true; clearTimeout(beatTimeout.current); };
-  }, [beatOn, getCtx]);
+  }, [beatOn, getCtx, getOrCreateAnalyser]);
 
   /* ── Arpeggio / Melody ── */
   useEffect(() => {
@@ -788,9 +910,10 @@ export default function Chloe() {
       const ac = getCtx();
       const rev = getOrCreateReverb(ac);
       const del = getOrCreateDelay(ac);
+      const an = getOrCreateAnalyser(ac);
       const freq = ar * 2 ** ((60 + OFFS[ri] + semi - 69) / 12);
       const beatDur = (dur * 60 / b / 2);
-      synthNote(ac, freq, vel * nv, inst, t, beatDur, rev.convolver, del.delayNode);
+      synthNote(ac, freq, vel * nv, inst, t, beatDur, rev.convolver, del.delayNode, an.node);
       setPlaying(semi % 12);
     };
 
@@ -882,7 +1005,7 @@ export default function Chloe() {
 
     melTick();
     return () => { clearTimeout(melTimeout); clearInterval(arpRef.current); };
-  }, [arpOn, sel, rootIdx, timbre, instrument, bpm, melMode, arpDir, rhythm, chordVoice, getCtx]);
+  }, [arpOn, sel, rootIdx, timbre, instrument, bpm, melMode, arpDir, rhythm, chordVoice, getCtx, getOrCreateAnalyser]);
 
   useEffect(() => () => clearInterval(arpRef.current), []);
 
@@ -1416,7 +1539,7 @@ The app already has: drone (sustained root note, independently volume-controlled
         {/* ══════════════════════════════════════
             SCALE LIST (LEFT)
         ══════════════════════════════════════ */}
-        <div style={{ flex: 1, overflowY: "auto", borderRight: `1px solid ${K.br}` }}>
+        <div style={{ width: 340, flexShrink: 0, overflowY: "auto", overflowX: "hidden", borderRight: `1px solid ${K.br}` }}>
           {Object.keys(grouped).sort((a, b) => +a - +b).map(nc => {
             const n = +nc, fams = grouped[n], exp = isExp(n);
             return (
@@ -1489,6 +1612,13 @@ The app already has: drone (sustained root note, independently volume-controlled
               No results for "{filter}"
             </div>
           )}
+        </div>
+
+        {/* ══════════════════════════════════════
+            VISUALIZER (CENTRE)
+        ══════════════════════════════════════ */}
+        <div style={{ flex: 1, overflow: "hidden", background: K.bg, borderRight: `1px solid ${K.br}` }}>
+          <Visualizer analyserRef={analyserRef} playing={playing} rootIdx={rootIdx} K={K} />
         </div>
 
         {/* ══════════════════════════════════════
