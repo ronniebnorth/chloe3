@@ -693,6 +693,7 @@ export default function Chloe() {
   const [playing,    setPlaying]    = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 280);
+  const [listW,      setListW]      = useState(340);
   const [urlCopied,  setUrlCopied]  = useState(false);
   const [showHelp,   setShowHelp]   = useState(false);
   const [demoOn,      setDemoOn]      = useState(false);
@@ -1290,6 +1291,18 @@ The app already has: drone (sustained root note, independently volume-controlled
     window.addEventListener("mouseup", onUp);
   }, [sidebarW]);
 
+  const onListDragStart = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX, startW = listW;
+    const onMove = (ev) => setListW(Math.max(220, Math.min(600, startW + ev.clientX - startX)));
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [listW]);
+
   /* ══════════════════════════════════════
      RENDER
   ══════════════════════════════════════ */
@@ -1539,7 +1552,16 @@ The app already has: drone (sustained root note, independently volume-controlled
         {/* ══════════════════════════════════════
             SCALE LIST (LEFT)
         ══════════════════════════════════════ */}
-        <div style={{ width: 340, flexShrink: 0, overflowY: "auto", overflowX: "hidden", borderRight: `1px solid ${K.br}` }}>
+        <div style={{ width: listW, flexShrink: 0, position: "relative", display: "flex", flexDirection: "column" }}>
+          <div onMouseDown={onListDragStart} style={{
+            position: "absolute", right: 0, top: 0, bottom: 0, width: 5,
+            cursor: "col-resize", zIndex: 20, background: "transparent",
+            borderRight: `1px solid ${K.br}`, transition: "border-color .15s",
+          }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = K.a}
+          onMouseLeave={e => e.currentTarget.style.borderColor = K.br}
+          />
+        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
           {Object.keys(grouped).sort((a, b) => +a - +b).map(nc => {
             const n = +nc, fams = grouped[n], exp = isExp(n);
             return (
@@ -1612,6 +1634,7 @@ The app already has: drone (sustained root note, independently volume-controlled
               No results for "{filter}"
             </div>
           )}
+        </div>
         </div>
 
         {/* ══════════════════════════════════════
