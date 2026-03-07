@@ -877,6 +877,11 @@ export default function Chloe() {
   const [loopOn,      setLoopOn]      = useState(false);
   const loopOnRef = useRef(false);
   useEffect(() => { loopOnRef.current = loopOn; }, [loopOn]);
+  const [savedMoments, setSavedMoments] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("chloe-saved-moments") || "[]"); }
+    catch { return []; }
+  });
+  const [showSaved, setShowSaved] = useState(false);
   const [beatOn,      setBeatOn]      = useState(false);
   const [droneVol,    setDroneVol]    = useState(1.0);
   const [droneTone,   setDroneTone]   = useState(0.5);
@@ -928,6 +933,7 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol });
   useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol]);
+  useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
 
   const getCtx = useCallback(() => {
     if (!ctxRef.current || ctxRef.current.state === "closed")
@@ -1407,6 +1413,64 @@ The app already has: drone (sustained root note, independently volume-controlled
   const pick = (fam, origIdx, pattern) => {
     setSel({ id: `${fam.id}.${origIdx}`, pattern });
     arpIdxRef.current = 0;
+  };
+
+  /* ── Save / replay moments ── */
+  const saveMoment = () => {
+    const st = stRef.current;
+    if (!st.sel) return;
+    const dotPos = st.sel.id.lastIndexOf(".");
+    const famId = st.sel.id.slice(0, dotPos);
+    const modeIdx = parseInt(st.sel.id.slice(dotPos + 1));
+    const scaleName = KNOWN[st.sel.pattern] || st.sel.id;
+    setSavedMoments(prev => [{
+      ts: Date.now(),
+      scaleName,
+      famId, modeIdx,
+      rootIdx: st.rootIdx,
+      timbre: st.timbre,
+      bpm: st.bpm,
+      melMode: st.melMode,
+      arpDir: st.arpDir,
+      rhythm: st.rhythm,
+      chordVoice: st.chordVoice,
+      instrument: st.instrument,
+      noteVol: st.noteVol,
+      reverbAmt: st.reverbAmt,
+      delayAmt: st.delayAmt,
+      aRef: st.aRef,
+      beatVol,
+      droneOn, droneVol, droneTone, droneWave, droneOct,
+      beatOn,
+    }, ...prev]);
+  };
+
+  const playMoment = (m) => {
+    const fam = FAMILIES.find(f => f.id === m.famId);
+    if (!fam || fam.modes[m.modeIdx] === undefined) return;
+    wake();
+    setDemoOn(false); setAutoOn(false); setLoopOn(false);
+    pick(fam, m.modeIdx, fam.modes[m.modeIdx]);
+    setRootIdx(m.rootIdx);
+    setTimbre(m.timbre);
+    setBpm(m.bpm);
+    setMelMode(m.melMode);
+    setArpDir(m.arpDir);
+    setRhythm(m.rhythm);
+    setChordVoice(m.chordVoice);
+    if (m.instrument !== undefined) setInstrument(m.instrument);
+    setNoteVol(m.noteVol);
+    setReverbAmt(m.reverbAmt);
+    setDelayAmt(m.delayAmt);
+    setARef(m.aRef);
+    setBeatVol(m.beatVol);
+    setDroneVol(m.droneVol);
+    setDroneTone(m.droneTone);
+    setDroneWave(m.droneWave);
+    setDroneOct(m.droneOct);
+    setDroneOn(m.droneOn);
+    setBeatOn(m.beatOn);
+    setArpOn(true);
   };
 
   const selSemis = sel ? new Set(toSemis(sel.pattern)) : new Set();
@@ -1957,9 +2021,9 @@ The app already has: drone (sustained root note, independently volume-controlled
             </div>
             {/* Loop button — visible when Demo or Auto is running */}
             {(demoOn || autoOn) && (
-              <div style={{ display: "flex", marginBottom: 6 }}>
+              <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
                 <button onClick={() => setLoopOn(p => !p)} style={{
-                  flex: 1, background: loopOn ? K.a : K.bg3,
+                  flex: 3, background: loopOn ? K.a : K.bg3,
                   color: loopOn ? "#000" : K.txt,
                   border: `1px solid ${loopOn ? K.a : K.br}`,
                   borderRadius: 3, padding: "7px 4px",
@@ -1967,6 +2031,56 @@ The app already has: drone (sustained root note, independently volume-controlled
                   fontFamily: "inherit", fontWeight: loopOn ? 600 : 400,
                   transition: "all .15s",
                 }}>⟳ {loopOn ? "Looping — click to advance" : "Loop this scale"}</button>
+                {loopOn && (
+                  <button onClick={saveMoment} title="Save this scale and all current settings for later replay" style={{
+                    flex: 1, background: K.bg3,
+                    color: K.a, border: `1px solid ${K.a}`,
+                    borderRadius: 3, padding: "7px 4px",
+                    fontSize: 10, cursor: "pointer",
+                    fontFamily: "inherit", fontWeight: 600,
+                    transition: "all .15s",
+                  }}>⊕ Save</button>
+                )}
+              </div>
+            )}
+            {/* Saved moments toggle + panel */}
+            {savedMoments.length > 0 && (
+              <div style={{ marginBottom: 6 }}>
+                <button onClick={() => setShowSaved(p => !p)} style={{
+                  width: "100%", background: "none",
+                  color: K.t2, border: `1px solid ${K.br}`,
+                  borderRadius: 3, padding: "4px 8px",
+                  fontSize: 9, cursor: "pointer",
+                  fontFamily: "inherit", letterSpacing: 1,
+                  transition: "all .15s",
+                }}>{showSaved ? "▴" : "▾"} saved moments ({savedMoments.length})</button>
+                {showSaved && (
+                  <div style={{ marginTop: 4, border: `1px solid ${K.br}`, borderRadius: 3, overflow: "hidden" }}>
+                    {savedMoments.map((m, i) => (
+                      <div key={m.ts} style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        padding: "5px 6px",
+                        borderBottom: i < savedMoments.length - 1 ? `1px solid ${K.br}` : "none",
+                        background: K.bg3,
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: K.a, fontSize: 10, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.scaleName}</div>
+                          <div style={{ color: K.t2, fontSize: 8, letterSpacing: 0.5 }}>{CHROMATIC[m.rootIdx]} · {m.bpm}bpm · {m.rhythm} · {m.arpDir}{m.chordVoice !== "off" ? ` · ${m.chordVoice}` : ""}</div>
+                        </div>
+                        <button onClick={() => playMoment(m)} title="Restore all settings and play" style={{
+                          background: K.a, color: "#000", border: "none",
+                          borderRadius: 3, padding: "4px 7px",
+                          fontSize: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0,
+                        }}>▶</button>
+                        <button onClick={() => setSavedMoments(prev => prev.filter((_, j) => j !== i))} title="Delete" style={{
+                          background: "none", color: K.t2, border: `1px solid ${K.br}`,
+                          borderRadius: 3, padding: "4px 6px",
+                          fontSize: 9, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+                        }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {/* Beat vol */}
