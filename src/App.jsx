@@ -865,7 +865,7 @@ export default function Chloe() {
   const [playing,    setPlaying]    = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
-  const [listW,      setListW]      = useState(600);
+  const [listW,      setListW]      = useState(() => Math.round(window.innerWidth * 0.6));
   const [urlCopied,  setUrlCopied]  = useState(false);
   const [showHelp,   setShowHelp]   = useState(false);
   const [demoOn,      setDemoOn]      = useState(false);
