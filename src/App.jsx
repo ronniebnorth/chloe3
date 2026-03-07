@@ -2055,7 +2055,7 @@ The app already has: drone (sustained root note, independently volume-controlled
                   transition: "all .15s",
                 }}>{showSaved ? "▴" : "▾"} saved moments ({savedMoments.length})</button>
                 {showSaved && (
-                  <div style={{ marginTop: 4, border: `1px solid ${K.br}`, borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ marginTop: 4, border: `1px solid ${K.br}`, borderRadius: 3, overflow: "hidden", maxHeight: 220, overflowY: "auto" }}>
                     {savedMoments.map((m, i) => (
                       <div key={m.ts} style={{
                         display: "flex", alignItems: "center", gap: 4,
