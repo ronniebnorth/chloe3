@@ -2072,7 +2072,7 @@ The app already has: drone (sustained root note, independently volume-controlled
                           borderRadius: 3, padding: "4px 7px",
                           fontSize: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0,
                         }}>▶</button>
-                        <button onClick={() => setSavedMoments(prev => prev.filter((_, j) => j !== i))} title="Delete" style={{
+                        <button onClick={() => { if (window.confirm(`Delete "${m.scaleName}"?`)) setSavedMoments(prev => prev.filter((_, j) => j !== i)); }} title="Delete" style={{
                           background: "none", color: K.t2, border: `1px solid ${K.br}`,
                           borderRadius: 3, padding: "4px 6px",
                           fontSize: 9, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
