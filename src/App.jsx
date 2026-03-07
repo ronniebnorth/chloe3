@@ -525,7 +525,10 @@ function HelpModal({ onClose, K }) {
           ))}
           <div style={{ color: K.t2, fontSize: 9, marginTop: 8, borderTop: `1px solid ${K.br}`, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span>Click outside or press Esc to close</span>
-            <a href="chloe3-guide.html" target="_blank" rel="noreferrer" style={{ color: K.a, textDecoration: "none", letterSpacing: 1 }}>full guide ↗</a>
+            <div style={{ display: "flex", gap: 16 }}>
+              <a href="chloe3-guide.html" target="_blank" rel="noreferrer" style={{ color: K.a, textDecoration: "none", letterSpacing: 1 }}>full guide ↗</a>
+              <a href="scales-interactive.html" target="_blank" rel="noreferrer" style={{ color: K.a, textDecoration: "none", letterSpacing: 1 }}>scales are numbers ↗</a>
+            </div>
           </div>
         </div>
       </div>
