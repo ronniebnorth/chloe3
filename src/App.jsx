@@ -839,7 +839,7 @@ export default function Chloe() {
         aRef:       parseInt(p.get("a") ?? "440"),
         droneOct:   parseInt(p.get("do") ?? "0"),
         melMode:    p.get("m") === "1",
-        sidebarW:   parseInt(p.get("sw") ?? "280"),
+        sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
     } catch { return {}; }
   };
@@ -864,8 +864,8 @@ export default function Chloe() {
   const [chordVoice, setChordVoice] = useState("off"); // off | triad | 7th | sus2 | power | all | rand
   const [playing,    setPlaying]    = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
-  const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 280);
-  const [listW,      setListW]      = useState(340);
+  const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
+  const [listW,      setListW]      = useState(600);
   const [urlCopied,  setUrlCopied]  = useState(false);
   const [showHelp,   setShowHelp]   = useState(false);
   const [demoOn,      setDemoOn]      = useState(false);
@@ -1501,7 +1501,7 @@ The app already has: drone (sustained root note, independently volume-controlled
     if (aRef !== 440) p.set("a", aRef);
     if (droneOct)    p.set("do", droneOct);
     if (melMode)     p.set("m",  "1");
-    if (sidebarW !== 280) p.set("sw", sidebarW);
+    if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
   }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, bpm, filter, sel, aRef, droneOct, melMode, sidebarW]);
