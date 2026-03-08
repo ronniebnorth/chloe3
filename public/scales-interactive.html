@@ -561,6 +561,17 @@
   nav .nav-links { display: flex; gap: 20px; margin-left: auto; }
   nav a { color: var(--dim); text-decoration: none; transition: color 0.15s; }
   nav a:hover { color: var(--light); }
+  .key-selector { display: flex; align-items: center; gap: 6px; margin-left: 16px; }
+  .key-selector .key-label { color: var(--dim); font-size: 8px; letter-spacing: 3px; flex-shrink: 0; }
+  .key-btns { display: flex; gap: 2px; flex-wrap: nowrap; }
+  .key-btn {
+    background: transparent; border: 1px solid var(--br);
+    color: var(--dim); font-family: var(--mono); font-size: 8px;
+    letter-spacing: 0; padding: 3px 5px; border-radius: 3px;
+    cursor: pointer; transition: all 0.12s; white-space: nowrap;
+  }
+  .key-btn:hover { border-color: var(--accent); color: var(--light); }
+  .key-btn.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
 
   /* ── UTIL ── */
   @keyframes fadeUp {
@@ -605,6 +616,10 @@
 
 <nav>
   <span class="nav-title">SCALES ARE NUMBERS</span>
+  <div class="key-selector">
+    <span class="key-label">KEY</span>
+    <div class="key-btns" id="keyBtns"></div>
+  </div>
   <div class="nav-links">
     <a href="#binary">Binary</a>
     <a href="#modes">Modes</a>
@@ -941,6 +956,23 @@ function getIntervals(pat){
   return iv;
 }
 
+// ── KEY SELECTOR ──
+const KEY_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+let rootOffset = 0;
+(function buildKeyBtns(){
+  const container = document.getElementById('keyBtns');
+  KEY_NAMES.forEach((name, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'key-btn' + (i === 0 ? ' active' : '');
+    btn.textContent = name;
+    btn.onclick = () => {
+      rootOffset = i;
+      container.querySelectorAll('.key-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+    };
+    container.appendChild(btn);
+  });
+})();
+
 // ── AUDIO ──
 let audioCtx = null;
 function getAudioCtx(){
@@ -973,7 +1005,7 @@ function startDrone(rootFreq){
 
 function playNote(semitone){
   const ctx = getAudioCtx();
-  const freq = 261.63 * Math.pow(2, semitone / 12); // C4 = 261.63 Hz
+  const freq = 261.63 * Math.pow(2, (semitone + rootOffset) / 12);
   const osc  = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.connect(gain);
@@ -1281,7 +1313,7 @@ function animateFrog(canvas, intervals, brightScore, semitones, mood){
   let t = 0;
 
   // Start sustained root drone
-  const rootFreq = 261.63 * Math.pow(2, (semitones && semitones[0] || 0) / 12);
+  const rootFreq = 261.63 * Math.pow(2, ((semitones && semitones[0] || 0) + rootOffset) / 12);
   const stopDrone = startDrone(rootFreq);
 
   // Play root on launch
@@ -1456,7 +1488,7 @@ function buildCourageFamily(family){
     const gap = 0.22; // seconds between notes
     semis.forEach((s, i)=>{
       const t = ctx.currentTime + i * gap;
-      const freq = 261.63 * Math.pow(2, s / 12);
+      const freq = 261.63 * Math.pow(2, (s + rootOffset) / 12);
       const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
