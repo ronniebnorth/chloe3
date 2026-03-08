@@ -96,6 +96,80 @@ const KNOWN = {
   2925: "Octatonic WH",   //  whole-half diminished
 };
 
+function synthDrone(ac, freq, type) {
+  const oscs = [];
+  const mk = (f, wt, detune = 0) => {
+    const o = ac.createOscillator();
+    o.type = wt; o.frequency.value = f; o.detune.value = detune;
+    oscs.push(o); return o;
+  };
+  const master = ac.createGain();
+
+  if (type === "organ") {
+    // Hammond-style additive: harmonic series of sines
+    master.gain.value = 0.05;
+    const mix = ac.createGain(); mix.gain.value = 1; mix.connect(master);
+    [[0.5, 0.55], [1, 1.0], [2, 0.7], [3, 0.45], [4, 0.25], [6, 0.12], [8, 0.06]]
+      .forEach(([mult, gain]) => {
+        const g = ac.createGain(); g.gain.value = gain;
+        mk(freq * mult, "sine").connect(g); g.connect(mix);
+      });
+
+  } else if (type === "pad") {
+    // 8 detuned sines in two octaves, LFO shimmer
+    master.gain.value = 0.055;
+    const mix = ac.createGain(); mix.gain.value = 1; mix.connect(master);
+    const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.18;
+    const lfoG = ac.createGain(); lfoG.gain.value = 3; lfo.connect(lfoG); oscs.push(lfo);
+    [[-14,1],[-6,1],[6,1],[14,1],[-11,2],[-4,2],[4,2],[11,2]].forEach(([cents, mult]) => {
+      const g = ac.createGain(); g.gain.value = 0.13;
+      const o = mk(freq * mult, "sine", cents);
+      lfoG.connect(o.detune);
+      o.connect(g); g.connect(mix);
+    });
+
+  } else if (type === "strings") {
+    // Detuned saws + octave triangle, with slow tremolo
+    master.gain.value = 0.05;
+    const mix = ac.createGain(); mix.gain.value = 1; mix.connect(master);
+    const trem = ac.createOscillator(); trem.type = "sine"; trem.frequency.value = 4.5;
+    const tremG = ac.createGain(); tremG.gain.value = 0.025; trem.connect(tremG); oscs.push(trem);
+    const tremMix = ac.createGain(); tremMix.gain.value = 1;
+    tremG.connect(tremMix.gain); tremMix.connect(mix);
+    [[-7,1,"sawtooth"],[0,1,"sawtooth"],[7,1,"sawtooth"],[0,2,"triangle"]].forEach(([cents, mult, wt]) => {
+      const g = ac.createGain(); g.gain.value = mult === 2 ? 0.2 : 0.28;
+      mk(freq * mult, wt, cents).connect(g); g.connect(tremMix);
+    });
+
+  } else if (type === "tanpura") {
+    // Indian tanpura: root, P5, oct, 2oct — each string slowly pulsing
+    master.gain.value = 0.055;
+    const mix = ac.createGain(); mix.gain.value = 1; mix.connect(master);
+    [[1, -2, 0.23, 0.35, 0.65], [1.498, 1, 0.19, 0.28, 0.50], [2, 0, 0.27, 0.30, 0.55], [4, 2, 0.17, 0.22, 0.40]]
+      .forEach(([mult, detune, rate, depth, base]) => {
+        const o = mk(freq * mult, "sine", detune);
+        const ampEnv = ac.createGain(); ampEnv.gain.value = base;
+        const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = rate;
+        const lfoG = ac.createGain(); lfoG.gain.value = depth;
+        lfo.connect(lfoG); lfoG.connect(ampEnv.gain); oscs.push(lfo);
+        o.connect(ampEnv); ampEnv.connect(mix);
+      });
+
+  } else {
+    // sine — clean fundamental + soft sub-octave
+    master.gain.value = 0.07;
+    const mix = ac.createGain(); mix.gain.value = 1; mix.connect(master);
+    const g = ac.createGain(); g.gain.value = 0.85; mk(freq, "sine").connect(g); g.connect(mix);
+    const sg = ac.createGain(); sg.gain.value = 0.28; mk(freq * 0.5, "sine").connect(sg); sg.connect(mix);
+  }
+
+  oscs.forEach(o => o.start());
+  return {
+    node: master,
+    stop: () => oscs.forEach(o => { try { o.stop(); } catch {} }),
+  };
+}
+
 function synthKick(ac, vol, an) {
   const osc = ac.createOscillator(), g = ac.createGain();
   const now = ac.currentTime;
@@ -996,19 +1070,16 @@ export default function Chloe() {
     const rev = getOrCreateReverb(ac);
     const del = getOrCreateDelay(ac);
     const an = getOrCreateAnalyser(ac);
-    const osc = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
+    const f = ac.createBiquadFilter();
     f.type = "lowpass"; f.frequency.value = 200 * Math.pow(40, droneTone);
     droneFilterRef.current = f;
-    osc.type = droneWave;
     const dFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
-    osc.frequency.value = dFreq;
-    g.gain.value = 0.05;
+    const voice = synthDrone(ac, dFreq, droneWave);
     const volGain = ac.createGain(); volGain.gain.value = droneVol;
     droneGainRef.current = volGain;
-    const droneOut = (node) => { node.connect(volGain); volGain.connect(ac.destination); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node); };
-    osc.connect(g); g.connect(f); droneOut(f);
-    osc.start();
-    return () => { try { osc.stop(); } catch (e) {} droneGainRef.current = null; droneFilterRef.current = null; };
+    voice.node.connect(f); f.connect(volGain);
+    volGain.connect(ac.destination); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node);
+    return () => { voice.stop(); droneGainRef.current = null; droneFilterRef.current = null; };
   }, [droneOn, rootIdx, droneOct, droneWave, aRef, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
 
   // Keep drone volume in sync with droneVol slider
@@ -1982,15 +2053,15 @@ The app already has: drone (sustained root note, independently volume-controlled
               />
               <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(droneTone * 100)}</span>
             </div>
-            {/* Drone wave */}
+            {/* Drone type */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Drone waveform — sine is pure, triangle is slightly brighter, square and sawtooth are richer/buzzier." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE WAVE</span>
+              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
               <select value={droneWave} onChange={e => setDroneWave(e.target.value)} style={{
                 marginLeft: "auto", background: K.bg3, color: K.txt, border: `1px solid ${K.br}`,
                 borderRadius: 3, padding: "3px 6px", fontSize: 9, fontFamily: "inherit",
                 cursor: "pointer", letterSpacing: 1,
               }}>
-                {["sine", "triangle", "square", "sawtooth"].map(w => (
+                {["sine", "organ", "pad", "strings", "tanpura"].map(w => (
                   <option key={w} value={w}>{w}</option>
                 ))}
               </select>
