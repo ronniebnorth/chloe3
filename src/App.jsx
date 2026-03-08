@@ -999,6 +999,10 @@ export default function Chloe() {
   const [editingName,  setEditingName]  = useState(null); // pattern decimal currently being named
   const [nameInput,    setNameInput]    = useState("");
   const [demoAllScales, setDemoAllScales] = useState(true);
+  const [pinnedScale,   setPinnedScale]   = useState(null); // { id, pattern } — A/B comparison B side
+  const [prePinSel,     setPrePinSel]     = useState(null); // { id, pattern } — A/B comparison A side
+  const [listSearch,    setListSearch]    = useState("");   // sidebar name search
+  const [noteCountFilter, setNoteCountFilter] = useState(null); // null | 3-8
   const customNamesRef = useRef({});
   useEffect(() => { customNamesRef.current = customNames; }, [customNames]);
   const demoAllScalesRef = useRef(true);
@@ -1508,6 +1512,28 @@ The app already has: drone (sustained root note, independently volume-controlled
       return modes.length ? { ...f, modes, origIdxs } : null;
     }).filter(Boolean);
 
+    // Note count chip filter
+    if (noteCountFilter !== null) {
+      base = base.filter(f => f.n === noteCountFilter);
+    }
+
+    // Sidebar name search — filters modes by name within each family
+    if (listSearch.trim()) {
+      const q = listSearch.trim().toLowerCase();
+      const noteNum = (q === String(parseInt(q)) && parseInt(q) >= 3 && parseInt(q) <= 8) ? parseInt(q) : null;
+      base = base.map(f => {
+        if (noteNum !== null) return f.n === noteNum ? f : null;
+        const matchIdxs = f.modes.reduce((acc, m, mi) => {
+          const name = (KNOWN[m] || customNames[m] || "").toLowerCase();
+          if (name.includes(q) || f.id.toLowerCase().includes(q)) acc.push(mi);
+          return acc;
+        }, []);
+        if (!matchIdxs.length) return null;
+        return { ...f, modes: matchIdxs.map(mi => f.modes[mi]), origIdxs: matchIdxs.map(mi => f.origIdxs ? f.origIdxs[mi] : mi) };
+      }).filter(Boolean);
+    }
+
+    // Header filter (existing — unchanged)
     if (!filter.trim()) return base;
     const terms = filter.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
     return base.filter(f =>
@@ -1521,7 +1547,7 @@ The app already has: drone (sustained root note, independently volume-controlled
         )
       )
     );
-  }, [FAMILIES, filter, favs, favsOnly, customNames]);
+  }, [FAMILIES, filter, favs, favsOnly, customNames, listSearch, noteCountFilter]);
 
   const grouped = useMemo(() => {
     const g = {};
@@ -1554,6 +1580,32 @@ The app already has: drone (sustained root note, independently volume-controlled
     setSel({ id: `${fam.id}.${origIdx}`, pattern });
     arpIdxRef.current = 0;
   };
+
+  const pickById = (id) => {
+    const dotPos = id.lastIndexOf(".");
+    const fam = FAMILIES.find(f => f.id === id.slice(0, dotPos));
+    const origIdx = parseInt(id.slice(dotPos + 1));
+    if (fam && fam.modes[origIdx] !== undefined) pick(fam, origIdx, fam.modes[origIdx]);
+  };
+
+  // Keep prePinSel tracking whatever is selected when NOT on the pinned scale
+  useEffect(() => {
+    if (pinnedScale && sel && sel.id !== pinnedScale.id)
+      setPrePinSel({ id: sel.id, pattern: sel.pattern });
+  }, [sel, pinnedScale]);
+
+  const onPinned = !!pinnedScale && sel?.id === pinnedScale.id;
+
+  const handlePin = () => {
+    if (!sel) return;
+    setPinnedScale({ id: sel.id, pattern: sel.pattern });
+  };
+  const handleABToggle = () => {
+    if (!pinnedScale) return;
+    if (onPinned) { if (prePinSel) pickById(prePinSel.id); }
+    else pickById(pinnedScale.id);
+  };
+  const handleUnpin = () => { setPinnedScale(null); setPrePinSel(null); };
 
   /* ── Save / replay moments ── */
   const saveMoment = () => {
@@ -1623,7 +1675,7 @@ The app already has: drone (sustained root note, independently volume-controlled
   const selName = sel ? (KNOWN[sel.pattern] || customNames[sel.pattern] || null) : null;
 
   const toggleGrp = n => setExpanded(p => { const s = new Set(p); s.has(GRP_PFX[n]) ? s.delete(GRP_PFX[n]) : s.add(GRP_PFX[n]); return s; });
-  const isExp = n => filter.trim() ? true : expanded.has(GRP_PFX[n]);
+  const isExp = n => (filter.trim() || listSearch.trim() || noteCountFilter !== null) ? true : expanded.has(GRP_PFX[n]);
   const wake = () => getCtx();
 
   const buildURL = useCallback(() => {
@@ -1950,6 +2002,47 @@ The app already has: drone (sustained root note, independently volume-controlled
           onMouseEnter={e => e.currentTarget.style.borderColor = K.a}
           onMouseLeave={e => e.currentTarget.style.borderColor = K.br}
           />
+        {/* Search + note count filter */}
+        <div style={{ flexShrink: 0, padding: "7px 10px 6px", borderBottom: `1px solid ${K.br}`, background: K.bg2 }}>
+          <div style={{ position: "relative", marginBottom: 5 }}>
+            <input
+              value={listSearch}
+              onChange={e => setListSearch(e.target.value)}
+              placeholder="search by name…"
+              style={{
+                width: "100%", boxSizing: "border-box",
+                background: K.bg3, border: `1px solid ${listSearch ? K.a : K.br}`,
+                color: K.txt, padding: "5px 22px 5px 8px",
+                borderRadius: 3, fontFamily: "inherit", fontSize: 10, outline: "none",
+              }}
+            />
+            {listSearch && (
+              <button onClick={() => setListSearch("")} style={{
+                position: "absolute", right: 5, top: "50%", transform: "translateY(-50%)",
+                background: "none", border: "none", color: K.t2, cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1,
+              }}>×</button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+            {[3, 4, 5, 6, 7, 8].map(n => (
+              <button key={n} onClick={() => setNoteCountFilter(p => p === n ? null : n)} style={{
+                background: noteCountFilter === n ? K.a : K.bg3,
+                color: noteCountFilter === n ? "#000" : K.txt,
+                border: `1px solid ${noteCountFilter === n ? K.a : K.br}`,
+                borderRadius: 3, padding: "2px 7px", fontSize: 8,
+                cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.5,
+              }}>{n}</button>
+            ))}
+            {(listSearch || noteCountFilter !== null) && (
+              <button onClick={() => { setListSearch(""); setNoteCountFilter(null); }} style={{
+                background: "none", border: `1px solid ${K.br}`, color: K.t2,
+                borderRadius: 3, padding: "2px 6px", fontSize: 8,
+                cursor: "pointer", fontFamily: "inherit", marginLeft: 2,
+              }}>clear</button>
+            )}
+          </div>
+        </div>
+
         <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
           {Object.keys(grouped).sort((a, b) => +a - +b).map(nc => {
             const n = +nc, fams = grouped[n], exp = isExp(n);
@@ -2051,7 +2144,7 @@ The app already has: drone (sustained root note, independently volume-controlled
           })}
           {filtered.length === 0 && (
             <div style={{ padding: 32, color: K.t2, textAlign: "center", fontSize: 11 }}>
-              No results for "{filter}"
+              No results{filter ? ` for "${filter}"` : listSearch ? ` for "${listSearch}"` : noteCountFilter ? ` for ${noteCountFilter}-note scales` : ""}
             </div>
           )}
         </div>
@@ -2403,14 +2496,51 @@ The app already has: drone (sustained root note, independently volume-controlled
           <div style={{ flex: 1, overflowY: "auto", padding: "14px 14px" }}>
             {sel ? (
               <>
-                {selName && (
-                  <div style={{ fontFamily: "'Trebuchet MS', 'Gill Sans', 'Century Gothic', sans-serif", fontSize: 15, fontWeight: 700, color: K.a, marginBottom: 3, letterSpacing: 0.5 }}>
-                    {selName}
-                  </div>
-                )}
-                <div style={{ color: K.t1, fontSize: 11, marginBottom: 14, opacity: 0.75, letterSpacing: 0.5 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
+                  {selName && (
+                    <div style={{ fontFamily: "'Trebuchet MS', 'Gill Sans', 'Century Gothic', sans-serif", fontSize: 15, fontWeight: 700, color: K.a, letterSpacing: 0.5 }}>
+                      {selName}
+                    </div>
+                  )}
+                  <button onClick={handlePin} title="Pin for A/B comparison" style={{
+                    background: onPinned ? K.ag : "none", border: `1px solid ${onPinned ? K.a : K.br}`,
+                    color: onPinned ? K.a : K.t2, borderRadius: 3, padding: "1px 6px",
+                    fontSize: 8, cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.5, flexShrink: 0,
+                  }}>⊿ {onPinned ? "pinned" : "pin"}</button>
+                </div>
+                <div style={{ color: K.t1, fontSize: 11, marginBottom: pinnedScale ? 8 : 14, opacity: 0.75, letterSpacing: 0.5 }}>
                   {ROOTS[rootIdx]} · {selNotes.join("  ")}
                 </div>
+
+                {/* A/B comparison panel */}
+                {pinnedScale && (() => {
+                  const aName = prePinSel ? (KNOWN[prePinSel.pattern] || customNames[prePinSel.pattern] || prePinSel.id) : "—";
+                  const bName = KNOWN[pinnedScale.pattern] || customNames[pinnedScale.pattern] || pinnedScale.id;
+                  return (
+                    <div style={{ display: "flex", border: `1px solid ${K.br}`, borderRadius: 4, marginBottom: 14, overflow: "hidden" }}>
+                      {[{side: "a", name: aName, target: prePinSel}, {side: "b", name: bName, target: pinnedScale}].map(({side, name, target}) => {
+                        const isActive = onPinned ? side === "b" : side === "a";
+                        return (
+                          <button key={side} onClick={handleABToggle} disabled={!target}
+                            style={{
+                              flex: 1, background: isActive ? K.ag : "transparent",
+                              color: isActive ? K.a : target ? K.txt : K.t2,
+                              border: "none", borderRight: side === "a" ? `1px solid ${K.br}` : "none",
+                              padding: "5px 8px", fontSize: 9, cursor: target ? "pointer" : "default",
+                              fontFamily: "inherit", fontWeight: isActive ? 600 : 400, textAlign: "left",
+                            }}>
+                            <div style={{ fontSize: 7, letterSpacing: 2, opacity: 0.6, marginBottom: 1 }}>{side.toUpperCase()}{isActive ? " ▶" : ""}</div>
+                            <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+                          </button>
+                        );
+                      })}
+                      <button onClick={handleUnpin} title="Clear A/B" style={{
+                        background: "none", border: "none", borderLeft: `1px solid ${K.br}`,
+                        color: K.t2, cursor: "pointer", fontSize: 14, padding: "0 9px", flexShrink: 0,
+                      }}>×</button>
+                    </div>
+                  );
+                })()}
 
                 <Lbl K={K}>INTERVALS</Lbl>
                 <div style={{ color: K.a, fontSize: 14, letterSpacing: 3, fontWeight: 500, marginBottom: 14 }}>
