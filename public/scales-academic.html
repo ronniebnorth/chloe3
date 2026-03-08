@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Binary Pitch-Class Set Representation and a Metric for Modal Brightness — Ronnie North</title>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Source+Code+Pro:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #faf8f4;
+    --txt: #1a1612;
+    --dim: #6a6258;
+    --accent: #8b3a00;
+    --br: #d8d0c4;
+    --code-bg: #f0ece4;
+    --serif: 'EB Garamond', Georgia, serif;
+    --mono: 'Source Code Pro', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.75;
+  }
+
+  /* ── PAGE LAYOUT ── */
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 80px 32px 120px;
+  }
+
+  /* ── HEADER ── */
+  .paper-header {
+    text-align: center;
+    border-bottom: 1px solid var(--br);
+    padding-bottom: 48px;
+    margin-bottom: 48px;
+  }
+
+  .paper-journal {
+    font-size: 10px;
+    letter-spacing: 5px;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+
+  .paper-title {
+    font-size: clamp(1.5rem, 4vw, 2.2rem);
+    font-weight: 500;
+    line-height: 1.25;
+    margin-bottom: 32px;
+    color: var(--txt);
+  }
+
+  .paper-author {
+    font-style: italic;
+    font-size: 16px;
+    color: var(--txt);
+    margin-bottom: 6px;
+  }
+
+  .paper-affil {
+    font-size: 13px;
+    color: var(--dim);
+    margin-bottom: 20px;
+  }
+
+  .paper-date {
+    font-size: 12px;
+    color: var(--dim);
+    letter-spacing: 2px;
+  }
+
+  /* ── ABSTRACT ── */
+  .abstract {
+    background: var(--code-bg);
+    border: 1px solid var(--br);
+    border-left: 3px solid var(--accent);
+    padding: 28px 32px;
+    margin-bottom: 48px;
+    font-size: 15px;
+    line-height: 1.8;
+  }
+
+  .abstract-label {
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .keywords {
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--dim);
+  }
+
+  .keywords strong { color: var(--txt); font-style: normal; }
+
+  /* ── SECTIONS ── */
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  h2 {
+    font-size: 1.3rem;
+    font-weight: 500;
+    margin-bottom: 20px;
+    color: var(--txt);
+    border-bottom: 1px solid var(--br);
+    padding-bottom: 10px;
+  }
+
+  h3 {
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin: 32px 0 14px;
+    color: var(--txt);
+  }
+
+  p {
+    margin-bottom: 18px;
+    text-align: justify;
+    hyphens: auto;
+  }
+
+  section {
+    margin-bottom: 52px;
+  }
+
+  /* ── FIGURES & TABLES ── */
+  figure {
+    margin: 36px 0;
+    border: 1px solid var(--br);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .fig-body {
+    background: var(--code-bg);
+    padding: 24px 28px;
+    overflow-x: auto;
+  }
+
+  figcaption {
+    padding: 10px 20px;
+    font-size: 13px;
+    color: var(--dim);
+    border-top: 1px solid var(--br);
+    background: var(--bg);
+    font-style: italic;
+  }
+
+  figcaption strong { font-style: normal; color: var(--txt); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    font-family: var(--mono);
+  }
+
+  th {
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--dim);
+    border-bottom: 2px solid var(--br);
+    padding: 8px 12px;
+    font-weight: 600;
+    font-family: var(--serif);
+  }
+
+  td {
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--br)88;
+    vertical-align: middle;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  .td-name { font-family: var(--serif); font-style: italic; }
+  .td-bright { color: var(--accent); font-weight: 600; }
+  .td-bar { padding-right: 0; }
+
+  .inline-bar {
+    display: inline-block;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 1px;
+    opacity: 0.7;
+    vertical-align: middle;
+  }
+
+  /* ── CODE ── */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--br);
+    border-radius: 3px;
+    padding: 20px 24px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: 24px 0;
+    color: var(--txt);
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 2px;
+    color: var(--accent);
+  }
+
+  /* ── MATH ── */
+  .math {
+    font-style: italic;
+    font-family: var(--serif);
+  }
+
+  .math-display {
+    display: block;
+    text-align: center;
+    font-size: 1.1rem;
+    font-style: italic;
+    margin: 24px 0;
+    color: var(--txt);
+    font-family: var(--serif);
+  }
+
+  /* ── DEFINITION ── */
+  .definition {
+    background: var(--code-bg);
+    border: 1px solid var(--br);
+    padding: 20px 24px;
+    margin: 24px 0;
+    border-radius: 3px;
+  }
+
+  .def-label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    margin-bottom: 8px;
+    font-family: var(--mono);
+  }
+
+  /* ── FOOTNOTES / REFERENCES ── */
+  .references {
+    margin-top: 60px;
+    padding-top: 28px;
+    border-top: 2px solid var(--txt);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .references h2 { font-size: 1rem; letter-spacing: 3px; }
+
+  .ref-list {
+    list-style: none;
+    counter-reset: refs;
+    margin-top: 20px;
+  }
+
+  .ref-list li {
+    counter-increment: refs;
+    padding-left: 40px;
+    position: relative;
+    margin-bottom: 14px;
+    color: var(--dim);
+    text-align: left;
+  }
+
+  .ref-list li::before {
+    content: '[' counter(refs) ']';
+    position: absolute;
+    left: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    top: 2px;
+  }
+
+  sup {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    cursor: default;
+  }
+
+  /* ── PRINT ── */
+  @media print {
+    body { font-size: 11pt; }
+    nav, .no-print { display: none; }
+    .page { padding: 0; }
+    a { color: var(--txt); }
+  }
+
+  @media (max-width: 600px) {
+    .page { padding: 40px 20px 80px; }
+    .paper-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="paper-header">
+    <div class="paper-journal">Music Theory &amp; Computation · Working Paper</div>
+    <h1 class="paper-title">Binary Pitch-Class Set Representation and a Positional Metric for Modal Brightness: Foundations and Pedagogical Applications</h1>
+    <div class="paper-author">Ronnie North</div>
+    <div class="paper-affil">Independent Researcher · meditationresearchstudio.com</div>
+    <div class="paper-date">First implementation: 2016 &nbsp;·&nbsp; Revised: March 2026</div>
+  </header>
+
+  <!-- ABSTRACT -->
+  <div class="abstract">
+    <div class="abstract-label">Abstract</div>
+    <p>This paper presents a binary integer encoding of musical scales within the 12-tone equal temperament system, together with a derived scalar metric for modal brightness defined as the arithmetic sum of active bit positions. We demonstrate that this metric correctly and automatically orders all rotations of any scale family from brightest to darkest, generalising the well-known Lydian-to-Locrian brightness ordering of the diatonic modes to arbitrary scale families including pentatonic, hexatonic, and octatonic collections. We interpret the metric as a measure of <em>intervallic reach</em>: the cumulative distance each scale tone ventures from the root along the chromatic axis. This interpretation yields a pedagogically accessible explanation of modal affect that requires no prior theoretical vocabulary beyond elementary arithmetic. The representation was independently developed and publicly demonstrated circa 2016 in the context of Chloe, an interactive browser-based scale explorer, and has since been extended through successive versions of that application.</p>
+    <div class="keywords"><strong>Keywords:</strong> pitch-class sets, binary representation, modal brightness, scale theory, music pedagogy, 12-TET, algorithmic enumeration</div>
+  </div>
+
+  <!-- 1. INTRODUCTION -->
+  <section>
+    <span class="sec-num">1.</span>
+    <h2>Introduction</h2>
+    <p>The representation of musical scales as subsets of the 12-tone chromatic collection is a foundational concern of twentieth-century pitch-class set theory, originating with the work of Forte (1973) <sup>[1]</sup> and extended by numerous subsequent theorists. The standard pitch-class set notation represents a scale as an ordered collection of integers modulo 12, e.g., the major scale as {0, 2, 4, 5, 7, 9, 11}.</p>
+    <p>The present paper advocates for an alternative but equivalent representation: a 12-bit unsigned integer in which bit position <span class="math">i</span> is set to 1 if and only if pitch-class <span class="math">i</span> is a member of the scale, and 0 otherwise. While the mathematical equivalence to standard pitch-class set notation is immediate, the binary integer form offers several practical and conceptual advantages that have been insufficiently noted in the theoretical literature.</p>
+    <p>Chief among these advantages is the natural emergence of a brightness metric from the arithmetic structure of the representation itself. Specifically, we define the <em>brightness score</em> of a scale as the sum of its active bit positions, and show that this quantity accurately ranks all modes of a scale family from brightest to darkest. We further argue that this metric has a cognitively transparent interpretation: it measures the total <em>intervallic reach</em> of a scale — the aggregate distance each of its tones ventures from the root — and that this interpretation directly explains the subjective phenomenon of modal brightness accessible to trained and untrained listeners alike.</p>
+    <p>The paper is organised as follows. Section 2 defines the binary scale representation formally. Section 3 addresses scale enumeration and canonical forms. Section 4 introduces the brightness metric and proves its correctness for the diatonic modes. Section 5 generalises to arbitrary scale families. Section 6 discusses the intervallic reach interpretation and its pedagogical implications. Section 7 notes the independent prior development of these ideas and their public dissemination via the Chloe application.</p>
+  </section>
+
+  <!-- 2. THE BINARY REPRESENTATION -->
+  <section>
+    <span class="sec-num">2.</span>
+    <h2>Binary Scale Representation</h2>
+
+    <div class="definition">
+      <div class="def-label">DEFINITION 2.1 — BINARY SCALE ENCODING</div>
+      <p>Let <span class="math">S ⊆ ℤ₁₂</span> be a pitch-class set containing pitch-class 0 (the root). The <em>binary encoding</em> of <span class="math">S</span> is the integer:</p>
+      <span class="math-display">𝔹(S) = Σ<sub>i∈S</sub> 2<sup>i</sup></span>
+      <p>Since 0 ∈ <span class="math">S</span> by convention, <span class="math">𝔹(S)</span> is always odd and lies in the range [1, 4095].</p>
+    </div>
+
+    <p>This encoding maps each scale to a unique integer, and the integer uniquely determines the scale. The decimal representation provides a convenient shorthand: the major scale encodes to <code>2741</code>, Dorian to <code>1709</code>, Lydian to <code>2773</code>.</p>
+
+    <figure>
+      <div class="fig-body">
+        <table>
+          <thead><tr><th>Scale</th><th>Pitch Classes</th><th>Binary (LSB→MSB)</th><th>Decimal</th></tr></thead>
+          <tbody>
+            <tr><td class="td-name">Lydian</td><td>{0,2,4,6,7,9,11}</td><td><code>101011010101</code></td><td>2773</td></tr>
+            <tr><td class="td-name">Ionian (Major)</td><td>{0,2,4,5,7,9,11}</td><td><code>101010110101</code></td><td>2741</td></tr>
+            <tr><td class="td-name">Mixolydian</td><td>{0,2,4,5,7,9,10}</td><td><code>010110110101</code></td><td>1717</td></tr>
+            <tr><td class="td-name">Dorian</td><td>{0,2,3,5,7,9,10}</td><td><code>010110101101</code></td><td>1709</td></tr>
+            <tr><td class="td-name">Aeolian</td><td>{0,2,3,5,7,8,10}</td><td><code>010101101101</code></td><td>1453</td></tr>
+            <tr><td class="td-name">Phrygian</td><td>{0,1,3,5,7,8,10}</td><td><code>010101011011</code></td><td>1451</td></tr>
+            <tr><td class="td-name">Locrian</td><td>{0,1,3,5,6,8,10}</td><td><code>010101010011</code></td><td>1387</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figcaption><strong>Figure 1.</strong> Binary encodings of the seven diatonic modes, listed in descending brightness order. Binary strings are written LSB-first (bit 0 at left).</figcaption>
+    </figure>
+
+    <h3>2.1 Modal Rotation as Bit Rotation</h3>
+    <p>Transposing a scale to begin on its <span class="math">k</span>-th degree corresponds, in the binary representation, to a cyclic rotation of the bit string. Formally, let <code>rot₁₂(p, k)</code> denote the 12-bit right-rotation of integer <span class="math">p</span> by <span class="math">k</span> positions:</p>
+
+    <pre>rot12(p, k) = ((p >>> k) | (p << (12 - k))) & 0xFFF</pre>
+
+    <p>Then the <span class="math">k</span>-th mode of scale <span class="math">p</span> is <code>rot12(p, k)</code>, provided the result is odd (i.e., the root is preserved). All modes of a scale family are thus orbits under the cyclic group <span class="math">ℤ₁₂</span> acting on 12-bit integers by rotation.</p>
+  </section>
+
+  <!-- 3. ENUMERATION -->
+  <section>
+    <span class="sec-num">3.</span>
+    <h2>Scale Enumeration and Canonical Forms</h2>
+    <p>The 4096 possible 12-bit integers include all possible pitch-class subsets of the chromatic scale, including the empty set (<code>0</code>) and the full chromatic (<code>4095</code>). We restrict attention to <em>scales</em> subject to the following constraints, following Zeitler (2010) <sup>[2]</sup>:</p>
+    <ol style="margin: 20px 0 20px 28px; line-height: 2;">
+      <li>The root pitch-class is present (<span class="math">p</span> is odd).</li>
+      <li>Cardinality is between 3 and 8 (inclusive).</li>
+      <li>No three consecutive semitones appear (no chromatic cluster of length ≥ 3).</li>
+    </ol>
+    <p>Constraint (3) is operationalised as: for no <span class="math">i</span> are bits <span class="math">i</span>, <span class="math">(i+1) \bmod 12</span>, and <span class="math">(i+2) \bmod 12</span> all set. This yields approximately 2,000 valid scale families when equivalence under rotation is applied.</p>
+    <p>The <em>canonical form</em> of a scale family is defined as the smallest integer among all rotations with the root bit set. Grouping all scales by canonical form partitions the valid scales into families of related modes, enabling a complete, non-redundant catalogue.</p>
+  </section>
+
+  <!-- 4. BRIGHTNESS METRIC -->
+  <section>
+    <span class="sec-num">4.</span>
+    <h2>The Brightness Metric</h2>
+
+    <div class="definition">
+      <div class="def-label">DEFINITION 4.1 — BRIGHTNESS SCORE</div>
+      <p>For a scale encoded as integer <span class="math">p</span>, the <em>brightness score</em> is:</p>
+      <span class="math-display">β(p) = Σ<sub>i=0</sub><sup>11</sup> i · b<sub>i</sub>(p)</span>
+      <p>where <span class="math">b<sub>i</sub>(p) = (p >> i) & 1</span> is the <span class="math">i</span>-th bit of <span class="math">p</span>. Equivalently, <span class="math">β(p)</span> is the sum of the pitch-class integers in the set encoded by <span class="math">p</span>.</p>
+    </div>
+
+    <p>The brightness score of all seven diatonic modes, together with their ranking, is given in Figure 2.</p>
+
+    <figure>
+      <div class="fig-body">
+        <table>
+          <thead><tr><th>Rank</th><th>Mode</th><th>Pitch Classes</th><th>β</th><th style="min-width:120px">Relative brightness</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td class="td-name">Lydian</td><td>{0,2,4,6,7,9,11}</td><td class="td-bright">39</td><td><span class="inline-bar" style="width:100%"></span></td></tr>
+            <tr><td>2</td><td class="td-name">Ionian</td><td>{0,2,4,5,7,9,11}</td><td class="td-bright">38</td><td><span class="inline-bar" style="width:93%"></span></td></tr>
+            <tr><td>3</td><td class="td-name">Mixolydian</td><td>{0,2,4,5,7,9,10}</td><td class="td-bright">37</td><td><span class="inline-bar" style="width:86%"></span></td></tr>
+            <tr><td>4</td><td class="td-name">Dorian</td><td>{0,2,3,5,7,9,10}</td><td class="td-bright">36</td><td><span class="inline-bar" style="width:79%"></span></td></tr>
+            <tr><td>5</td><td class="td-name">Aeolian</td><td>{0,2,3,5,7,8,10}</td><td class="td-bright">35</td><td><span class="inline-bar" style="width:71%"></span></td></tr>
+            <tr><td>6</td><td class="td-name">Phrygian</td><td>{0,1,3,5,7,8,10}</td><td class="td-bright">34</td><td><span class="inline-bar" style="width:64%"></span></td></tr>
+            <tr><td>7</td><td class="td-name">Locrian</td><td>{0,1,3,5,6,8,10}</td><td class="td-bright">33</td><td><span class="inline-bar" style="width:57%"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figcaption><strong>Figure 2.</strong> Brightness scores for the seven diatonic modes. The scores form a strictly decreasing sequence with unit steps, reflecting the single-bit substitution between adjacent modes.</figcaption>
+    </figure>
+
+    <h3>4.1 Unit-Step Property of Diatonic Modes</h3>
+    <p>Adjacent modes in the diatonic brightness ordering differ by exactly one pitch-class substitution: one scale degree is lowered by a semitone. In the binary representation, this corresponds to moving a single set bit from position <span class="math">i+1</span> to position <span class="math">i</span>, reducing <span class="math">β</span> by exactly 1. The strict unit-step property of the diatonic brightness sequence is therefore an immediate algebraic consequence of the representation, requiring no appeal to interval theory or historical precedent.</p>
+  </section>
+
+  <!-- 5. GENERALISATION -->
+  <section>
+    <span class="sec-num">5.</span>
+    <h2>Generalisation to Arbitrary Scale Families</h2>
+    <p>The brightness metric generalises without modification to all scale families covered by the enumeration of Section 3. For a pentatonic family, the five active bit positions are summed; for a hexatonic family, six; and so on. The metric remains a total order on all modes of any given family.</p>
+    <p>As an example, Figure 3 compares brightness scores across several named scales from different cardinality classes.</p>
+
+    <figure>
+      <div class="fig-body">
+        <table>
+          <thead><tr><th>Scale</th><th>Card.</th><th>Pitch Classes</th><th>β</th></tr></thead>
+          <tbody>
+            <tr><td class="td-name">Whole Tone</td><td>6</td><td>{0,2,4,6,8,10}</td><td class="td-bright">30</td></tr>
+            <tr><td class="td-name">Lydian Aug.</td><td>7</td><td>{0,2,4,6,8,9,11}</td><td class="td-bright">40</td></tr>
+            <tr><td class="td-name">Maj. Pentatonic</td><td>5</td><td>{0,2,4,7,9}</td><td class="td-bright">22</td></tr>
+            <tr><td class="td-name">Octatonic HW</td><td>8</td><td>{0,1,3,4,6,7,9,10}</td><td class="td-bright">40</td></tr>
+            <tr><td class="td-name">Hirajoshi</td><td>5</td><td>{0,2,3,7,8}</td><td class="td-bright">20</td></tr>
+            <tr><td class="td-name">Double Harmonic</td><td>7</td><td>{0,1,4,5,7,8,11}</td><td class="td-bright">36</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figcaption><strong>Figure 3.</strong> Brightness scores for selected named scales across cardinality classes. Scores are not directly comparable across cardinalities (more notes implies a higher theoretical maximum), but are valid ordering metrics within any fixed-cardinality family.</figcaption>
+    </figure>
+
+    <p>It should be noted that brightness scores are not directly comparable <em>across</em> cardinality classes: a 7-note scale has a higher theoretical maximum (0+1+2+...+10+11 restricted to 7 terms) than a 5-note scale. Within a family of fixed cardinality, however, the metric constitutes a total order that is both algorithmically trivial to compute and perceptually meaningful.</p>
+  </section>
+
+  <!-- 6. INTERVALLIC REACH -->
+  <section>
+    <span class="sec-num">6.</span>
+    <h2>Intervallic Reach: An Interpretive Framework</h2>
+    <p>The brightness metric admits a natural and pedagogically transparent interpretation in terms of what we term <em>intervallic reach</em>.</p>
+    <p>Each pitch-class in a scale occupies a position along the chromatic axis, measured as a number of semitones above the root. This distance is precisely the bit position <span class="math">i</span> in the binary encoding. The brightness score <span class="math">β(p)</span> is therefore the aggregate distance — the total reach — of all scale tones from the root.</p>
+    <p>A scale with a high brightness score is one whose tones, in aggregate, venture <em>far</em> from the root. Lydian's characteristic augmented fourth (position 6, compared to the perfect fourth at position 5 in Ionian) contributes an additional unit of reach relative to its modal neighbours. Conversely, Locrian's minor second (position 1, compared to the major second at position 2 in Phrygian) represents a minimal first step — a tone that barely leaves the root.</p>
+
+    <div class="definition">
+      <div class="def-label">PROPOSITION 6.1 — BRIGHTNESS AS COURAGE</div>
+      <p>The brightness score of a scale measures the <em>aggregate intervallic courage</em> of its tones: the cumulative distance each scale degree ventures from the tonal centre along the ascending chromatic axis. Brighter scales make larger forward steps; darker scales make smaller ones.</p>
+    </div>
+
+    <h3>6.1 Pedagogical Implications</h3>
+    <p>Standard music pedagogy introduces modal brightness as a memorised ordering, typically justified by reference to the circle of fifths or by counting the number of alterations from the major scale. Neither approach explains <em>why</em> the ordering is what it is, or provides a principled method for extending it to non-diatonic collections.</p>
+    <p>The binary representation and intervallic reach interpretation provide both. A student who understands that brightness = reach can:</p>
+    <ol style="margin: 20px 0 20px 28px; line-height: 2.2;">
+      <li>Derive the diatonic brightness ordering from first principles, using only integer addition.</li>
+      <li>Determine the brightness ordering of any unfamiliar scale family by inspection of its binary encoding.</li>
+      <li>Understand modal affect in structural terms: a dark scale is one that <em>stays close to home</em>; a bright scale is one that <em>reaches outward</em>.</li>
+      <li>Generalise the concept of brightness to the full universe of valid scales, beyond the seven diatonic modes.</li>
+    </ol>
+    <p>This framework requires no prior knowledge of harmonic function, counterpoint, or tonal history — only the ability to read a binary string and perform single-digit addition.</p>
+  </section>
+
+  <!-- 7. PRIOR ART -->
+  <section>
+    <span class="sec-num">7.</span>
+    <h2>Development History and Prior Art</h2>
+    <p>The 12-bit binary encoding of pitch-class sets is implicit in earlier work on pitch-class set theory (Forte, 1973) <sup>[1]</sup> and has been used in various computational contexts. A notable public catalogue using this representation is Ian Ring's "Exciting Universe of Music Theory" website, whose Patreon presence dates to June 2018 and which discusses brightness in the context of scale analysis.</p>
+    <p>The binary encoding and associated brightness sorting described in this paper were independently developed by the present author and implemented in the first version of the Chloe scale explorer application, which was made publicly available and shared in online music theory communities approximately in 2016, as evidenced by commit records in the <code>ronniebnorth/ronniebnorth.github.io</code> GitHub repository (commit dated "9 years ago" relative to March 2026). This public demonstration predates the known public launch of comparable web resources.</p>
+    <p>The specific framing of the brightness metric as a measure of <em>intervallic reach</em> or "musical courage" — and the pedagogical framework derived from it — represent original contributions of the present author not found, to the author's knowledge, in prior literature.</p>
+    <p>The Chloe application has been developed through successive versions (Chloe, Chloe2, Chloe3), with the current version (Chloe3) available at <code>ronniebnorth.github.io/chloe3</code> and the source at <code>github.com/ronniebnorth/chloe3</code>.</p>
+  </section>
+
+  <!-- 8. CONCLUSION -->
+  <section>
+    <span class="sec-num">8.</span>
+    <h2>Conclusion</h2>
+    <p>We have presented a binary integer encoding of musical scales in 12-TET and a derived brightness metric defined as the arithmetic sum of active bit positions. We have shown that this metric correctly orders all modes of any scale family from brightest to darkest, generalising the familiar diatonic brightness ordering to the complete universe of valid scales. We have argued that the metric admits a natural interpretation as <em>intervallic reach</em> — the aggregate distance scale tones venture from the root — and that this interpretation provides a pedagogically accessible and structurally grounded explanation of modal affect.</p>
+    <p>The broader implication is that the deep structure of tonal affect in Western harmony is, at least in part, a direct consequence of arithmetic structure. The scales were always numbers. The brightness ordering was always a sum. The insight required only the right representation to make it visible.</p>
+  </section>
+
+  <!-- REFERENCES -->
+  <div class="references">
+    <h2>REFERENCES</h2>
+    <ol class="ref-list">
+      <li>Forte, Allen. <em>The Structure of Atonal Music.</em> Yale University Press, 1973.</li>
+      <li>Zeitler, William. <em>Comprehensive catalogue of musical scales.</em> Glass Armonica, 2010. Defines the constraint (maximum interval ≤ major third) referenced in Section 3.</li>
+      <li>Ring, Ian. "The Exciting Universe of Music Theory." <em>ianring.com/musictheory/scales/</em>. Patreon established June 2018.</li>
+      <li>North, Ronnie. "Chloe Scale Explorer." First public release c. 2016. Repository: <em>github.com/ronniebnorth/ronniebnorth.github.io</em>, directory <code>/chloe</code>. Current version: <em>github.com/ronniebnorth/chloe3</em>.</li>
+      <li>Straus, Joseph N. <em>Introduction to Post-Tonal Theory.</em> 4th ed., W. W. Norton, 2016. Standard reference for pitch-class set operations.</li>
+    </ol>
+  </div>
+
+</div>
+</body>
+</html>

@@ -528,6 +528,7 @@ function HelpModal({ onClose, K }) {
             <div style={{ display: "flex", gap: 16 }}>
               <a href="chloe3-guide.html" target="_blank" rel="noreferrer" style={{ color: K.a, textDecoration: "none", letterSpacing: 1 }}>full guide ↗</a>
               <a href="scales-interactive.html" target="_blank" rel="noreferrer" style={{ color: K.a, textDecoration: "none", letterSpacing: 1 }}>scales are numbers ↗</a>
+              <a href="scales-academic.html" target="_blank" rel="noreferrer" style={{ color: K.a, textDecoration: "none", letterSpacing: 1 }}>scales academic ↗</a>
             </div>
           </div>
         </div>
