@@ -994,6 +994,11 @@ export default function Chloe() {
   }); // { [pattern decimal]: "name" }
   const [editingName,  setEditingName]  = useState(null); // pattern decimal currently being named
   const [nameInput,    setNameInput]    = useState("");
+  const [demoAllScales, setDemoAllScales] = useState(false);
+  const customNamesRef = useRef({});
+  useEffect(() => { customNamesRef.current = customNames; }, [customNames]);
+  const demoAllScalesRef = useRef(false);
+  useEffect(() => { demoAllScalesRef.current = demoAllScales; }, [demoAllScales]);
   const [theme,      setTheme]      = useState(() => localStorage.getItem("chloe-theme") || "dark");
   const [centerTab,  setCenterTab]  = useState("viz");
   const dragRef = useRef(null); // { startX, startW }
@@ -1287,15 +1292,17 @@ export default function Chloe() {
 
     const callClaude = async () => {
       if (loopOnRef.current) { timeout = setTimeout(callClaude, 1000); return; }
-      // Build scale catalogue from KNOWN scales
+      // Build scale catalogue — named scales + custom names, or all scales if demoAllScales
+      const allScales = demoAllScalesRef.current;
+      const cNames = customNamesRef.current;
       const catalogue = [];
       for (const fam of FAMILIES) {
         fam.modes.forEach((pat, mi) => {
-          const name = KNOWN[pat];
-          if (name) {
+          const name = KNOWN[pat] || cNames[pat];
+          if (name || allScales) {
             const semis = toSemis(pat);
             const ivs = semis.slice(1).map((v, i) => v - semis[i]).concat(12 - semis[semis.length - 1]);
-            catalogue.push({ familyId: fam.id, modeIdx: mi, name, notes: fam.n, intervals: ivs.join("-") });
+            catalogue.push({ familyId: fam.id, modeIdx: mi, name: name || `${fam.id}.${mi}`, notes: fam.n, intervals: ivs.join("-") });
           }
         });
       }
@@ -1394,7 +1401,7 @@ The app already has: drone (sustained root note, independently volume-controlled
 
     const catalogue = FAMILIES.flatMap(fam =>
       fam.modes.map((pat, i) => ({ fam, modeIdx: i, pat }))
-    ).filter(({ pat }) => KNOWN[pat]);
+    ).filter(({ pat }) => demoAllScalesRef.current || KNOWN[pat] || customNamesRef.current[pat]);
 
     const RHYTHMS = ["even", "swing", "gallop", "waltz", "clave"];
     const DIRS    = ["asc", "desc", "rand"];
@@ -1422,7 +1429,7 @@ The app already has: drone (sustained root note, independently volume-controlled
       setBpm(bpm);
       setArpOn(true);
 
-      const scaleName = KNOWN[entry.fam.modes[entry.modeIdx]];
+      const scaleName = KNOWN[entry.fam.modes[entry.modeIdx]] || customNamesRef.current[entry.fam.modes[entry.modeIdx]] || `${entry.fam.id}.${entry.modeIdx}`;
       setDemoComment(`${scaleName} — ${entry.fam.n} notes · ${rhythm} · ${bpm}bpm`);
 
       setDemoLog(prev => [{
@@ -2148,6 +2155,20 @@ The app already has: drone (sustained root note, independently volume-controlled
                   fontFamily: "inherit", fontWeight: b.on ? 600 : 400,
                   transition: "all .15s",
                 }}>{b.label}</button>
+              ))}
+            </div>
+            {/* Scale pool toggle */}
+            <div style={{ display: "flex", gap: 0, border: `1px solid ${K.br}`, borderRadius: 4, overflow: "hidden", marginBottom: 6 }}>
+              {[{ l: "named scales", v: false }, { l: "all scales", v: true }].map(opt => (
+                <button key={String(opt.v)} onClick={() => setDemoAllScales(opt.v)} style={{
+                  flex: 1, background: demoAllScales === opt.v ? K.bg3 : "transparent",
+                  color: demoAllScales === opt.v ? K.a : K.t2,
+                  border: "none", borderRight: !opt.v ? `1px solid ${K.br}` : "none",
+                  padding: "4px 4px", fontSize: 9, cursor: "pointer",
+                  fontFamily: "inherit", letterSpacing: 0.5,
+                  fontWeight: demoAllScales === opt.v ? 600 : 400,
+                  transition: "all .15s",
+                }}>{opt.l}</button>
               ))}
             </div>
             {/* Loop button — visible when Demo or Auto is running */}
