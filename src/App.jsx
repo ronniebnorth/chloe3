@@ -1020,6 +1020,7 @@ export default function Chloe() {
   const reverbRef  = useRef(null); // { convolver, wetGain }
   const delayRef   = useRef(null); // { delayNode, feedbackGain, wetGain }
   const arpRef      = useRef(null);
+  const playGridRef  = useRef(null); // { startTime, bpm } set when arp starts; used by beat to sync
   const arpIdxRef   = useRef(0);
   const rhythmIdxRef = useRef(0);
   const melPrevRef  = useRef(0);
@@ -1113,6 +1114,23 @@ export default function Chloe() {
     if (!beatOn) return;
     beatStepRef.current = 0;
     let cancelled = false;
+    const ac = getCtx();
+
+    // If arp is running, snap first beat to the next sub-beat boundary of the arp grid
+    // so they stay phase-locked automatically.
+    const grid = playGridRef.current;
+    let nextTickTime; // AudioContext seconds
+    if (grid) {
+      const { rhythm: patKey, bpm: gridBpm } = stRef.current;
+      const pat = BEAT_PATTERNS[patKey] ?? BEAT_PATTERNS.even;
+      const subSec = pat.sub * (60 / gridBpm); // duration of one beat step
+      const elapsed = ac.currentTime - grid.startTime;
+      const stepsSinceStart = elapsed / subSec;
+      const nextStep = Math.ceil(stepsSinceStart + 0.01); // +epsilon avoids snapping to current step if exactly on boundary
+      nextTickTime = grid.startTime + nextStep * subSec;
+    } else {
+      nextTickTime = ac.currentTime;
+    }
 
     const tick = () => {
       if (cancelled) return;
@@ -1120,19 +1138,20 @@ export default function Chloe() {
       const pat = BEAT_PATTERNS[patKey] ?? BEAT_PATTERNS.even;
       const step = beatStepRef.current % pat.loop.length;
       const [k, s, h] = pat.loop[step];
-      const ac = getCtx();
       const an = getOrCreateAnalyser(ac);
       if (k) synthKick(ac, vol, an.node);
       if (s) synthSnare(ac, vol, an.node);
       if (h) synthHat(ac, vol, an.node);
       beatStepRef.current++;
-      const quarterMs = 60000 / bpm;
-      // swing: even steps get (1+sw) fraction, odd steps get (1-sw) fraction
-      const ms = pat.sub * quarterMs * (step % 2 === 1 ? (1 - pat.sw) : (1 + pat.sw));
-      beatTimeout.current = setTimeout(tick, ms);
+      // Self-correcting: advance scheduled time rather than relying on setTimeout precision
+      const stepSec = pat.sub * (60 / bpm) * (step % 2 === 1 ? (1 - pat.sw) : (1 + pat.sw));
+      nextTickTime += stepSec;
+      const delayMs = Math.max(0, (nextTickTime - ac.currentTime) * 1000);
+      beatTimeout.current = setTimeout(tick, delayMs);
     };
 
-    tick();
+    const initialDelay = Math.max(0, (nextTickTime - ac.currentTime) * 1000);
+    beatTimeout.current = setTimeout(tick, initialDelay);
     return () => { cancelled = true; clearTimeout(beatTimeout.current); };
   }, [beatOn, getCtx, getOrCreateAnalyser]);
 
@@ -1140,7 +1159,10 @@ export default function Chloe() {
   useEffect(() => {
     clearInterval(arpRef.current);
     setPlaying(null);
-    if (!arpOn || !sel) return;
+    if (!arpOn || !sel) { playGridRef.current = null; return; }
+    // Record grid epoch so the beat can snap to this clock
+    const _ac0 = getCtx();
+    playGridRef.current = { startTime: _ac0.currentTime, bpm: stRef.current.bpm };
     arpIdxRef.current = 0;
     rhythmIdxRef.current = 0;
     melPrevRef.current = 0;
