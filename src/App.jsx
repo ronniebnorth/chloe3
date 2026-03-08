@@ -166,7 +166,10 @@ function synthDrone(ac, freq, type) {
   oscs.forEach(o => o.start());
   return {
     node: master,
-    stop: () => oscs.forEach(o => { try { o.stop(); } catch {} }),
+    stop: () => {
+      oscs.forEach(o => { try { o.stop(); } catch {} });
+      setTimeout(() => { try { master.disconnect(); } catch {} }, 150);
+    },
   };
 }
 
@@ -180,6 +183,7 @@ function synthKick(ac, vol, an) {
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
   osc.connect(g); g.connect(ac.destination); if (an) g.connect(an);
   osc.start(now); osc.stop(now + 0.25);
+  setTimeout(() => { try { osc.disconnect(); g.disconnect(); } catch {} }, 800);
 }
 
 function synthSnare(ac, vol, an) {
@@ -193,6 +197,7 @@ function synthSnare(ac, vol, an) {
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
   src.connect(filt); filt.connect(g); g.connect(ac.destination); if (an) g.connect(an);
   src.start(now); src.stop(now + 0.12);
+  setTimeout(() => { try { src.disconnect(); filt.disconnect(); g.disconnect(); } catch {} }, 700);
 }
 
 function synthHat(ac, vol, an) {
@@ -206,6 +211,7 @@ function synthHat(ac, vol, an) {
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
   src.connect(filt); filt.connect(g); g.connect(ac.destination); if (an) g.connect(an);
   src.start(now); src.stop(now + 0.05);
+  setTimeout(() => { try { src.disconnect(); filt.disconnect(); g.disconnect(); } catch {} }, 600);
 }
 
 // sub = fraction of a quarter note per step; sw = swing ratio (0 = straight, 1/3 = triplet swing)
@@ -267,29 +273,32 @@ function makeImpulse(ac, duration, decay) {
 function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend, analyserSend) {
   // reverbSend / delaySend / analyserSend: AudioNode or null
   const dest = ac.destination;
+  const nodes = []; // track all created nodes for post-note cleanup
+  const mkG = () => { const n = ac.createGain(); nodes.push(n); return n; };
+  const mkO = (type) => { const n = ac.createOscillator(); n.type = type; nodes.push(n); return n; };
+  const mkF = (type, freq) => { const n = ac.createBiquadFilter(); n.type = type; n.frequency.value = freq; nodes.push(n); return n; };
+  const mkB = () => { const n = ac.createBufferSource(); nodes.push(n); return n; };
   const connectOut = (node) => {
     node.connect(dest);
     if (reverbSend) node.connect(reverbSend);
     if (delaySend) node.connect(delaySend);
     if (analyserSend) node.connect(analyserSend);
   };
+  const cleanup = (dur) => setTimeout(() => nodes.forEach(n => { try { n.disconnect(); } catch {} }), (dur + 0.5) * 1000);
   const now = ac.currentTime;
 
   if (instrument === "piano") {
-    const g = ac.createGain();
-    const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 4000;
-    const oscs = [];
+    const g = mkG();
+    const f = mkF("lowpass", 4000);
     [0, 4, -4].forEach(detune => {
-      const o = ac.createOscillator(); o.type = "triangle";
+      const o = mkO("triangle");
       o.frequency.value = freq; o.detune.value = detune;
-      o.connect(g); oscs.push(o);
+      o.connect(g);
     });
-    // 2nd + 3rd harmonics for brightness
     [2, 3].forEach((mult, i) => {
-      const o = ac.createOscillator(); o.type = "sine";
-      o.frequency.value = freq * mult;
-      const og = ac.createGain(); og.gain.value = [0.12, 0.04][i];
-      o.connect(og); og.connect(g); oscs.push(o);
+      const o = mkO("sine"); o.frequency.value = freq * mult;
+      const og = mkG(); og.gain.value = [0.12, 0.04][i];
+      o.connect(og); og.connect(g);
     });
     const dur = Math.min(beatDur * 1.6, 3.2);
     g.gain.setValueAtTime(0, now);
@@ -297,24 +306,21 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     g.gain.setTargetAtTime(vel * 0.22, now + 0.018, 0.07);
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
     g.connect(f); connectOut(f);
-    oscs.forEach(o => { o.start(now); o.stop(now + dur); });
+    nodes.filter(n => n instanceof OscillatorNode).forEach(o => { o.start(now); o.stop(now + dur); });
+    cleanup(dur);
     return { start: now, stop: now + dur };
   }
 
   if (instrument === "guitar") {
-    // Karplus-Strong-ish: noise burst into resonant filter, decay
-    const g = ac.createGain();
-    const filt = ac.createBiquadFilter(); filt.type = "bandpass";
-    filt.frequency.value = freq; filt.Q.value = 18;
+    const g = mkG();
+    const filt = mkF("bandpass", freq); filt.Q.value = 18;
     const buf = ac.createBuffer(1, ac.sampleRate * 0.04, ac.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    const src2 = ac.createBufferSource(); src2.buffer = buf;
+    const src2 = mkB(); src2.buffer = buf;
     src2.connect(filt); filt.connect(g);
-    // Tone oscillator underneath
-    const o = ac.createOscillator(); o.type = "triangle";
-    o.frequency.value = freq;
-    const og = ac.createGain(); og.gain.value = 0.3;
+    const o = mkO("triangle"); o.frequency.value = freq;
+    const og = mkG(); og.gain.value = 0.3;
     o.connect(og); og.connect(g);
     const dur = Math.min(beatDur * 1.2, 2.2);
     g.gain.setValueAtTime(0, now);
@@ -323,17 +329,16 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     connectOut(g);
     src2.start(now); src2.stop(now + 0.05);
     o.start(now); o.stop(now + dur);
+    cleanup(dur);
     return { start: now, stop: now + dur };
   }
 
   if (instrument === "xylo") {
-    // Very percussive: fast attack, very fast decay, bright harmonics
-    const g = ac.createGain();
-    const f = ac.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 800;
+    const g = mkG();
+    const f = mkF("highpass", 800);
     [1, 2.756, 5.404].forEach((ratio, i) => {
-      const o = ac.createOscillator(); o.type = "sine";
-      o.frequency.value = freq * ratio;
-      const og = ac.createGain(); og.gain.value = [0.7, 0.25, 0.08][i];
+      const o = mkO("sine"); o.frequency.value = freq * ratio;
+      const og = mkG(); og.gain.value = [0.7, 0.25, 0.08][i];
       o.connect(og); og.connect(g);
       o.start(now); o.stop(now + 0.9);
     });
@@ -342,22 +347,20 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     g.gain.linearRampToValueAtTime(vel, now + 0.004);
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
     g.connect(f); connectOut(f);
+    cleanup(dur);
     return { start: now, stop: now + dur };
   }
 
   if (instrument === "space") {
-    // 4 detuned sines, slow attack, reverb-like long decay, slight LFO
-    const g = ac.createGain();
-    const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 1600;
-    const detunings = [-8, -3, 3, 8];
-    const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.4;
-    const lfoG = ac.createGain(); lfoG.gain.value = 4;
+    const g = mkG();
+    const f = mkF("lowpass", 1600);
+    const lfo = mkO("sine"); lfo.frequency.value = 0.4;
+    const lfoG = mkG(); lfoG.gain.value = 4;
     lfo.connect(lfoG);
-    detunings.forEach(d => {
-      const o = ac.createOscillator(); o.type = "sine";
-      o.frequency.value = freq; o.detune.value = d;
-      lfoG.connect(o.frequency); // subtle vibrato
-      const og = ac.createGain(); og.gain.value = 0.28;
+    [-8, -3, 3, 8].forEach(d => {
+      const o = mkO("sine"); o.frequency.value = freq; o.detune.value = d;
+      lfoG.connect(o.frequency);
+      const og = mkG(); og.gain.value = 0.28;
       o.connect(og); og.connect(g);
       o.start(now); o.stop(now + 4.0);
     });
@@ -368,20 +371,21 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     g.gain.linearRampToValueAtTime(vel * 1.1, now + atk);
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
     g.connect(f); connectOut(f);
+    cleanup(dur);
     return { start: now, stop: now + dur };
   }
 
   // Fallback: raw oscillator (original timbre mode)
-  const o = ac.createOscillator(); o.type = timbre;
-  o.frequency.value = freq;
-  const g = ac.createGain();
-  const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 2400;
+  const o = mkO(timbre); o.frequency.value = freq;
+  const g = mkG();
+  const f = mkF("lowpass", 2400);
   const dur = beatDur * 0.82;
   g.gain.setValueAtTime(0, now);
   g.gain.linearRampToValueAtTime(vel, now + 0.012);
   g.gain.exponentialRampToValueAtTime(0.001, now + dur);
   o.connect(g); g.connect(f); connectOut(f);
   o.start(now); o.stop(now + dur);
+  cleanup(dur);
   return { start: now, stop: now + dur };
 }
 
@@ -914,7 +918,7 @@ export default function Chloe() {
         filter:     p.get("f") ?? "",
         selId:      p.get("s") ?? null,   // "hep-6.1" style
         aRef:       parseInt(p.get("a") ?? "440"),
-        droneOct:   parseInt(p.get("do") ?? "0"),
+        droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         melMode:    p.get("m") === "1",
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -933,10 +937,10 @@ export default function Chloe() {
   const [sel,        setSel]        = useState(null); // resolved after FAMILIES built
   const [aRef,       setARef]       = useState(_u.aRef       ?? 440);
   const [droneOn,    setDroneOn]    = useState(false);
-  const [droneOct,   setDroneOct]   = useState(_u.droneOct   ?? 0);
+  const [droneOct,   setDroneOct]   = useState(_u.droneOct   ?? -24);
   const [arpOn,      setArpOn]      = useState(false);
   const [arpDir,     setArpDir]     = useState("asc"); // "asc" | "desc" | "rand"
-  const [arpOct,     setArpOct]     = useState(1);
+  const [arpOct,     setArpOct]     = useState(3);
   const [rhythm,     setRhythm]     = useState("even");
   const [melMode,    setMelMode]    = useState(_u.melMode     ?? false);
   const [chordVoice, setChordVoice] = useState("off"); // off | triad | 7th | sus2 | power | all | rand
@@ -966,7 +970,7 @@ export default function Chloe() {
   const [beatOn,      setBeatOn]      = useState(false);
   const [droneVol,    setDroneVol]    = useState(1.0);
   const [droneTone,   setDroneTone]   = useState(0.5);
-  const [droneWave,   setDroneWave]   = useState("sine");
+  const [droneWave,   setDroneWave]   = useState("tanpura");
   const [beatVol,     setBeatVol]     = useState(1.0);
   const beatStepRef  = useRef(0);
   const beatTimeout  = useRef(null);
@@ -994,10 +998,10 @@ export default function Chloe() {
   }); // { [pattern decimal]: "name" }
   const [editingName,  setEditingName]  = useState(null); // pattern decimal currently being named
   const [nameInput,    setNameInput]    = useState("");
-  const [demoAllScales, setDemoAllScales] = useState(false);
+  const [demoAllScales, setDemoAllScales] = useState(true);
   const customNamesRef = useRef({});
   useEffect(() => { customNamesRef.current = customNames; }, [customNames]);
-  const demoAllScalesRef = useRef(false);
+  const demoAllScalesRef = useRef(true);
   useEffect(() => { demoAllScalesRef.current = demoAllScales; }, [demoAllScales]);
   const [theme,      setTheme]      = useState(() => localStorage.getItem("chloe-theme") || "dark");
   const [centerTab,  setCenterTab]  = useState("viz");
@@ -1092,11 +1096,20 @@ export default function Chloe() {
     droneFilterRef.current = f;
     const dFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
     const voice = synthDrone(ac, dFreq, droneWave);
-    const volGain = ac.createGain(); volGain.gain.value = droneVol;
+    const volGain = ac.createGain();
+    volGain.gain.setValueAtTime(0, ac.currentTime);
+    volGain.gain.linearRampToValueAtTime(droneVol, ac.currentTime + 0.08);
     droneGainRef.current = volGain;
     voice.node.connect(f); f.connect(volGain);
     volGain.connect(ac.destination); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node);
-    return () => { voice.stop(); droneGainRef.current = null; droneFilterRef.current = null; };
+    return () => {
+      const now = ac.currentTime;
+      volGain.gain.cancelScheduledValues(now);
+      volGain.gain.setValueAtTime(volGain.gain.value, now);
+      volGain.gain.linearRampToValueAtTime(0, now + 0.08);
+      droneGainRef.current = null; droneFilterRef.current = null;
+      setTimeout(() => { try { voice.stop(); } catch {} }, 100);
+    };
   }, [droneOn, rootIdx, droneOct, droneWave, aRef, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
 
   // Keep drone volume in sync with droneVol slider
@@ -1398,7 +1411,7 @@ The app already has: drone (sustained root note, independently volume-controlled
           commentary: choice.commentary || "",
           request: choice.request || "",
           ts: Date.now(),
-        }, ...prev]);
+        }, ...prev].slice(0, 200));
       }
 
       const delay = 12000 + Math.random() * 4000;
@@ -1461,7 +1474,7 @@ The app already has: drone (sustained root note, independently volume-controlled
         rhythm, arpDir, chordVoice, bpm,
         commentary: `${scaleName} — ${entry.fam.n} notes · ${rhythm} · ${bpm}bpm`,
         ts: Date.now(),
-      }, ...prev]);
+      }, ...prev].slice(0, 200));
 
       timeout = setTimeout(pickNext, 12000 + Math.random() * 4000);
     };
