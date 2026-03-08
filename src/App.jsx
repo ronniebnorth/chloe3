@@ -984,6 +984,12 @@ export default function Chloe() {
     catch { return new Set(); }
   }); // Set of "fam.id.mi" strings
   const [favsOnly,   setFavsOnly]   = useState(false);
+  const [customNames, setCustomNames] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("chloe-custom-names") || "{}"); }
+    catch { return {}; }
+  }); // { [pattern decimal]: "name" }
+  const [editingName,  setEditingName]  = useState(null); // pattern decimal currently being named
+  const [nameInput,    setNameInput]    = useState("");
   const [theme,      setTheme]      = useState(() => localStorage.getItem("chloe-theme") || "dark");
   const [centerTab,  setCenterTab]  = useState("viz");
   const dragRef = useRef(null); // { startX, startW }
@@ -1011,6 +1017,7 @@ export default function Chloe() {
   const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol });
   useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
+  useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
   const getCtx = useCallback(() => {
     if (!ctxRef.current || ctxRef.current.state === "closed")
@@ -1460,18 +1467,28 @@ The app already has: drone (sustained root note, independently volume-controlled
         GRP_PFX[f.n].startsWith(t) ||
         f.modes.some(m =>
           toBin(m).includes(t) ||
-          (KNOWN[m] || "").toLowerCase().includes(t) ||
+          (KNOWN[m] || customNames[m] || "").toLowerCase().includes(t) ||
           matchesInterval(t, m)
         )
       )
     );
-  }, [FAMILIES, filter, favs, favsOnly]);
+  }, [FAMILIES, filter, favs, favsOnly, customNames]);
 
   const grouped = useMemo(() => {
     const g = {};
     for (const f of filtered) (g[f.n] = g[f.n] || []).push(f);
     return g;
   }, [filtered]);
+
+  const commitName = (pattern) => {
+    const trimmed = nameInput.trim();
+    setCustomNames(prev => {
+      const next = { ...prev };
+      if (trimmed) next[pattern] = trimmed; else delete next[pattern];
+      return next;
+    });
+    setEditingName(null);
+  };
 
   const toggleFav = (e, id) => {
     e.stopPropagation();
@@ -1496,7 +1513,7 @@ The app already has: drone (sustained root note, independently volume-controlled
     const dotPos = st.sel.id.lastIndexOf(".");
     const famId = st.sel.id.slice(0, dotPos);
     const modeIdx = parseInt(st.sel.id.slice(dotPos + 1));
-    const scaleName = KNOWN[st.sel.pattern] || st.sel.id;
+    const scaleName = KNOWN[st.sel.pattern] || customNames[st.sel.pattern] || st.sel.id;
     setSavedMoments(prev => [{
       ts: Date.now(),
       scaleName,
@@ -1552,7 +1569,7 @@ The app already has: drone (sustained root note, independently volume-controlled
   const selIvs = sel
     ? (() => { const s = toSemis(sel.pattern); return s.slice(1).map((v, i) => v - s[i]).concat(12 - s[s.length - 1]); })()
     : [];
-  const selName = sel ? KNOWN[sel.pattern] : null;
+  const selName = sel ? (KNOWN[sel.pattern] || customNames[sel.pattern] || null) : null;
 
   const toggleGrp = n => setExpanded(p => { const s = new Set(p); s.has(GRP_PFX[n]) ? s.delete(GRP_PFX[n]) : s.add(GRP_PFX[n]); return s; });
   const isExp = n => filter.trim() ? true : expanded.has(GRP_PFX[n]);
@@ -1911,6 +1928,8 @@ The app already has: drone (sustained root note, independently volume-controlled
                       const origIdx = fam.origIdxs ? fam.origIdxs[mi] : mi;
                       const isSel = sel?.id === `${fam.id}.${origIdx}`;
                       const name = KNOWN[mode];
+                      const customName = customNames[mode];
+                      const isEditingThis = editingName === mode;
                       // Brightness tint: bright modes (low mi) get a faint light overlay,
                       // dark modes (high mi) get nothing. Range 0..1 across the family.
                       const total = fam.origIdxs ? (fam.origIdxs[fam.origIdxs.length-1] + 1) : fam.modes.length;
@@ -1941,6 +1960,35 @@ The app already has: drone (sustained root note, independently volume-controlled
                           <span style={{ color: K.t2, fontSize: 9, minWidth: 40 }}>({mode})</span>
                           {name && (
                             <span style={{ color: isSel ? K.a : K.t1, fontSize: 10 }}>{name}</span>
+                          )}
+                          {!name && isEditingThis && (
+                            <input
+                              autoFocus
+                              value={nameInput}
+                              onChange={e => setNameInput(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") { e.stopPropagation(); commitName(mode); }
+                                if (e.key === "Escape") { e.stopPropagation(); setEditingName(null); }
+                              }}
+                              onBlur={() => commitName(mode)}
+                              onClick={e => e.stopPropagation()}
+                              placeholder="name this scale…"
+                              style={{
+                                background: K.bg3, border: `1px solid ${K.a}`,
+                                color: K.txt, borderRadius: 3,
+                                padding: "1px 5px", fontSize: 9,
+                                fontFamily: "inherit", outline: "none", width: 130,
+                              }}
+                            />
+                          )}
+                          {!name && !isEditingThis && customName && (
+                            <>
+                              <span style={{ color: isSel ? K.a : K.t1, fontSize: 10 }}>{customName}</span>
+                              <button onClick={e => { e.stopPropagation(); setEditingName(mode); setNameInput(customName); }} title="Edit name" style={{ background: "none", border: "none", color: K.t2, cursor: "pointer", fontSize: 9, padding: "0 2px", flexShrink: 0 }}>✎</button>
+                            </>
+                          )}
+                          {!name && !isEditingThis && !customName && (
+                            <button onClick={e => { e.stopPropagation(); setEditingName(mode); setNameInput(""); }} title="Name this scale" style={{ background: "none", border: "none", color: K.t2, cursor: "pointer", fontSize: 9, padding: "0 2px", opacity: 0.35, flexShrink: 0 }}>✎</button>
                           )}
                         </div>
                       );
