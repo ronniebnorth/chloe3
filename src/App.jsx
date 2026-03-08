@@ -936,6 +936,7 @@ export default function Chloe() {
   const [droneOct,   setDroneOct]   = useState(_u.droneOct   ?? 0);
   const [arpOn,      setArpOn]      = useState(false);
   const [arpDir,     setArpDir]     = useState("asc"); // "asc" | "desc" | "rand"
+  const [arpOct,     setArpOct]     = useState(1);
   const [rhythm,     setRhythm]     = useState("even");
   const [melMode,    setMelMode]    = useState(_u.melMode     ?? false);
   const [chordVoice, setChordVoice] = useState("off"); // off | triad | 7th | sus2 | power | all | rand
@@ -1017,8 +1018,8 @@ export default function Chloe() {
   const arpIdxRef   = useRef(0);
   const rhythmIdxRef = useRef(0);
   const melPrevRef  = useRef(0);
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1161,8 +1162,8 @@ export default function Chloe() {
       let r = Math.random() * total, idx = 0;
       for (let i = 0; i < weights.length; i++) { r -= weights[i]; if (r <= 0) { idx = i; break; } }
       melPrevRef.current = idx;
-      // 20% chance of playing it an octave higher
-      const octShift = Math.random() < 0.2 ? 12 : 0;
+      // 20% chance of playing an octave higher — only when using single octave
+      const octShift = (stRef.current.arpOct || 1) === 1 && Math.random() < 0.2 ? 12 : 0;
       return notes[idx] + octShift;
     };
 
@@ -1210,9 +1211,12 @@ export default function Chloe() {
     };
 
     const melTick = () => {
-      const { sel: s, bpm: b, melMode: mm, chordVoice: cv } = stRef.current;
+      const { sel: s, bpm: b, melMode: mm, chordVoice: cv, arpOct: aOct = 1 } = stRef.current;
       if (!s) return;
-      const notes = toSemis(s.pattern);
+      const baseNotes = toSemis(s.pattern);
+      const notes = [];
+      for (let o = 0; o < aOct; o++) baseNotes.forEach(n => notes.push(n + o * 12));
+      melPrevRef.current = Math.min(melPrevRef.current, notes.length - 1);
       const eighth = 60000 / b / 2;
       const isChord = cv !== "off";  // "rand" also counts as chord
 
@@ -1526,6 +1530,7 @@ The app already has: drone (sustained root note, independently volume-controlled
       bpm: st.bpm,
       melMode: st.melMode,
       arpDir: st.arpDir,
+      arpOct: st.arpOct,
       rhythm: st.rhythm,
       chordVoice: st.chordVoice,
       instrument: st.instrument,
@@ -1550,6 +1555,7 @@ The app already has: drone (sustained root note, independently volume-controlled
     setBpm(m.bpm);
     setMelMode(m.melMode);
     setArpDir(m.arpDir);
+    if (m.arpOct) setArpOct(m.arpOct);
     setRhythm(m.rhythm);
     setChordVoice(m.chordVoice);
     if (m.instrument !== undefined) setInstrument(m.instrument);
@@ -2271,6 +2277,22 @@ The app already has: drone (sustained root note, independently volume-controlled
                   transition: "all .15s",
                 }}>{opt.l}</button>
               ))}
+            </div>
+            {/* Octaves */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="Number of octaves to span when playing. 1 = single octave, 2 = two octaves, 3 = three octaves." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>OCTAVES</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {[1, 2, 3].map(o => (
+                  <button key={o} onClick={() => setArpOct(o)} style={{
+                    background: arpOct === o ? K.a : K.bg3,
+                    color: arpOct === o ? "#000" : K.txt,
+                    border: `1px solid ${arpOct === o ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 10px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: arpOct === o ? 600 : 400,
+                  }}>{o}</button>
+                ))}
+              </div>
             </div>
             {/* Rhythm — only applies in arpeggio mode */}
             <div style={{ marginBottom: 8, opacity: melMode ? 0.35 : 1, transition: "opacity .2s" }}>
