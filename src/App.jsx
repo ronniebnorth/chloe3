@@ -2166,7 +2166,7 @@ The app already has: drone (sustained root note, independently volume-controlled
                   if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
-                { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
+                // { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
               ].map(b => (
                 <button key={b.label} onClick={b.onClick} disabled={b.disabled} style={{
                   flex: 1, background: b.on ? K.a : K.bg3,
@@ -2257,7 +2257,7 @@ The app already has: drone (sustained root note, independently volume-controlled
                 )}
               </div>
             )}
-            {/* Beat vol */}
+            {/* Beat vol — hidden for now
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, marginBottom: 2 }}>
               <span title="Beat volume." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT VOL</span>
               <input type="range" min={0} max={1} step={0.01} value={beatVol}
@@ -2266,6 +2266,7 @@ The app already has: drone (sustained root note, independently volume-controlled
               />
               <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(beatVol * 100)}</span>
             </div>
+            */}
             {demoKey && !demoOn && !autoOn && !demoKeyInput && (
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
                 <button onClick={() => {
