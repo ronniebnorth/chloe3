@@ -947,6 +947,30 @@ function getAudioCtx(){
   if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return audioCtx;
 }
+function startDrone(rootFreq){
+  const ctx = getAudioCtx();
+  const master = ctx.createGain();
+  master.connect(ctx.destination);
+  master.gain.setValueAtTime(0, ctx.currentTime);
+  master.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 0.4);
+  const oscs = [];
+  [[1, 0.7], [0.5, 0.4], [2, 0.18], [3, 0.08]].forEach(([mult, gain]) => {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = rootFreq * mult;
+    const g = ctx.createGain(); g.gain.value = gain;
+    osc.connect(g); g.connect(master);
+    osc.start(ctx.currentTime);
+    oscs.push(osc);
+  });
+  return function stopDrone(){
+    const now = ctx.currentTime;
+    master.gain.setValueAtTime(master.gain.value, now);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
+    oscs.forEach(o => { try { o.stop(now + 1.6); } catch {} });
+  };
+}
+
 function playNote(semitone){
   const ctx = getAudioCtx();
   const freq = 261.63 * Math.pow(2, semitone / 12); // C4 = 261.63 Hz
@@ -1256,6 +1280,10 @@ function animateFrog(canvas, intervals, brightScore, semitones, mood){
   let hopIdx = 0;
   let t = 0;
 
+  // Start sustained root drone
+  const rootFreq = 261.63 * Math.pow(2, (semitones && semitones[0] || 0) / 12);
+  const stopDrone = startDrone(rootFreq);
+
   // Play root on launch
   if(semitones && semitones.length) playNote(semitones[0]);
   let waiting = false;
@@ -1294,6 +1322,7 @@ function animateFrog(canvas, intervals, brightScore, semitones, mood){
           drawEnvironment(ctx, W, H, ground, mood, positions[positions.length-1]);
           drawHopLabels(ctx, positions, intervals, ground);
           drawFrog(ctx, positions[positions.length-1], ground, mood, 1, false);
+          stopDrone();
           return;
         }
         // Play the note we just landed on
