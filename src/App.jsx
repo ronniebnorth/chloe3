@@ -1951,7 +1951,7 @@ The app already has: drone (sustained root note, independently volume-controlled
                           <button onClick={e => toggleFav(e, favId)} style={{
                             background: "none", border: "none", padding: "0 4px",
                             cursor: "pointer", fontSize: 14, lineHeight: 1, flexShrink: 0,
-                            color: isFav ? K.a : K.t2,
+                            color: isFav ? K.a : K.txt,
                             transition: "color .15s",
                           }}>{isFav ? "★" : "☆"}</button>
                           <span style={{ color: isSel ? K.a : K.txt, fontSize: 10, letterSpacing: 1.5, fontWeight: isSel ? 500 : 300, minWidth: 130, fontFamily: "inherit" }}>
@@ -1988,7 +1988,7 @@ The app already has: drone (sustained root note, independently volume-controlled
                             </>
                           )}
                           {!name && !isEditingThis && !customName && (
-                            <button onClick={e => { e.stopPropagation(); setEditingName(mode); setNameInput(""); }} title="Name this scale" style={{ background: "none", border: "none", color: K.t2, cursor: "pointer", fontSize: 9, padding: "0 2px", opacity: 0.35, flexShrink: 0 }}>✎</button>
+                            <button onClick={e => { e.stopPropagation(); setEditingName(mode); setNameInput(""); }} title="Name this scale" style={{ background: "none", border: "none", color: K.t2, cursor: "pointer", fontSize: 9, padding: "0 2px", flexShrink: 0 }}>✎</button>
                           )}
                         </div>
                       );
