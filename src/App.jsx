@@ -955,6 +955,10 @@ export default function Chloe() {
   const [demoKey,     setDemoKey]     = useState(() => localStorage.getItem("chloe-demo-key") || "");
   const [demoComment, setDemoComment] = useState("");
   const [demoRequest, setDemoRequest] = useState("");
+  const [chatInput,   setChatInput]   = useState("");
+  const [chatLog,     setChatLog]     = useState([]); // { role:"user"|"claude", text, ts }
+  const pendingUserMsgRef = useRef(null); // message waiting to be sent to Claude
+  const callClaudeNowRef  = useRef(null); // fn to trigger immediate Claude call
   const [demoKeyInput, setDemoKeyInput] = useState(false);
   const [demoLog,     setDemoLog]     = useState([]);
   const [showDemoLog, setShowDemoLog] = useState(false);
@@ -1332,6 +1336,7 @@ export default function Chloe() {
 
     const callClaude = async () => {
       if (loopOnRef.current) { timeout = setTimeout(callClaude, 1000); return; }
+      callClaudeNowRef.current = null; // consuming — clear so double-trigger can't happen
       // Build scale catalogue — named scales + custom names, or all scales if demoAllScales
       const allScales = demoAllScalesRef.current;
       const cNames = customNamesRef.current;
@@ -1367,12 +1372,12 @@ export default function Chloe() {
         max_tokens: 400,
         system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
 Respond ONLY with valid JSON matching this schema exactly:
-{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"commentary":"string","request":"string"}
-scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). commentary is 1-2 sentences about this scale's character. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"commentary":"string","reply":"string","request":"string"}
+scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
 The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.`,
         messages: [{
           role: "user",
-          content: `Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore. Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played.`
+          content: `${pendingUserMsgRef.current ? `User message: "${pendingUserMsgRef.current}"\n\n` : ""}Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore.${pendingUserMsgRef.current ? " Respond to the user's message and pick a scale accordingly." : " Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played."}`
         }]
       });
 
@@ -1411,6 +1416,8 @@ The app already has: drone (sustained root note, independently volume-controlled
       setArpOn(true);
       setDemoComment(choice.commentary || "");
       setDemoRequest(choice.request || "");
+      if (choice.reply) setChatLog(prev => [...prev, { role: "claude", text: choice.reply, ts: Date.now() }].slice(-40));
+      pendingUserMsgRef.current = null;
 
       if (fam && !isNaN(modeIdx)) {
         setDemoLog(prev => [{
@@ -1424,6 +1431,7 @@ The app already has: drone (sustained root note, independently volume-controlled
 
       const delay = 12000 + Math.random() * 4000;
       timeout = setTimeout(callClaude, delay);
+      callClaudeNowRef.current = () => { clearTimeout(timeout); callClaude(); };
     };
 
     callClaude().catch(err => {
@@ -1433,6 +1441,7 @@ The app already has: drone (sustained root note, independently volume-controlled
     return () => {
       cancelled = true;
       clearTimeout(timeout);
+      callClaudeNowRef.current = null;
     };
   }, [demoOn, demoKey, getCtx]); // reads live state via stRef/FAMILIES; getCtx is stable (useCallback [])
 
@@ -2286,7 +2295,7 @@ The app already has: drone (sustained root note, independently volume-controlled
                 }},
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
-                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); }
+                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
                 // { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
@@ -2380,6 +2389,70 @@ The app already has: drone (sustained root note, independently volume-controlled
                 )}
               </div>
             )}
+            {/* Chat box — visible when Demo mode is running */}
+            {demoOn && (
+              <div style={{ marginBottom: 6 }}>
+                {chatLog.length > 0 && (
+                  <div style={{
+                    maxHeight: 150, overflowY: "auto", border: `1px solid ${K.br}`,
+                    borderRadius: 3, padding: "6px 8px", marginBottom: 5, background: K.bg3,
+                  }}>
+                    {chatLog.map((msg, i) => (
+                      <div key={msg.ts} style={{
+                        marginBottom: i < chatLog.length - 1 ? 6 : 0,
+                        textAlign: msg.role === "user" ? "right" : "left",
+                      }}>
+                        <span style={{
+                          display: "inline-block", maxWidth: "85%",
+                          background: msg.role === "user" ? K.a + "22" : K.bg2,
+                          border: `1px solid ${msg.role === "user" ? K.a + "44" : K.br}`,
+                          color: msg.role === "user" ? K.a : K.t1,
+                          borderRadius: 3, padding: "3px 7px", fontSize: 10, lineHeight: 1.4,
+                        }}>
+                          {msg.text}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 4 }}>
+                  <input
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && chatInput.trim()) {
+                        const msg = chatInput.trim();
+                        setChatLog(prev => [...prev, { role: "user", text: msg, ts: Date.now() }].slice(-40));
+                        pendingUserMsgRef.current = msg;
+                        setChatInput("");
+                        callClaudeNowRef.current?.();
+                      }
+                    }}
+                    placeholder="say something to Claude…"
+                    style={{
+                      flex: 1, background: K.bg3, border: `1px solid ${K.br}`,
+                      color: K.txt, padding: "5px 8px", borderRadius: 3,
+                      fontFamily: "inherit", fontSize: 10, outline: "none",
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      if (!chatInput.trim()) return;
+                      const msg = chatInput.trim();
+                      setChatLog(prev => [...prev, { role: "user", text: msg, ts: Date.now() }].slice(-40));
+                      pendingUserMsgRef.current = msg;
+                      setChatInput("");
+                      callClaudeNowRef.current?.();
+                    }}
+                    style={{
+                      background: K.a, border: "none", color: "#000",
+                      borderRadius: 3, padding: "5px 10px",
+                      fontSize: 12, cursor: "pointer", fontWeight: 600,
+                    }}>→</button>
+                </div>
+              </div>
+            )}
+
             {/* Beat vol — hidden for now
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, marginBottom: 2 }}>
               <span title="Beat volume." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT VOL</span>
