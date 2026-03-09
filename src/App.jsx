@@ -1016,6 +1016,17 @@ export default function Chloe() {
   useEffect(() => { customNamesRef.current = customNames; }, [customNames]);
   const demoAllScalesRef = useRef(true);
   useEffect(() => { demoAllScalesRef.current = demoAllScales; }, [demoAllScales]);
+  const selRowRef = useRef(null);
+
+  // When Auto/Demo changes the scale, expand its group and scroll to it in the sidebar
+  useEffect(() => {
+    if (!(autoOn || demoOn) || !sel) return;
+    const famId = sel.id.slice(0, sel.id.lastIndexOf("."));
+    const fam = FAMILIES.find(f => f.id === famId);
+    if (fam) setExpanded(p => { const s = new Set(p); s.add(GRP_PFX[fam.n]); return s; });
+    // Small delay so the row has rendered before scrolling
+    setTimeout(() => selRowRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80);
+  }, [sel, autoOn, demoOn]);
   const [theme,      setTheme]      = useState(() => localStorage.getItem("chloe-theme") || "dark");
   const [centerTab,  setCenterTab]  = useState("viz");
   const dragRef = useRef(null); // { startX, startW }
@@ -2122,7 +2133,7 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
                       const favId = fam.id + "." + origIdx;
                       const isFav = favs.has(favId);
                       return (
-                        <div key={mode} onClick={() => pick(fam, origIdx, mode)} style={{
+                        <div key={mode} ref={isSel ? selRowRef : null} onClick={() => pick(fam, origIdx, mode)} style={{
                           padding: "5px 16px 5px 18px",
                           display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
                           background: isSel ? K.ag : brightTint,
