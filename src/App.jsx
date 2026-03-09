@@ -580,6 +580,65 @@ const HELP_SECTIONS = [
   { title: "LOOP & SAVE", body: "While Demo or Auto is running, a Loop button appears. Click it to freeze playback on the current scale — Claude or Auto keeps repeating it instead of moving on. While looping, a Save button appears. Clicking Save captures a full snapshot: scale, root, BPM, rhythm, arpeggio direction, chord voicing, instrument, reverb, delay, and drone settings. Saved moments persist in your browser and appear in a collapsible panel. Click the play button on any saved moment to instantly restore all its settings and start playback. Delete a moment with the × button." },
 ];
 
+function WelcomeModal({ onClose, K }) {
+  const steps = [
+    { icon: "←", label: "Pick a scale", desc: "Click any scale in the left panel. They're grouped by size — try the Heptatonic group for familiar sounds like Dorian or Lydian." },
+    { icon: "▶", label: "Play it", desc: "Hit Play in the right panel to arpeggiate through the scale. Hit Drone to hear a sustained root note underneath." },
+    { icon: "⟲", label: "Let it explore", desc: "Hit Auto to have Chloe wander through scales automatically. Or hit ★ Claude to let AI explore and explain each scale with live commentary." },
+    { icon: "?", label: "Go deeper", desc: "Click ? in the top bar for full documentation — binary notation, brightness sorting, saved moments, A/B comparison, and more." },
+  ];
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)",
+      zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: K.modB, border: `1px solid ${K.modBr}`,
+        borderRadius: 10, width: "100%", maxWidth: 480,
+        boxShadow: "0 24px 80px rgba(0,0,0,0.9)",
+        overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{ padding: "28px 28px 20px", borderBottom: `1px solid ${K.modBr}` }}>
+          <div style={{ fontFamily: "'Trebuchet MS', sans-serif", fontSize: 28, fontWeight: 800, letterSpacing: 4, color: K.modT, marginBottom: 6 }}>CHLOE</div>
+          <div style={{ color: K.modST, fontSize: 11, letterSpacing: 2, lineHeight: 1.6 }}>
+            A scale explorer. Every possible musical scale from 3 to 8 notes — hear them, compare them, get lost in them.
+          </div>
+        </div>
+        {/* Steps */}
+        <div style={{ padding: "20px 28px" }}>
+          {steps.map((s, i) => (
+            <div key={i} style={{ display: "flex", gap: 16, marginBottom: i < steps.length - 1 ? 18 : 0 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: "50%", background: K.ag,
+                border: `1px solid ${K.a}`, display: "flex", alignItems: "center", justifyContent: "center",
+                color: K.a, fontSize: 14, fontWeight: 700, flexShrink: 0,
+              }}>{s.icon}</div>
+              <div>
+                <div style={{ color: K.a, fontSize: 11, fontWeight: 700, letterSpacing: 1, marginBottom: 3 }}>{s.label}</div>
+                <div style={{ color: K.modST, fontSize: 10, lineHeight: 1.6 }}>{s.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Footer */}
+        <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{
+            flex: 1, background: K.a, border: "none", color: "#000",
+            borderRadius: 5, padding: "11px 0", fontSize: 12, fontWeight: 700,
+            cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
+          }}>Get started</button>
+          <button onClick={onClose} style={{
+            background: "none", border: `1px solid ${K.modBr}`, color: K.modST,
+            borderRadius: 5, padding: "11px 16px", fontSize: 10,
+            cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.5,
+          }}>skip</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HelpModal({ onClose, K }) {
   return (
     <div onClick={onClose} style={{
@@ -951,7 +1010,8 @@ export default function Chloe() {
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
   const [listW,      setListW]      = useState(360);
   const [urlCopied,  setUrlCopied]  = useState(false);
-  const [showHelp,   setShowHelp]   = useState(false);
+  const [showHelp,    setShowHelp]    = useState(false);
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("chloe-welcomed"));
   const [demoOn,      setDemoOn]      = useState(false);
   const [demoKey,     setDemoKey]     = useState(() => localStorage.getItem("chloe-demo-key") || "");
   const [demoComment, setDemoComment] = useState("");
@@ -1781,6 +1841,7 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
   return (
     <div style={{ background: K.bg, color: K.t1, height: "100vh", fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace", display: "flex", flexDirection: "column", fontSize: 12, overflow: "hidden" }}>
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} K={K} />}
+      {showWelcome && <WelcomeModal onClose={() => { setShowWelcome(false); localStorage.setItem("chloe-welcomed", "1"); }} K={K} />}
       <style>{`
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 3px; }
@@ -2617,11 +2678,29 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
                 </div>
               </>
             ) : (
-              <div style={{ color: K.t2, fontSize: 11, lineHeight: 1.9 }}>
-                <div style={{ color: K.t1, marginBottom: 12, fontSize: 12 }}>Select a scale.</div>
-                <div style={{ marginBottom: 8 }}>Modes are sorted bright -> dark — same direction as Lydian -> Locrian for heptatonic.</div>
-                <div style={{ marginBottom: 8 }}>The binary string shows which of the 12 chromatic tones are active, starting from the root.</div>
-                <div>Drone a single key to hear the modal color of a scale.</div>
+              <div style={{ color: K.t2, fontSize: 11, lineHeight: 1.8 }}>
+                <div style={{ color: K.t1, fontSize: 13, fontWeight: 600, marginBottom: 16, letterSpacing: 0.5 }}>
+                  Pick a scale to get started.
+                </div>
+                {[
+                  { step: "1", text: "Click any scale in the left panel — try the Heptatonic group for familiar sounds like Dorian or Lydian." },
+                  { step: "2", text: "Hit ▶ Play to arpeggiate through it, or ● Drone for a sustained root tone." },
+                  { step: "3", text: "Try ⟲ Auto to explore automatically, or ★ Claude Demo for AI-guided exploration with live commentary." },
+                ].map(({ step, text }) => (
+                  <div key={step} style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                    <div style={{
+                      width: 20, height: 20, borderRadius: "50%", background: K.ag,
+                      border: `1px solid ${K.a}`, color: K.a, fontSize: 9, fontWeight: 700,
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1,
+                    }}>{step}</div>
+                    <div style={{ fontSize: 10, lineHeight: 1.7 }}>{text}</div>
+                  </div>
+                ))}
+                <button onClick={() => setShowWelcome(true)} style={{
+                  marginTop: 6, background: "none", border: `1px solid ${K.br}`,
+                  color: K.t2, borderRadius: 3, padding: "4px 10px",
+                  fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
+                }}>show intro again</button>
               </div>
             )}
           </div>
