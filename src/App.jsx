@@ -959,6 +959,8 @@ export default function Chloe() {
   const [chatLog,     setChatLog]     = useState([]); // { role:"user"|"claude", text, ts }
   const pendingUserMsgRef = useRef(null); // message waiting to be sent to Claude
   const callClaudeNowRef  = useRef(null); // fn to trigger immediate Claude call
+  const chatScrollRef     = useRef(null); // chat log container for auto-scroll
+  useEffect(() => { if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }, [chatLog]);
   const [demoKeyInput, setDemoKeyInput] = useState(false);
   const [demoLog,     setDemoLog]     = useState([]);
   const [showDemoLog, setShowDemoLog] = useState(false);
@@ -2393,7 +2395,7 @@ The app already has: drone (sustained root note, independently volume-controlled
             {demoOn && (
               <div style={{ marginBottom: 6 }}>
                 {chatLog.length > 0 && (
-                  <div style={{
+                  <div ref={chatScrollRef} style={{
                     maxHeight: 150, overflowY: "auto", border: `1px solid ${K.br}`,
                     borderRadius: 3, padding: "6px 8px", marginBottom: 5, background: K.bg3,
                   }}>
