@@ -958,6 +958,7 @@ export default function Chloe() {
   const [demoRequest, setDemoRequest] = useState("");
   const [chatInput,   setChatInput]   = useState("");
   const [chatLog,     setChatLog]     = useState([]); // { role:"user"|"claude", text, ts }
+  const [chatOpen,    setChatOpen]    = useState(false);
   const pendingUserMsgRef = useRef(null); // message waiting to be sent to Claude
   const callClaudeNowRef  = useRef(null); // fn to trigger immediate Claude call
   const chatScrollRef     = useRef(null); // chat log container for auto-scroll
@@ -1420,7 +1421,7 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
       setArpOn(true);
       setDemoComment(choice.commentary || "");
       setDemoRequest(choice.request || "");
-      if (choice.reply) setChatLog(prev => [...prev, { role: "claude", text: choice.reply, ts: Date.now() }].slice(-40));
+      if (choice.reply) { setChatLog(prev => [...prev, { role: "claude", text: choice.reply, ts: Date.now() }].slice(-40)); setChatOpen(true); }
       pendingUserMsgRef.current = null;
 
       if (fam && !isNaN(modeIdx)) {
@@ -1984,6 +1985,13 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
                 transition: "color .2s",
               }}>{logCopied ? "✓ copied" : "⎘ copy"}</button>
             )}
+            {demoOn && (
+              <button onClick={() => setChatOpen(p => !p)} style={{
+                background: chatOpen ? K.a : "none", border: `1px solid ${chatOpen ? K.a : K.demoBr}`,
+                color: chatOpen ? "#000" : K.demoT2,
+                fontSize: 9, padding: "2px 7px", cursor: "pointer", borderRadius: 3, flexShrink: 0,
+              }}>💬 chat</button>
+            )}
             <button onClick={() => setShowDemoLog(p => !p)} style={{
               background: "none", border: `1px solid ${K.demoBr}`, color: K.demoT2,
               fontSize: 9, padding: "2px 7px", cursor: "pointer", borderRadius: 3, flexShrink: 0,
@@ -2299,7 +2307,7 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
                 }},
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
-                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); }
+                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
                 // { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
@@ -2393,70 +2401,6 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
                 )}
               </div>
             )}
-            {/* Chat box — visible when Demo mode is running */}
-            {demoOn && (
-              <div style={{ marginBottom: 6 }}>
-                {chatLog.length > 0 && (
-                  <div ref={chatScrollRef} style={{
-                    maxHeight: 150, overflowY: "auto", border: `1px solid ${K.br}`,
-                    borderRadius: 3, padding: "6px 8px", marginBottom: 5, background: K.bg3,
-                  }}>
-                    {chatLog.map((msg, i) => (
-                      <div key={msg.ts} style={{
-                        marginBottom: i < chatLog.length - 1 ? 6 : 0,
-                        textAlign: msg.role === "user" ? "right" : "left",
-                      }}>
-                        <span style={{
-                          display: "inline-block", maxWidth: "85%",
-                          background: msg.role === "user" ? K.a + "22" : K.bg2,
-                          border: `1px solid ${msg.role === "user" ? K.a + "44" : K.br}`,
-                          color: msg.role === "user" ? K.a : K.t1,
-                          borderRadius: 3, padding: "3px 7px", fontSize: 10, lineHeight: 1.4,
-                        }}>
-                          {msg.text}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: 4 }}>
-                  <input
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter" && chatInput.trim()) {
-                        const msg = chatInput.trim();
-                        setChatLog(prev => [...prev, { role: "user", text: msg, ts: Date.now() }].slice(-40));
-                        pendingUserMsgRef.current = msg;
-                        setChatInput("");
-                        callClaudeNowRef.current?.();
-                      }
-                    }}
-                    placeholder="say something to Claude…"
-                    style={{
-                      flex: 1, background: K.bg3, border: `1px solid ${K.br}`,
-                      color: K.txt, padding: "5px 8px", borderRadius: 3,
-                      fontFamily: "inherit", fontSize: 10, outline: "none",
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      if (!chatInput.trim()) return;
-                      const msg = chatInput.trim();
-                      setChatLog(prev => [...prev, { role: "user", text: msg, ts: Date.now() }].slice(-40));
-                      pendingUserMsgRef.current = msg;
-                      setChatInput("");
-                      callClaudeNowRef.current?.();
-                    }}
-                    style={{
-                      background: K.a, border: "none", color: "#000",
-                      borderRadius: 3, padding: "5px 10px",
-                      fontSize: 12, cursor: "pointer", fontWeight: 600,
-                    }}>→</button>
-                </div>
-              </div>
-            )}
-
             {/* Beat vol — hidden for now
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, marginBottom: 2 }}>
               <span title="Beat volume." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT VOL</span>
@@ -2673,6 +2617,74 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
         </div>
 
       </div>
+
+      {/* ── Floating chat panel ── */}
+      {demoOn && chatOpen && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, width: 320, zIndex: 500,
+          background: K.bg2, border: `1px solid ${K.a}`, borderRadius: 6,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+          display: "flex", flexDirection: "column",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: `1px solid ${K.br}`, flexShrink: 0 }}>
+            <span style={{ color: K.a, fontSize: 9, letterSpacing: 2, fontWeight: 600 }}>★ CLAUDE CHAT</span>
+            <button onClick={() => setChatOpen(false)} style={{
+              marginLeft: "auto", background: "none", border: "none",
+              color: K.t2, cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 2px",
+            }}>×</button>
+          </div>
+          <div ref={chatScrollRef} style={{ overflowY: "auto", padding: "10px 12px", maxHeight: 280, minHeight: 60 }}>
+            {chatLog.length === 0 ? (
+              <div style={{ color: K.t2, fontSize: 10, fontStyle: "italic" }}>Say something to Claude…</div>
+            ) : chatLog.map((msg, i) => (
+              <div key={msg.ts} style={{ marginBottom: i < chatLog.length - 1 ? 8 : 0, textAlign: msg.role === "user" ? "right" : "left" }}>
+                <span style={{
+                  display: "inline-block", maxWidth: "85%",
+                  background: msg.role === "user" ? K.a + "22" : K.bg3,
+                  border: `1px solid ${msg.role === "user" ? K.a + "44" : K.br}`,
+                  color: msg.role === "user" ? K.a : K.t1,
+                  borderRadius: 4, padding: "5px 9px", fontSize: 10, lineHeight: 1.5,
+                }}>{msg.text}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6, padding: "8px 10px", borderTop: `1px solid ${K.br}`, flexShrink: 0 }}>
+            <input
+              autoFocus
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter" && chatInput.trim()) {
+                  const msg = chatInput.trim();
+                  setChatLog(prev => [...prev, { role: "user", text: msg, ts: Date.now() }].slice(-40));
+                  pendingUserMsgRef.current = msg;
+                  setChatInput("");
+                  callClaudeNowRef.current?.();
+                }
+              }}
+              placeholder="say something…"
+              style={{
+                flex: 1, background: K.bg3, border: `1px solid ${K.br}`,
+                color: K.txt, padding: "6px 8px", borderRadius: 3,
+                fontFamily: "inherit", fontSize: 10, outline: "none",
+              }}
+            />
+            <button onClick={() => {
+              if (!chatInput.trim()) return;
+              const msg = chatInput.trim();
+              setChatLog(prev => [...prev, { role: "user", text: msg, ts: Date.now() }].slice(-40));
+              pendingUserMsgRef.current = msg;
+              setChatInput("");
+              callClaudeNowRef.current?.();
+            }} style={{
+              background: K.a, border: "none", color: "#000",
+              borderRadius: 3, padding: "6px 12px",
+              fontSize: 13, cursor: "pointer", fontWeight: 700,
+            }}>→</button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
