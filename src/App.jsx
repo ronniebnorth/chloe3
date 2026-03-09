@@ -932,6 +932,7 @@ export default function Chloe() {
   const [noteVol,    setNoteVol]    = useState(_u.noteVol    ?? 0.7);
   const [reverbAmt,  setReverbAmt]  = useState(_u.reverbAmt  ?? 0.75);
   const [delayAmt,   setDelayAmt]   = useState(_u.delayAmt   ?? 0.15);
+  const [delayTime,  setDelayTime]  = useState(0.375); // seconds
   const [bpm,        setBpm]        = useState(_u.bpm        ?? 100);
   const [filter,     setFilter]     = useState(_u.filter     ?? "");
   const [sel,        setSel]        = useState(null); // resolved after FAMILIES built
@@ -1033,7 +1034,7 @@ export default function Chloe() {
   const rhythmIdxRef = useRef(0);
   const melPrevRef  = useRef(0);
   const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol]);
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1063,7 +1064,7 @@ export default function Chloe() {
   const getOrCreateDelay = useCallback((ac) => {
     if (delayRef.current && delayRef.current.ac === ac) return delayRef.current;
     const delayNode = ac.createDelay(2.0);
-    delayNode.delayTime.value = (60 / stRef.current.bpm) * 0.75; // dotted eighth
+    delayNode.delayTime.value = stRef.current.delayTime ?? 0.375;
     const feedbackGain = ac.createGain();
     feedbackGain.gain.value = 0.4;
     const wetGain = ac.createGain();
@@ -1081,10 +1082,10 @@ export default function Chloe() {
     if (delayRef.current) delayRef.current.wetGain.gain.value = delayAmt;
   }, [delayAmt]);
 
-  // Keep delay time in sync with BPM
+  // Keep delay time in sync with delayTime slider
   useEffect(() => {
-    if (delayRef.current) delayRef.current.delayNode.delayTime.value = (60 / bpm) * 0.75;
-  }, [bpm]);
+    if (delayRef.current) delayRef.current.delayNode.delayTime.value = delayTime;
+  }, [delayTime]);
 
   const noteFreq = (semi, ri) => aRef * 2 ** ((60 + OFFS[ri] + semi - 69) / 12);
 
@@ -1366,9 +1367,9 @@ export default function Chloe() {
         max_tokens: 400,
         system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
 Respond ONLY with valid JSON matching this schema exactly:
-{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"commentary":"string","request":"string"}
-scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. commentary is 1-2 sentences about this scale's character. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
-The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down), beat (kick/snare/hat patterns), reverb, delay, 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.`,
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"commentary":"string","request":"string"}
+scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). commentary is 1-2 sentences about this scale's character. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
+The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.`,
         messages: [{
           role: "user",
           content: `Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore. Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played.`
@@ -1404,6 +1405,9 @@ The app already has: drone (sustained root note, independently volume-controlled
       setChordVoice(chordVoice);
       setMelMode(!!choice.melMode);
       setBpm(bpm);
+      if (choice.reverbAmt != null) setReverbAmt(Math.max(0, Math.min(1, choice.reverbAmt)));
+      if (choice.delayAmt  != null) setDelayAmt(Math.max(0, Math.min(1, choice.delayAmt)));
+      if (choice.delayTime != null) setDelayTime(Math.max(0.05, Math.min(1.5, choice.delayTime)));
       setArpOn(true);
       setDemoComment(choice.commentary || "");
       setDemoRequest(choice.request || "");
@@ -1466,6 +1470,9 @@ The app already has: drone (sustained root note, independently volume-controlled
       setArpDir(arpDir);
       setChordVoice(chordVoice);
       setBpm(bpm);
+      setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
+      setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
+      setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
       setArpOn(true);
 
       const scaleName = KNOWN[entry.fam.modes[entry.modeIdx]] || customNamesRef.current[entry.fam.modes[entry.modeIdx]] || `${entry.fam.id}.${entry.modeIdx}`;
@@ -1898,12 +1905,22 @@ The app already has: drone (sustained root note, independently volume-controlled
 
           {/* DEL */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
-            <span title="Delay wet level. BPM-synced dotted-eighth delay with feedback." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>DEL</span>
+            <span title="Delay wet level." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>DEL</span>
             <input type="range" min={0} max={1} step={0.01} value={delayAmt}
               onChange={e => setDelayAmt(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
             <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(delayAmt * 100)}</span>
+          </div>
+
+          {/* DEL TIME */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+            <span title="Delay time in seconds." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>D.T</span>
+            <input type="range" min={0.05} max={1.5} step={0.01} value={delayTime}
+              onChange={e => setDelayTime(+e.target.value)}
+              style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
+            />
+            <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 28 }}>{delayTime.toFixed(2)}s</span>
           </div>
 
           <div style={{ width: 1, height: 22, background: K.t2, opacity: 0.3, flexShrink: 0 }} />
