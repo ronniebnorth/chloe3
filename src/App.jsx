@@ -1107,6 +1107,8 @@ export default function Chloe() {
   const ctxRef     = useRef(null);
   const reverbRef  = useRef(null); // { convolver, wetGain }
   const delayRef   = useRef(null); // { delayNode, feedbackGain, wetGain }
+  const noteCountRef = useRef(0);  // tracks nodes created; used to recycle AudioContext
+  const RECYCLE_THRESHOLD = 5000;  // recycle AudioContext after this many notes
   const arpRef      = useRef(null);
   const playGridRef  = useRef(null); // { startTime, bpm } set when arp starts; used by beat to sync
   const arpIdxRef   = useRef(0);
@@ -1192,7 +1194,11 @@ export default function Chloe() {
       volGain.gain.setValueAtTime(volGain.gain.value, now);
       volGain.gain.linearRampToValueAtTime(0, now + 0.08);
       droneGainRef.current = null; droneFilterRef.current = null;
-      setTimeout(() => { try { voice.stop(); } catch {} }, 100);
+      setTimeout(() => {
+        try { voice.stop(); } catch {}
+        try { f.disconnect(); } catch {}
+        try { volGain.disconnect(); } catch {}
+      }, 100);
     };
   }, [droneOn, rootIdx, droneOct, droneWave, aRef, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
 
@@ -1257,6 +1263,18 @@ export default function Chloe() {
     clearInterval(arpRef.current);
     setPlaying(null);
     if (!arpOn || !sel) { playGridRef.current = null; return; }
+
+    // Recycle AudioContext periodically to prevent Chrome node accumulation leak
+    if (noteCountRef.current > RECYCLE_THRESHOLD) {
+      const old = ctxRef.current;
+      ctxRef.current = null;
+      reverbRef.current = null;
+      delayRef.current = null;
+      analyserRef.current = null;
+      noteCountRef.current = 0;
+      if (old) setTimeout(() => { try { old.close(); } catch {} }, 2000);
+    }
+
     // Record grid epoch so the beat can snap to this clock
     const _ac0 = getCtx();
     playGridRef.current = { startTime: _ac0.currentTime, bpm: stRef.current.bpm };
@@ -1293,7 +1311,6 @@ export default function Chloe() {
 
     // For melody mode, we schedule with variable intervals using setTimeout chains
     let melTimeout = null;
-    const eighth = 60000 / stRef.current.bpm / 2;
 
     const playNote = (semi, dur, vel) => {
       const { rootIdx: ri, timbre: t, bpm: b, instrument: inst, noteVol: nv, aRef: ar } = stRef.current;
@@ -1304,6 +1321,7 @@ export default function Chloe() {
       const freq = ar * 2 ** ((60 + OFFS[ri] + semi - 69) / 12);
       const beatDur = (dur * 60 / b / 2);
       synthNote(ac, freq, vel * nv, inst, t, beatDur, rev.convolver, del.delayNode, an.node);
+      noteCountRef.current++;
       setPlaying(semi % 12);
     };
 
@@ -1398,7 +1416,10 @@ export default function Chloe() {
 
     melTick();
     return () => { clearTimeout(melTimeout); clearInterval(arpRef.current); };
-  }, [arpOn, sel, rootIdx, timbre, instrument, bpm, melMode, arpDir, rhythm, chordVoice, getCtx, getOrCreateAnalyser]);
+  // melTick/playNote read all playback state live from stRef — only arpOn and sel
+  // are needed as deps (for the guard). Stable callbacks (getCtx etc.) never change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arpOn, sel, getCtx]);
 
   useEffect(() => () => clearInterval(arpRef.current), []);
 
