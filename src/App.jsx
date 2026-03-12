@@ -1447,9 +1447,9 @@ export default function Chloe() {
         max_tokens: 400,
         system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
 Respond ONLY with valid JSON matching this schema exactly:
-{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"commentary":"string","reply":"string","request":"string"}
-scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
-The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string"}
+scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
+The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
 IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.`,
         messages: [{
           role: "user",
@@ -1489,6 +1489,10 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
       if (choice.reverbAmt != null) setReverbAmt(Math.max(0, Math.min(1, choice.reverbAmt)));
       if (choice.delayAmt  != null) setDelayAmt(Math.max(0, Math.min(1, choice.delayAmt)));
       if (choice.delayTime != null) setDelayTime(Math.max(0.05, Math.min(1.5, choice.delayTime)));
+      if (choice.droneOn   != null) setDroneOn(!!choice.droneOn);
+      if (choice.droneVol  != null) setDroneVol(Math.max(0, Math.min(2, choice.droneVol)));
+      if (choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
+      if (choice.droneWave != null && ["sine","organ","pad","strings","tanpura"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
       setArpOn(true);
       setDemoComment(choice.commentary || "");
       setDemoRequest(choice.request || "");
@@ -1558,6 +1562,10 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
       setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
       setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
       setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
+      setDroneOn(Math.random() > 0.35);
+      setDroneWave(["sine","organ","pad","strings","tanpura"][Math.floor(Math.random() * 5)]);
+      setDroneOct([-12, -24, -36][Math.floor(Math.random() * 3)]);
+      setDroneVol(parseFloat((0.3 + Math.random() * 0.7).toFixed(2)));
       setArpOn(true);
 
       const scaleName = KNOWN[entry.fam.modes[entry.modeIdx]] || customNamesRef.current[entry.fam.modes[entry.modeIdx]] || `${entry.fam.id}.${entry.modeIdx}`;
