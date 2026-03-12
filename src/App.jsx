@@ -1085,7 +1085,7 @@ export default function Chloe() {
     const fam = FAMILIES.find(f => f.id === famId);
     if (fam) setExpanded(p => { const s = new Set(p); s.add(GRP_PFX[fam.n]); return s; });
     // Small delay so the row has rendered before scrolling
-    setTimeout(() => selRowRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80);
+    setTimeout(() => selRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
   }, [sel, autoOn, demoOn]);
   const [theme,      setTheme]      = useState(() => localStorage.getItem("chloe-theme") || "dark");
   const [centerTab,  setCenterTab]  = useState("viz");
