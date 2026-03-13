@@ -14,7 +14,7 @@ The brightness ordering — modes arranged from most augmented (Lydian-like) to 
 
 ## Features
 
-- 2000+ scales grouped into families by interval pattern
+- 560 scales across 124 families, grouped by interval pattern
 - Binary encoding and decimal identification for every scale (e.g., `101011010101` = 2741 = Major)
 - Modes sorted by brightness within each scale family
 - Adjustable root note, BPM, rhythm, and arpeggio style
