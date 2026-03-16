@@ -1046,7 +1046,21 @@ export default function Chloe() {
   const droneGainRef   = useRef(null);
   const droneFilterRef = useRef(null);
   const demoLogRef   = useRef([]);
+  const [eegData,    setEegData]    = useState(null);  // live EEG from proxy
   useEffect(() => { demoLogRef.current = demoLog; }, [demoLog]);
+  // EEG proxy polling — always on so brainwave indicator works outside demo mode too
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch("http://localhost:8520/eeg");
+        if (res.ok) setEegData(await res.json());
+        else setEegData(null);
+      } catch { setEegData(null); }
+    };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => clearInterval(id);
+  }, []);
   const analyserRef  = useRef(null);
   const getOrCreateAnalyser = useCallback((ac) => {
     if (analyserRef.current && analyserRef.current.ac === ac) return analyserRef.current;
@@ -1450,12 +1464,26 @@ export default function Chloe() {
         });
       }
 
+      // Snapshot EEG brain state if proxy is streaming
+      const _eeg = eegData;
+      const brainState = (_eeg && _eeg.connected && _eeg.bands && _eeg.derived) ? {
+        dominant:           _eeg.derived.dominant_band,
+        alpha_pct:          Math.round((_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct) / 2),
+        theta_pct:          Math.round((_eeg.bands.theta.left_pct + _eeg.bands.theta.right_pct) / 2),
+        beta_pct:           Math.round((_eeg.bands.beta.left_pct  + _eeg.bands.beta.right_pct)  / 2),
+        delta_pct:          Math.round((_eeg.bands.delta.left_pct + _eeg.bands.delta.right_pct) / 2),
+        gamma_pct:          Math.round((_eeg.bands.gamma.left_pct + _eeg.bands.gamma.right_pct) / 2),
+        alpha_theta_ratio:  _eeg.derived.alpha_theta_ratio,
+        relaxation_index:   _eeg.derived.relaxation_index,
+      } : null;
+
       const currentState = {
         currentScale: stRef.current.sel ? (KNOWN[stRef.current.sel.pattern] || stRef.current.sel.id) : "none",
         rootNote: CHROMATIC[stRef.current.rootIdx],
         rhythm: stRef.current.rhythm,
         arpDir: stRef.current.arpDir,
         bpm: stRef.current.bpm,
+        ...(brainState ? { brainState } : {}),
       };
 
       const recentHistory = demoLogRef.current.slice(0, 20).map(e =>
@@ -1473,7 +1501,8 @@ Respond ONLY with valid JSON matching this schema exactly:
 {"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string"}
 scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
 The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/sus4/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
-IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.`,
+IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.
+If currentState.brainState is present, it contains live EEG data from the user's FlowTime headband. Use it to shape your musical choices: high alpha_pct (>35%) + low beta_pct (<15%) = flowing pentatonic/modal scales, slow BPM (55-80), droneOn=true with pad or strings, sus2/sus4 chords, high reverb; high theta_pct (>30%) = very slow minimal scales, BPM 45-65, heavy reverb, waltz or clave for gentle pulse; high beta_pct (>25%) = more energetic scales, moderate BPM (85-110); relaxation_index>0.7 = deeply relaxed, lean meditative; alpha_theta_ratio<1.0 = drowsy/deep, slow way down. The dominant field names the leading band.`,
         messages: [{
           role: "user",
           content: `${capturedUserMsg ? `User message: "${capturedUserMsg}"\n\n` : ""}Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore.${capturedUserMsg ? " Respond to the user's message and pick a scale accordingly." : " Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played."}`
@@ -2101,6 +2130,32 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
                 fontSize: 9, padding: "2px 7px", cursor: "pointer", borderRadius: 3, flexShrink: 0,
               }}>💬 chat</button>
             )}
+            {/* EEG indicator — shows when proxy is streaming */}
+            {(() => {
+              const eeg = eegData;
+              const streaming = eeg && eeg.connected && eeg.bands && eeg.derived;
+              const dominant = streaming ? eeg.derived.dominant_band : null;
+              const bandColors = { delta:"#4050a0", theta:"#6060e8", alpha:"#3ee8d0", beta:"#f0a030", gamma:"#e84060" };
+              const color = dominant ? (bandColors[dominant] || K.demoT2) : K.textDim;
+              return (
+                <div title={streaming
+                  ? `EEG: ${dominant} dominant · α/θ ${eeg.derived.alpha_theta_ratio} · relaxation ${Math.round(eeg.derived.relaxation_index*100)}%`
+                  : "EEG proxy not connected (run eeg_proxy.py)"}
+                  style={{ display:"flex", alignItems:"center", gap:4, flexShrink:0 }}>
+                  <div style={{
+                    width:6, height:6, borderRadius:"50%",
+                    background: streaming ? color : K.textDim,
+                    boxShadow: streaming ? `0 0 6px ${color}` : "none",
+                    transition:"all 0.6s",
+                  }}/>
+                  {streaming && (
+                    <span style={{ fontFamily:"inherit", fontSize:9, color, letterSpacing:1 }}>
+                      {dominant} {Math.round((eeg.bands[dominant].left_pct + eeg.bands[dominant].right_pct)/2)}%
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
             <button onClick={() => setShowDemoLog(p => !p)} style={{
               background: "none", border: `1px solid ${K.demoBr}`, color: K.demoT2,
               fontSize: 9, padding: "2px 7px", cursor: "pointer", borderRadius: 3, flexShrink: 0,
