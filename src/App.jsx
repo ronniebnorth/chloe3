@@ -1326,13 +1326,14 @@ export default function Chloe() {
     };
 
     // Build chord tones from a root index within the scale
-    const RAND_VOICES = ["power", "sus2", "triad", "7th"];
+    const RAND_VOICES = ["power", "sus2", "sus4", "triad", "7th"];
     const buildChord = (notes, rootNoteIdx, voice) => {
       const n = notes.length;
       const v = voice === "rand" ? RAND_VOICES[Math.floor(Math.random() * RAND_VOICES.length)] : voice;
       if (v === "off")   return [notes[rootNoteIdx % n]];
       if (v === "power") return [notes[rootNoteIdx % n], notes[(rootNoteIdx + 2) % n] + (rootNoteIdx + 2 >= n ? 12 : 0)];
       if (v === "sus2")  return [notes[rootNoteIdx % n], notes[(rootNoteIdx + 1) % n] + (rootNoteIdx + 1 >= n ? 12 : 0), notes[(rootNoteIdx + 4) % n] + (rootNoteIdx + 4 >= n ? 12 : 0)];
+      if (v === "sus4")  return [notes[rootNoteIdx % n], notes[(rootNoteIdx + 3) % n] + (rootNoteIdx + 3 >= n ? 12 : 0), notes[(rootNoteIdx + 4) % n] + (rootNoteIdx + 4 >= n ? 12 : 0)];
       if (v === "triad") return [0, 2, 4].map(s => notes[(rootNoteIdx + s) % n] + (rootNoteIdx + s >= n ? 12 : 0));
       if (v === "7th")   return [0, 2, 4, 6].map(s => notes[(rootNoteIdx + s) % n] + (rootNoteIdx + s >= n ? 12 : 0));
       if (voice === "all")   return notes; // whole scale at once
@@ -1343,7 +1344,7 @@ export default function Chloe() {
       const { chordVoice: cv } = stRef.current;
       const tones = buildChord(notes, rootNoteIdx, cv);
       // Slightly lower velocity per voice to avoid clipping
-      const vMult = cv === "all" ? 0.4 : cv === "7th" ? 0.65 : cv === "triad" ? 0.7 : cv === "sus2" ? 0.72 : 0.8;
+      const vMult = cv === "all" ? 0.4 : cv === "7th" ? 0.65 : cv === "triad" ? 0.7 : (cv === "sus2" || cv === "sus4") ? 0.72 : 0.8;
       tones.forEach((semi, i) => {
         // Very slight strum delay (0-18ms) for natural feel
         setTimeout(() => playNote(semi, dur, vel * vMult), i * 18);
@@ -1468,9 +1469,9 @@ export default function Chloe() {
         max_tokens: 400,
         system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
 Respond ONLY with valid JSON matching this schema exactly:
-{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string"}
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string"}
 scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
-The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
+The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/sus4/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
 IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.`,
         messages: [{
           role: "user",
@@ -2606,12 +2607,13 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
             </div>
             {/* Chord voicing */}
             <div style={{ marginBottom: 2 }}>
-              <div title="Chord voicing: off, power (root+5th), sus2, triad, 7th, all (whole scale). Notes strum with a slight delay." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>CHORD</div>
+              <div title="Chord voicing: off, power (root+5th), sus2 (root+2nd+5th), sus4 (root+4th+5th), triad, 7th, all (whole scale). Notes strum with a slight delay." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>CHORD</div>
               <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                 {[
                   { l: "off",   v: "off" },
                   { l: "power", v: "power" },
                   { l: "sus2",  v: "sus2" },
+                  { l: "sus4",  v: "sus4" },
                   { l: "triad", v: "triad" },
                   { l: "7th",   v: "7th" },
                   { l: "all",   v: "all" },
