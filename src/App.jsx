@@ -1434,6 +1434,7 @@ export default function Chloe() {
     const callClaude = async () => {
       if (loopOnRef.current) { timeout = setTimeout(callClaude, 1000); return; }
       callClaudeNowRef.current = null; // consuming — clear so double-trigger can't happen
+      const capturedUserMsg = pendingUserMsgRef.current; // snapshot before async call
       // Build scale catalogue — named scales + custom names, or all scales if demoAllScales
       const allScales = demoAllScalesRef.current;
       const cNames = customNamesRef.current;
@@ -1475,7 +1476,7 @@ The app already has: drone (sustained root note, independently volume-controlled
 IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.`,
         messages: [{
           role: "user",
-          content: `${pendingUserMsgRef.current ? `User message: "${pendingUserMsgRef.current}"\n\n` : ""}Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore.${pendingUserMsgRef.current ? " Respond to the user's message and pick a scale accordingly." : " Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played."}`
+          content: `${capturedUserMsg ? `User message: "${capturedUserMsg}"\n\n` : ""}Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore.${capturedUserMsg ? " Respond to the user's message and pick a scale accordingly." : " Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played."}`
         }]
       });
 
@@ -1519,7 +1520,8 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
       setDemoComment(choice.commentary || "");
       setDemoRequest(choice.request || "");
       if (choice.reply) { setChatLog(prev => [...prev, { role: "claude", text: choice.reply, ts: Date.now() }].slice(-40)); setChatOpen(true); }
-      pendingUserMsgRef.current = null;
+      // Only clear the pending message if it was the one we used — a new message may have arrived during the API call
+      if (pendingUserMsgRef.current === capturedUserMsg) pendingUserMsgRef.current = null;
 
       if (fam && !isNaN(modeIdx)) {
         setDemoLog(prev => [{
@@ -1531,8 +1533,13 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
         }, ...prev].slice(0, 200));
       }
 
-      const delay = 12000 + Math.random() * 4000;
-      timeout = setTimeout(callClaude, delay);
+      // If a new user message arrived while we were waiting for the API, respond immediately
+      if (pendingUserMsgRef.current) {
+        timeout = setTimeout(callClaude, 0);
+      } else {
+        const delay = 12000 + Math.random() * 4000;
+        timeout = setTimeout(callClaude, delay);
+      }
       callClaudeNowRef.current = () => { clearTimeout(timeout); callClaude(); };
     };
 
