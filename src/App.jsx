@@ -1470,14 +1470,15 @@ export default function Chloe() {
       // Snapshot EEG brain state if proxy is streaming
       const _eeg = eegData;
       const brainState = (_eeg && _eeg.connected && _eeg.bands && _eeg.derived) ? {
-        dominant:           _eeg.derived.dominant_band,
+        dominant_active:    _eeg.derived.dominant_active_band,
         alpha_pct:          Math.round((_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct) / 2),
         theta_pct:          Math.round((_eeg.bands.theta.left_pct + _eeg.bands.theta.right_pct) / 2),
         beta_pct:           Math.round((_eeg.bands.beta.left_pct  + _eeg.bands.beta.right_pct)  / 2),
-        delta_pct:          Math.round((_eeg.bands.delta.left_pct + _eeg.bands.delta.right_pct) / 2),
         gamma_pct:          Math.round((_eeg.bands.gamma.left_pct + _eeg.bands.gamma.right_pct) / 2),
         alpha_theta_ratio:  _eeg.derived.alpha_theta_ratio,
         relaxation_index:   _eeg.derived.relaxation_index,
+        theta_alpha_ratio:  parseFloat(((_eeg.bands.theta.left_pct + _eeg.bands.theta.right_pct) / Math.max(_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct, 0.01)).toFixed(2)),
+        beta_alpha_ratio:   parseFloat(((_eeg.bands.beta.left_pct  + _eeg.bands.beta.right_pct)  / Math.max(_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct, 0.01)).toFixed(2)),
       } : null;
 
       // Brightness-based scale selection from EEG state
@@ -1485,7 +1486,8 @@ export default function Chloe() {
       let smoothedTarget = null;
       if (brainState) {
         const rawTarget = targetBrightness(
-          { derived: { relaxation_index: brainState.relaxation_index, dominant_band: brainState.dominant } },
+          { derived: { dominant_active_band: brainState.dominant_active },
+            bands:   { alpha_pct: brainState.alpha_pct, theta_pct: brainState.theta_pct, beta_pct: brainState.beta_pct } },
           BRIGHTNESS_CONFIG
         );
 
@@ -1538,7 +1540,9 @@ Respond ONLY with valid JSON matching this schema exactly:
 scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
 The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/sus4/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
 IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.
-If currentState.brainState is present, a brightness-matching algorithm has already selected a scale based on EEG state (currentState.brightnessSelected). currentState.currentBrightness is the raw brightness score (sum of active semitone positions, useful for display); currentState.currentBrightnessNorm is the normalized brightness (0.0 = darkest possible for this scale's note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). Your role is to complement that selection: choose BPM, rhythm, chord voicing, drone, reverb, and delay to musically articulate the scale's emotional character given the brain state. Explain why this scale fits in your commentary. If you have a strong musical reason to choose a different scale, you may override the selection by specifying a different scaleId — but explain why in commentary. Do not change the scale just for variety if brightness selection is active.`,
+If currentState.brainState is present, a brightness-matching algorithm has already selected a scale based on EEG state (currentState.brightnessSelected). currentState.currentBrightness is the raw brightness score (sum of active semitone positions, useful for display); currentState.currentBrightnessNorm is the normalized brightness (0.0 = darkest possible for this scale's note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). Your role is to complement that selection: choose BPM, rhythm, chord voicing, drone, reverb, and delay to musically articulate the scale's emotional character given the brain state. Explain why this scale fits in your commentary. If you have a strong musical reason to choose a different scale, you may override the selection by specifying a different scaleId — but explain why in commentary. Do not change the scale just for variety if brightness selection is active.
+Brain state interpretation guidelines: Ignore delta — it is always the highest-amplitude band from forehead EEG and does not indicate sleep or drowsiness on its own. Use dominant_active (the strongest band excluding delta): alpha = calm, relaxed, meditative; theta = deepening meditation, drowsy, inward; beta = engaged, focused, active; gamma = high cognitive processing. Use theta_alpha_ratio to judge depth: > 1.5 suggests deep meditation or drowsiness, < 0.5 suggests alert wakefulness. Use beta_alpha_ratio to judge activation: > 1.5 suggests active focus, < 0.5 suggests relaxation. Only describe the state as deep/drowsy/sleep-like when theta_alpha_ratio actually supports it (> 1.5).
+Commentary discipline: The brain state is context, not the headline every cycle. Only mention the brain state in commentary when it has meaningfully shifted from the previous cycle (different dominant_active band, or ratio crossing a threshold). When the brain state is stable, focus commentary entirely on the musical choices — why this scale after the previous one, what the harmonic or tonal relationship is, how the texture or mood is evolving. Do not produce variations of the same brain state observation cycle after cycle.`,
         messages: [{
           role: "user",
           content: `${capturedUserMsg ? `User message: "${capturedUserMsg}"\n\n` : ""}Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore.${capturedUserMsg ? " Respond to the user's message and pick a scale accordingly." : " Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played."}`
@@ -2170,12 +2174,12 @@ If currentState.brainState is present, a brightness-matching algorithm has alrea
             {(() => {
               const eeg = eegData;
               const streaming = eeg && eeg.connected && eeg.bands && eeg.derived;
-              const dominant = streaming ? eeg.derived.dominant_band : null;
-              const bandColors = { delta:"#4050a0", theta:"#6060e8", alpha:"#3ee8d0", beta:"#f0a030", gamma:"#e84060" };
+              const dominant = streaming ? eeg.derived.dominant_active_band : null;
+              const bandColors = { theta:"#6060e8", alpha:"#3ee8d0", beta:"#f0a030", gamma:"#e84060" };
               const color = dominant ? (bandColors[dominant] || K.demoT2) : K.textDim;
               return (
                 <div title={streaming
-                  ? `EEG: ${dominant} dominant · α/θ ${eeg.derived.alpha_theta_ratio} · relaxation ${Math.round(eeg.derived.relaxation_index*100)}%`
+                  ? `EEG: ${dominant} dominant (excl. delta) · α/θ ${eeg.derived.alpha_theta_ratio} · relaxation ${Math.round(eeg.derived.relaxation_index*100)}%`
                   : "EEG proxy not connected (run eeg_proxy.py)"}
                   style={{ display:"flex", alignItems:"center", gap:4, flexShrink:0 }}>
                   <div style={{

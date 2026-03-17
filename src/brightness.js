@@ -2,7 +2,9 @@ export const BRIGHTNESS_CONFIG = {
   neutralPattern:       1709,   // Dorian — reference; neutral target in normalized space is 0.5
   smoothingWindow:      3,      // polls to average
   transitionThreshold:  0.05,   // min normalized shift to trigger change (5% of 0–1 range)
-  alphaNeutralWeight:   0.6,    // alpha pulls toward neutral (0.5)
+  alphaNeutralWeight:   0.5,    // how strongly alpha-dominant pulls toward 0.5 neutral
+  thetaDarkWeight:      0.3,    // how strongly theta/alpha ratio pushes darker
+  betaBrightWeight:     0.3,    // how strongly beta/alpha ratio pushes brighter
   noteCountPreference:  true,   // prefer same cardinality as tiebreaker
   commonTonePreference: true,   // prefer scales sharing pitches with current
 };
@@ -40,14 +42,32 @@ export function normalizedBrightness(pattern) {
 }
 
 // Returns a normalized target brightness (0.0–1.0) from EEG state.
+// Uses alpha/theta and beta/alpha ratios — delta is excluded as it is always
+// dominant at forehead sites and carries no useful cognitive state information.
 // 0.0 = darkest possible, 1.0 = brightest possible, 0.5 = Dorian-neutral.
 export function targetBrightness(eegState, config) {
-  const { relaxation_index, dominant_band } = eegState.derived;
-  let target = 1.0 - relaxation_index; // high relaxation → dark (low target)
-  if (dominant_band === 'alpha') {
+  const { dominant_active_band } = eegState.derived;
+  const { alpha_pct, theta_pct, beta_pct } = eegState.bands;
+
+  const alpha = alpha_pct || 0.01;
+  const thetaAlphaRatio = (theta_pct || 0) / alpha;
+  const betaAlphaRatio  = (beta_pct  || 0) / alpha;
+
+  // Start at neutral (Dorian territory)
+  let target = 0.5;
+
+  // Theta pushes darker (deeper meditation / drowsiness when theta exceeds alpha)
+  target -= Math.min(thetaAlphaRatio - 0.5, 0.4) * config.thetaDarkWeight;
+
+  // Beta pushes brighter (engagement / focus / energy when beta exceeds alpha)
+  target += Math.min(betaAlphaRatio - 0.5, 0.4) * config.betaBrightWeight;
+
+  // Alpha-dominant (excl. delta) pulls toward neutral
+  if (dominant_active_band === 'alpha') {
     target = target * (1 - config.alphaNeutralWeight) + 0.5 * config.alphaNeutralWeight;
   }
-  return target;
+
+  return Math.max(0.0, Math.min(1.0, target));
 }
 
 // Find the scale in catalogue whose normalized brightness is closest to the normalized target.
