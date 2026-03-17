@@ -2339,12 +2339,12 @@ Commentary discipline: The brain state is context, not the headline every cycle.
         </div>
       )}
 
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
 
         {/* ══════════════════════════════════════
             SCALE LIST (LEFT)
         ══════════════════════════════════════ */}
-        <div style={{ width: listW, flexShrink: 0, position: "relative", display: "flex", flexDirection: "column" }}>
+        <div style={{ width: listW, flexShrink: 0, position: "relative", display: "flex", flexDirection: "column", minHeight: 0 }}>
           <div onMouseDown={onListDragStart} style={{
             position: "absolute", right: 0, top: 0, bottom: 0, width: 5,
             cursor: "col-resize", zIndex: 20, background: "transparent",
@@ -2505,7 +2505,7 @@ Commentary discipline: The brain state is context, not the headline every cycle.
         {/* ══════════════════════════════════════
             CENTRE PANEL
         ══════════════════════════════════════ */}
-        <div style={{ flex: 1, overflow: "hidden", background: K.bg, borderRight: `1px solid ${K.br}`, display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, overflow: "hidden", background: K.bg, borderRight: `1px solid ${K.br}`, display: "flex", flexDirection: "column", minHeight: 0 }}>
           {/* Tab strip */}
           <div style={{ display: "flex", borderBottom: `1px solid ${K.br}`, flexShrink: 0, background: K.bg2 }}>
             {[["viz", "◎ visualizer"], ["info", "ℹ info"]].map(([id, label]) => (
@@ -2530,7 +2530,7 @@ Commentary discipline: The brain state is context, not the headline every cycle.
         {/* ══════════════════════════════════════
             RIGHT PANEL
         ══════════════════════════════════════ */}
-        <div style={{ width: sidebarW, display: "flex", flexDirection: "column", background: K.bg2, flexShrink: 0, position: "relative" }}>
+        <div style={{ width: sidebarW, display: "flex", flexDirection: "column", background: K.bg2, flexShrink: 0, position: "relative", minHeight: 0 }}>
           {/* Drag handle */}
           <div onMouseDown={onDragStart} style={{
             position: "absolute", left: 0, top: 0, bottom: 0, width: 5,
@@ -2616,12 +2616,12 @@ Commentary discipline: The brain state is context, not the headline every cycle.
                 { label: arpOn && !demoOn && !autoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn && !autoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
                 { label: autoOn ? "⟲ Stop" : "⟲ Auto", on: autoOn, onClick: () => {
                   wake();
-                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); }
+                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); overrideTargetRef.current = null; brightnessLockedRef.current = false; }
                   else { setDemoOn(false); setAutoOn(true); }
                 }},
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
-                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); }
+                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); overrideTargetRef.current = null; brightnessLockedRef.current = false; }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
                 // { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
