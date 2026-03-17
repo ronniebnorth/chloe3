@@ -1609,8 +1609,9 @@ Commentary discipline: The brain state is context, not the headline every cycle.
       if (choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
       if (choice.droneWave != null && ["sine","organ","pad","strings","tanpura"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
       setArpOn(true);
-      setDemoComment(choice.commentary || "");
-      setDemoRequest(choice.request || "");
+      // Commentary and requests go to chat panel; banner shows parameter summary only
+      const chatParts = [choice.commentary, choice.request ? `✦ ${choice.request}` : null].filter(Boolean);
+      if (chatParts.length) setChatLog(prev => [...prev, { role: "claude", text: chatParts.join("\n"), ts: Date.now() }].slice(-40));
       if (choice.reply) { setChatLog(prev => [...prev, { role: "claude", text: choice.reply, ts: Date.now() }].slice(-40)); setChatOpen(true); }
       // Only clear the pending message if it was the one we used — a new message may have arrived during the API call
       if (pendingUserMsgRef.current === capturedUserMsg) pendingUserMsgRef.current = null;
@@ -1690,7 +1691,6 @@ Commentary discipline: The brain state is context, not the headline every cycle.
       setArpOn(true);
 
       const scaleName = KNOWN[entry.fam.modes[entry.modeIdx]] || customNamesRef.current[entry.fam.modes[entry.modeIdx]] || `${entry.fam.id}.${entry.modeIdx}`;
-      setDemoComment(`${scaleName} — ${entry.fam.n} notes · ${rhythm} · ${bpm}bpm`);
 
       setDemoLog(prev => [{
         scaleName,
@@ -2168,9 +2168,15 @@ Commentary discipline: The brain state is context, not the headline every cycle.
         <div style={{ background: K.demoB, borderBottom: `1px solid ${K.demoBr}`, flexShrink: 0 }}>
           <div style={{ padding: "6px 18px", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ color: K.a, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>{autoOn ? "⟲ AUTO" : "★ DEMO"}</span>
-            <span style={{ fontSize: 10, flex: 1 }}>
-              <span style={{ color: K.demoT, fontStyle: "italic" }}>{demoComment || "Starting…"}</span>
-              {demoRequest && <span style={{ color: K.a, fontStyle: "italic" }}> · ✦ {demoRequest}</span>}
+            <span style={{ fontSize: 10, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: K.demoT }}>
+              {sel ? [
+                selName,
+                CHROMATIC[rootIdx],
+                `${bpm}bpm`,
+                rhythm,
+                chordVoice !== "off" ? chordVoice : null,
+                `b${normalizedBrightness(sel.pattern).toFixed(2)}`,
+              ].filter(Boolean).join(" · ") : "Starting…"}
             </span>
             {demoLog.length > 0 && (
               <button onClick={() => {
