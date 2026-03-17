@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { BRIGHTNESS_CONFIG, brightnessScore, targetBrightness, findClosestScale } from './brightness';
 
 /* ═══════════════════════════════════════════════════════
    SCALE ENGINE
@@ -963,6 +964,15 @@ function ScaleInfo({ sel, selName, selIvs, selNotes, demoKey, K }) {
 export default function Chloe() {
   const FAMILIES = useMemo(buildFamilies, []);
 
+  const brightnessRange = useMemo(() => {
+    const all = FAMILIES.flatMap(f => f.modes).map(brightnessScore);
+    return {
+      min: Math.min(...all),
+      max: Math.max(...all),
+      neutral: brightnessScore(BRIGHTNESS_CONFIG.neutralPattern),
+    };
+  }, [FAMILIES]);
+
   // ── Parse initial state from URL ──
   const _initFromURL = () => {
     try {
@@ -1046,6 +1056,7 @@ export default function Chloe() {
   const droneGainRef   = useRef(null);
   const droneFilterRef = useRef(null);
   const demoLogRef   = useRef([]);
+  const brightnessHistoryRef = useRef([]);  // rolling window of raw targets for smoothing
   const [eegData,    setEegData]    = useState(null);  // live EEG from proxy
   useEffect(() => { demoLogRef.current = demoLog; }, [demoLog]);
   // EEG proxy polling — always on so brainwave indicator works outside demo mode too
@@ -1459,7 +1470,7 @@ export default function Chloe() {
           if (name || allScales) {
             const semis = toSemis(pat);
             const ivs = semis.slice(1).map((v, i) => v - semis[i]).concat(12 - semis[semis.length - 1]);
-            catalogue.push({ familyId: fam.id, modeIdx: mi, name: name || `${fam.id}.${mi}`, notes: fam.n, intervals: ivs.join("-") });
+            catalogue.push({ familyId: fam.id, modeIdx: mi, name: name || `${fam.id}.${mi}`, notes: fam.n, intervals: ivs.join("-"), pattern: pat });
           }
         });
       }
@@ -1477,8 +1488,40 @@ export default function Chloe() {
         relaxation_index:   _eeg.derived.relaxation_index,
       } : null;
 
+      // Brightness-based scale selection from EEG state
+      let brightnessSelected = null;
+      let smoothedTarget = null;
+      if (brainState) {
+        const rawTarget = targetBrightness(
+          { derived: { relaxation_index: brainState.relaxation_index, dominant_band: brainState.dominant } },
+          BRIGHTNESS_CONFIG, brightnessRange.min, brightnessRange.max, brightnessRange.neutral
+        );
+
+        // Smooth: keep last N targets
+        const hist = brightnessHistoryRef.current;
+        hist.push(rawTarget);
+        if (hist.length > BRIGHTNESS_CONFIG.smoothingWindow) hist.shift();
+        smoothedTarget = Math.round(hist.reduce((a, b) => a + b, 0) / hist.length);
+
+        const currentPattern = stRef.current.sel?.pattern;
+        const currentBrightness = currentPattern ? brightnessScore(currentPattern) : brightnessRange.neutral;
+
+        if (Math.abs(smoothedTarget - currentBrightness) >= BRIGHTNESS_CONFIG.transitionThreshold) {
+          brightnessSelected = findClosestScale(smoothedTarget, catalogue, currentPattern, BRIGHTNESS_CONFIG);
+          if (brightnessSelected) {
+            const bsFam = FAMILIES.find(f => f.id === brightnessSelected.familyId);
+            if (bsFam) pick(bsFam, brightnessSelected.modeIdx, brightnessSelected.pattern);
+          }
+        }
+      }
+
       const currentState = {
         currentScale: stRef.current.sel ? (KNOWN[stRef.current.sel.pattern] || stRef.current.sel.id) : "none",
+        currentBrightness: stRef.current.sel ? brightnessScore(stRef.current.sel.pattern) : null,
+        ...(brightnessSelected ? {
+          brightnessSelected: brightnessSelected.name || `${brightnessSelected.familyId}.${brightnessSelected.modeIdx}`,
+          targetBrightnessScore: smoothedTarget,
+        } : {}),
         rootNote: CHROMATIC[stRef.current.rootIdx],
         rhythm: stRef.current.rhythm,
         arpDir: stRef.current.arpDir,
@@ -1502,7 +1545,7 @@ Respond ONLY with valid JSON matching this schema exactly:
 scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
 The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/sus4/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
 IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.
-If currentState.brainState is present, it contains live EEG data from the user's FlowTime headband. Use it to shape your musical choices: high alpha_pct (>35%) + low beta_pct (<15%) = flowing pentatonic/modal scales, slow BPM (55-80), droneOn=true with pad or strings, sus2/sus4 chords, high reverb; high theta_pct (>30%) = very slow minimal scales, BPM 45-65, heavy reverb, waltz or clave for gentle pulse; high beta_pct (>25%) = more energetic scales, moderate BPM (85-110); relaxation_index>0.7 = deeply relaxed, lean meditative; alpha_theta_ratio<1.0 = drowsy/deep, slow way down. The dominant field names the leading band.`,
+If currentState.brainState is present, a brightness-matching algorithm has already selected a scale based on EEG state (currentState.brightnessSelected, brightness score currentState.currentBrightness). Your role is to complement that selection: choose BPM, rhythm, chord voicing, drone, reverb, and delay to musically articulate the scale's emotional character given the brain state. Explain why this scale fits in your commentary. If you have a strong musical reason to choose a different scale, you may override the selection by specifying a different scaleId — but explain why in commentary. Do not change the scale just for variety if brightness selection is active.`,
         messages: [{
           role: "user",
           content: `${capturedUserMsg ? `User message: "${capturedUserMsg}"\n\n` : ""}Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore.${capturedUserMsg ? " Respond to the user's message and pick a scale accordingly." : " Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played."}`
