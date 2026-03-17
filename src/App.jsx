@@ -1059,8 +1059,10 @@ export default function Chloe() {
   const brightnessHistoryRef = useRef([]);  // rolling window of raw targets for smoothing
   const overrideTargetRef    = useRef(null); // live value for callClaude (avoids stale closure)
   const brightnessLockedRef  = useRef(false);
+  const claudeOverrideRef    = useRef(null); // Claude-set brightness override
   const [overrideTarget,   setOverrideTarget]   = useState(null);  // mirrors ref, for rendering
   const [brightnessLocked, setBrightnessLocked] = useState(false);
+  const [claudeOverride,   setClaudeOverride]   = useState(null);  // Claude-driven target
   const [eegTarget,        setEegTarget]        = useState(null);  // last smoothed EEG target
   const [eegData,    setEegData]    = useState(null);  // live EEG from proxy
   useEffect(() => { demoLogRef.current = demoLog; }, [demoLog]);
@@ -1494,15 +1496,19 @@ export default function Chloe() {
         beta_alpha_ratio:   parseFloat(((_eeg.bands.beta.left_pct  + _eeg.bands.beta.right_pct)  / Math.max(_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct, 0.01)).toFixed(2)),
       } : null;
 
-      // Brightness-based scale selection — EEG-driven or user override
+      // Brightness-based scale selection — priority: lock > slider > claude > eeg > free
       let brightnessSelected = null;
       let effectiveTarget = null;
-      const override = overrideTargetRef.current;
-      const locked   = brightnessLockedRef.current;
+      const override   = overrideTargetRef.current;
+      const locked     = brightnessLockedRef.current;
+      const claudeOvr  = claudeOverrideRef.current;
 
       if (override !== null) {
-        // Manual override (slider or lock) — use directly, skip EEG computation
+        // User manual override (slider or lock) — highest priority
         effectiveTarget = override;
+      } else if (claudeOvr !== null) {
+        // Claude-set override — above EEG, below user manual
+        effectiveTarget = claudeOvr;
       } else if (brainState) {
         // EEG-driven
         const rawTarget = targetBrightness(
@@ -1529,7 +1535,9 @@ export default function Chloe() {
         }
       }
 
-      const bSource = override !== null ? (locked ? 'locked' : 'slider') : (brainState ? 'eeg' : 'free');
+      const bSource = override !== null ? (locked ? 'locked' : 'slider')
+        : claudeOvr !== null ? 'claude'
+        : brainState ? 'eeg' : 'free';
 
       const currentState = {
         currentScale: stRef.current.sel ? (KNOWN[stRef.current.sel.pattern] || stRef.current.sel.id) : "none",
@@ -1559,11 +1567,12 @@ export default function Chloe() {
         max_tokens: 400,
         system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
 Respond ONLY with valid JSON matching this schema exactly:
-{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string"}
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string","brightnessOverride":number|null}
 scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
 The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/sus4/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
 IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.
-currentState.currentBrightnessNorm is the normalized brightness of the active scale (0.0 = darkest possible for this note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). currentState.brightnessSource tells you what is driving scale selection: 'eeg' = EEG headband is active and has pre-selected a scale; 'slider' = user has manually set a brightness target with the slider; 'locked' = user has locked the current brightness zone; 'free' = no EEG, no override — you choose freely. When brightnessSource is 'eeg': a brightness-matching algorithm has pre-selected a scale (currentState.brightnessSelected) — your role is to choose BPM, rhythm, voicing, and effects to complement it; only override the scale if you have a strong musical reason. When brightnessSource is 'slider' or 'locked': the user has taken manual control of brightness — describe the musical character of the scale rather than brain state. When brightnessSource is 'free': choose scales autonomously.
+currentState.currentBrightnessNorm is the normalized brightness of the active scale (0.0 = darkest possible for this note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). currentState.brightnessSource tells you what is driving scale selection: 'eeg' = EEG headband is active and has pre-selected a scale; 'slider' = user has manually set a brightness target with the slider; 'locked' = user has locked the current brightness zone; 'claude' = you have set a brightnessOverride and are actively driving toward a goal; 'free' = no EEG, no override — you choose freely. When brightnessSource is 'eeg': a brightness-matching algorithm has pre-selected a scale (currentState.brightnessSelected) — your role is to choose BPM, rhythm, voicing, and effects to complement it; only override the scale if you have a strong musical reason. When brightnessSource is 'slider' or 'locked': the user has taken manual control of brightness — describe the musical character of the scale rather than brain state. When brightnessSource is 'free': choose scales autonomously.
+brightnessOverride: you may set this field (0.0–1.0) to lock a brightness target toward a goal state. When set, it overrides EEG-driven selection until you explicitly clear it (set to null) or the user takes manual control. OMIT this field entirely when you are not changing the current override state — omitting it preserves whatever is currently set. Set to null only when explicitly releasing a goal you've been holding. Target ranges: gamma/alertness/focus → 0.80–0.95; alpha/calm/balance → 0.45–0.55; theta/deep meditation → 0.15–0.30. When the user asks you to target a brain state: set brightnessOverride, choose BPM/rhythm/voicing to reinforce the goal, and HOLD the override across subsequent cycles. Report EEG as progress feedback, not as a state to mirror: "Gamma still at 4% — holding bright scales to keep pushing" not "Your gamma suggests high cognition." Ease or clear the override when the goal is clearly achieved or the user changes direction.
 Brain state interpretation guidelines: Ignore delta — it is always the highest-amplitude band from forehead EEG and does not indicate sleep or drowsiness on its own. Use dominant_active (the strongest band excluding delta): alpha = calm, relaxed, meditative; theta = deepening meditation, drowsy, inward; beta = engaged, focused, active; gamma = high cognitive processing. Use theta_alpha_ratio to judge depth: > 1.5 suggests deep meditation or drowsiness, < 0.5 suggests alert wakefulness. Use beta_alpha_ratio to judge activation: > 1.5 suggests active focus, < 0.5 suggests relaxation. Only describe the state as deep/drowsy/sleep-like when theta_alpha_ratio actually supports it (> 1.5).
 Commentary discipline: The brain state is context, not the headline every cycle. Only mention the brain state in commentary when it has meaningfully shifted from the previous cycle (different dominant_active band, or ratio crossing a threshold). When the brain state is stable, focus commentary entirely on the musical choices — why this scale after the previous one, what the harmonic or tonal relationship is, how the texture or mood is evolving. Do not produce variations of the same brain state observation cycle after cycle.`,
         messages: [{
@@ -1577,6 +1586,18 @@ Commentary discipline: The brain state is context, not the headline every cycle.
       const raw = msg.content[0].text.trim();
       const json = raw.replace(/^```json?\n?/, "").replace(/\n?```$/, "");
       const choice = JSON.parse(json);
+
+      // Claude brightness override — only act if field is present in response
+      if (Object.prototype.hasOwnProperty.call(choice, 'brightnessOverride')) {
+        if (choice.brightnessOverride === null) {
+          claudeOverrideRef.current = null;
+          setClaudeOverride(null);
+        } else if (typeof choice.brightnessOverride === 'number') {
+          const v = Math.max(0, Math.min(1, choice.brightnessOverride));
+          claudeOverrideRef.current = v;
+          setClaudeOverride(v);
+        }
+      }
 
       // Ensure AudioContext is running before we trigger the arpeggio effect
       const ac = getCtx();
@@ -2235,10 +2256,11 @@ Commentary discipline: The brain state is context, not the headline every cycle.
           {(() => {
             const eegStreaming = !!(eegData?.connected && eegData?.bands && eegData?.derived);
             const curNorm = sel ? normalizedBrightness(sel.pattern) : null;
-            const displayTarget = overrideTarget !== null ? overrideTarget : eegTarget;
+            const displayTarget = overrideTarget !== null ? overrideTarget : claudeOverride !== null ? claudeOverride : eegTarget;
             const isOverride = overrideTarget !== null;
-            const dotColor = brightnessLocked ? "#f0a030" : isOverride ? "#6060e8" : eegStreaming ? "#3ee8d0" : K.a;
+            const dotColor = brightnessLocked ? "#f0a030" : isOverride ? "#6060e8" : claudeOverride !== null ? "#e87020" : eegStreaming ? "#3ee8d0" : K.a;
             const sliderVal = overrideTarget !== null ? Math.round(overrideTarget * 100)
+              : claudeOverride !== null ? Math.round(claudeOverride * 100)
               : eegTarget !== null ? Math.round(eegTarget * 100) : 50;
             const btnStyle = { background: "none", border: `1px solid ${K.demoBr}`, color: K.demoT2,
               fontSize: 9, padding: "2px 6px", cursor: "pointer", borderRadius: 3, flexShrink: 0 };
@@ -2294,11 +2316,17 @@ Commentary discipline: The brain state is context, not the headline every cycle.
                 {/* Clear override */}
                 {isOverride && !brightnessLocked && (
                   <button onClick={() => { overrideTargetRef.current = null; setOverrideTarget(null); }}
-                    title="Clear override — return to EEG targeting" style={btnStyle}>✕</button>
+                    title="Clear manual override — return to EEG/Claude targeting" style={btnStyle}>✕</button>
+                )}
+                {/* Claude override indicator + clear */}
+                {claudeOverride !== null && !isOverride && !brightnessLocked && (
+                  <button onClick={() => { claudeOverrideRef.current = null; setClaudeOverride(null); }}
+                    title="Claude is holding a brightness goal — click to release and return to EEG"
+                    style={{ ...btnStyle, color: "#e87020" }}>★✕</button>
                 )}
                 {/* Explore nearby */}
                 <button onClick={() => {
-                  const target = overrideTarget ?? eegTarget ?? (sel ? normalizedBrightness(sel.pattern) : 0.5);
+                  const target = overrideTarget ?? claudeOverride ?? eegTarget ?? (sel ? normalizedBrightness(sel.pattern) : 0.5);
                   const result = randomAtBrightness(target, BRIGHTNESS_CONFIG.randomTolerance, fullCatalogue, sel?.pattern ?? null, BRIGHTNESS_CONFIG);
                   if (result) {
                     const fam = FAMILIES.find(f => f.id === result.familyId);
@@ -2616,12 +2644,12 @@ Commentary discipline: The brain state is context, not the headline every cycle.
                 { label: arpOn && !demoOn && !autoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn && !autoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
                 { label: autoOn ? "⟲ Stop" : "⟲ Auto", on: autoOn, onClick: () => {
                   wake();
-                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); overrideTargetRef.current = null; brightnessLockedRef.current = false; }
+                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; }
                   else { setDemoOn(false); setAutoOn(true); }
                 }},
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
-                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); overrideTargetRef.current = null; brightnessLockedRef.current = false; }
+                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
                 // { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
