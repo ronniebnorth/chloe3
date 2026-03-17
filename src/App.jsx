@@ -1612,7 +1612,7 @@ Commentary discipline: The brain state is context, not the headline every cycle.
       // Commentary and requests go to chat panel; banner shows parameter summary only
       const chatParts = [choice.commentary, choice.request ? `✦ ${choice.request}` : null].filter(Boolean);
       if (chatParts.length) setChatLog(prev => [...prev, { role: "claude", text: chatParts.join("\n"), ts: Date.now() }].slice(-40));
-      if (choice.reply) { setChatLog(prev => [...prev, { role: "claude", text: choice.reply, ts: Date.now() }].slice(-40)); setChatOpen(true); }
+      if (choice.reply) { setChatLog(prev => [...prev, { role: "claude", text: choice.reply, ts: Date.now() }].slice(-40)); if (capturedUserMsg) setChatOpen(true); }
       // Only clear the pending message if it was the one we used — a new message may have arrived during the API call
       if (pendingUserMsgRef.current === capturedUserMsg) pendingUserMsgRef.current = null;
 
