@@ -5,6 +5,7 @@ export const BRIGHTNESS_CONFIG = {
   alphaNeutralWeight:   0.5,    // how strongly alpha-dominant pulls toward 0.5 neutral
   thetaDarkWeight:      0.3,    // how strongly theta/alpha ratio pushes darker
   betaBrightWeight:     0.3,    // how strongly beta/alpha ratio pushes brighter
+  randomTolerance:      0.1,    // ± range for brightness-constrained randomizer
   noteCountPreference:  true,   // prefer same cardinality as tiebreaker
   commonTonePreference: true,   // prefer scales sharing pitches with current
 };
@@ -68,6 +69,26 @@ export function targetBrightness(eegState, config) {
   }
 
   return Math.max(0.0, Math.min(1.0, target));
+}
+
+// Count set bits in a 12-bit pattern (number of notes in scale).
+export function countBits(pattern) {
+  let n = 0; for (let i = 0; i < 12; i++) if ((pattern >> i) & 1) n++; return n;
+}
+
+// Pick a random scale whose normalized brightness is within ± tolerance of target.
+// Prefers same note count as currentPattern (if noteCountPreference); avoids repeating current.
+export function randomAtBrightness(target, tolerance, catalogue, currentPattern, config) {
+  let candidates = catalogue.filter(s => Math.abs(normalizedBrightness(s.pattern) - target) <= tolerance);
+  if (candidates.length === 0) return null;
+  if (config.noteCountPreference && currentPattern) {
+    const currentN = countBits(currentPattern);
+    const sameN = candidates.filter(s => countBits(s.pattern) === currentN);
+    if (sameN.length > 0) candidates = sameN;
+  }
+  const pool = candidates.filter(s => s.pattern !== currentPattern);
+  const final = pool.length > 0 ? pool : candidates;
+  return final[Math.floor(Math.random() * final.length)];
 }
 
 // Find the scale in catalogue whose normalized brightness is closest to the normalized target.
