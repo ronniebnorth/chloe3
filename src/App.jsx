@@ -2347,6 +2347,7 @@ If currentState.brainState is present, a brightness-matching algorithm has alrea
                             {toBin(mode)}
                           </span>
                           <span style={{ color: K.t2, fontSize: 9, minWidth: 40 }}>({mode})</span>
+                          <span style={{ color: K.t2, fontSize: 9, opacity: 0.7, minWidth: 28 }}>b{bright(mode)}</span>
                           {name && (
                             <span style={{ color: isSel ? K.a : K.t1, fontSize: 10 }}>{name}</span>
                           )}
@@ -2795,7 +2796,7 @@ If currentState.brainState is present, a brightness-matching algorithm has alrea
 
                 <Lbl K={K}>BINARY PATTERN</Lbl>
                 <div style={{ color: K.t2, fontSize: 10, letterSpacing: 2, marginBottom: 2 }}>{toBin(sel.pattern)}</div>
-                <div style={{ color: K.t2, fontSize: 9, opacity: 0.6, marginBottom: 14 }}>decimal {sel.pattern}</div>
+                <div style={{ color: K.t2, fontSize: 9, opacity: 0.6, marginBottom: 14 }}>decimal {sel.pattern} · brightness {bright(sel.pattern)}</div>
 
                 <Lbl K={K}>KEYBOARD</Lbl>
                 <Piano active={selSemis} playing={playing} K={K} />
