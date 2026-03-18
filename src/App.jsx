@@ -1668,7 +1668,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           claudeBpmOverrideRef.current = "heart_rate";
           setClaudeBpmOverride("heart_rate");
         } else if (typeof choice.bpmOverride === 'number') {
-          const v = Math.max(monasticModeRef.current ? 10 : 40, Math.min(240, choice.bpmOverride));
+          const v = Math.max(monasticModeRef.current ? 1 : 40, Math.min(240, choice.bpmOverride));
           claudeBpmOverrideRef.current = v;
           setClaudeBpmOverride(v);
         }
@@ -1690,7 +1690,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const rhythm   = choice.rhythm    || "even";
       const arpDir   = choice.arpDir    || "asc";
       const chordVoice = choice.chordVoice || "off";
-      const bpm      = Math.max(monasticModeRef.current ? 10 : 40, Math.min(240, choice.bpm || 100));
+      const bpm      = Math.max(monasticModeRef.current ? 1 : 40, Math.min(240, choice.bpm || 100));
       const AL = autoLocksRef.current;
       if (AL.rootNote) setRootIdx(rootNote);
       if (AL.rhythm)     setRhythm(rhythm);
@@ -1702,7 +1702,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (!autoLocksRef.current.bpm) {
         // user has locked bpm in modal — don't override
       } else if (claudeBpmOverrideRef.current === "heart_rate" && eegDataRef.current && eegDataRef.current.heart_rate > 0) {
-        setBpm(Math.max(monasticModeRef.current ? 10 : 40, Math.min(240, Math.round(eegDataRef.current.heart_rate))));
+        setBpm(Math.max(monasticModeRef.current ? 1 : 40, Math.min(240, Math.round(eegDataRef.current.heart_rate))));
       } else if (typeof claudeBpmOverrideRef.current === 'number') {
         setBpm(claudeBpmOverrideRef.current);
       }
@@ -2259,7 +2259,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           {/* BPM */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
             <span title="Tempo for arpeggio and melody modes (40-240 BPM)." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
-            <input type="range" min={monasticMode ? 10 : 40} max={240} value={bpm}
+            <input type="range" min={monasticMode ? 1 : 40} max={240} value={bpm}
               onChange={e => setBpm(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
