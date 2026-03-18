@@ -76,6 +76,32 @@ export function countBits(pattern) {
   let n = 0; for (let i = 0; i < 12; i++) if ((pattern >> i) & 1) n++; return n;
 }
 
+// The seven diatonic modes, bright → dark, for neighborhood computation.
+export const DIATONIC_MODES = [
+  { name: 'Lydian',     pattern: 2773 },
+  { name: 'Ionian',     pattern: 2741 },
+  { name: 'Mixolydian', pattern: 1717 },
+  { name: 'Dorian',     pattern: 1709 },
+  { name: 'Aeolian',    pattern: 1453 },
+  { name: 'Phrygian',   pattern: 1451 },
+  { name: 'Locrian',    pattern: 1387 },
+];
+
+// Returns which diatonic modes share the most pitches with the given pattern.
+// relatives: mode name(s) with maximum shared pitch count.
+// ambiguity: 1 = clear single parent; 3+ = scale lives between multiple modes.
+export function diatonicNeighborhood(pattern) {
+  const N = countBits(pattern);
+  let maxShared = 0;
+  let relatives = [];
+  for (const mode of DIATONIC_MODES) {
+    const shared = countBits(pattern & mode.pattern);
+    if (shared > maxShared) { maxShared = shared; relatives = [mode.name]; }
+    else if (shared === maxShared) relatives.push(mode.name);
+  }
+  return { relatives, sharedPitches: maxShared, totalPitches: N, ambiguity: relatives.length };
+}
+
 // Pick a random scale whose normalized brightness is within ± tolerance of target.
 // Prefers same note count as currentPattern (if noteCountPreference); avoids repeating current.
 export function randomAtBrightness(target, tolerance, catalogue, currentPattern, config) {

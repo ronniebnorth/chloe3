@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness } from './brightness';
+import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
 
 /* ═══════════════════════════════════════════════════════
    SCALE ENGINE
@@ -1104,6 +1104,9 @@ export default function Chloe() {
   const [prePinSel,     setPrePinSel]     = useState(null); // { id, pattern } — A/B comparison A side
   const [listSearch,    setListSearch]    = useState("");   // sidebar name search
   const [noteCountFilter, setNoteCountFilter] = useState(null); // null | 3-8
+  const [showDiatonic,  setShowDiatonic]  = useState(false); // show diatonic neighborhood annotations
+  const showDiatonicRef = useRef(false);
+  useEffect(() => { showDiatonicRef.current = showDiatonic; }, [showDiatonic]);
   const customNamesRef = useRef({});
   useEffect(() => { customNamesRef.current = customNames; }, [customNames]);
   const demoAllScalesRef = useRef(true);
@@ -1543,6 +1546,8 @@ export default function Chloe() {
         currentScale: stRef.current.sel ? (KNOWN[stRef.current.sel.pattern] || stRef.current.sel.id) : "none",
         currentBrightness: stRef.current.sel ? brightnessScore(stRef.current.sel.pattern) : null,
         currentBrightnessNorm: stRef.current.sel ? parseFloat(normalizedBrightness(stRef.current.sel.pattern).toFixed(3)) : null,
+        diatonicNeighborhood: stRef.current.sel ? diatonicNeighborhood(stRef.current.sel.pattern) : null,
+        diatonicContextActive: showDiatonicRef.current,
         brightnessSource: bSource,
         ...(brightnessSelected ? {
           brightnessSelected: brightnessSelected.name || `${brightnessSelected.familyId}.${brightnessSelected.modeIdx}`,
@@ -1574,7 +1579,8 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
 currentState.currentBrightnessNorm is the normalized brightness of the active scale (0.0 = darkest possible for this note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). currentState.brightnessSource tells you what is driving scale selection: 'eeg' = EEG headband is active and has pre-selected a scale; 'slider' = user has manually set a brightness target with the slider; 'locked' = user has locked the current brightness zone; 'claude' = you have set a brightnessOverride and are actively driving toward a goal; 'free' = no EEG, no override — you choose freely. When brightnessSource is 'eeg': a brightness-matching algorithm has pre-selected a scale (currentState.brightnessSelected) — your role is to choose BPM, rhythm, voicing, and effects to complement it; only override the scale if you have a strong musical reason. When brightnessSource is 'slider' or 'locked': the user has taken manual control of brightness — describe the musical character of the scale rather than brain state. When brightnessSource is 'free': choose scales autonomously.
 brightnessOverride: you may set this field (0.0–1.0) to lock a brightness target toward a goal state. When set, it overrides EEG-driven selection until you explicitly clear it (set to null) or the user takes manual control. OMIT this field entirely when you are not changing the current override state — omitting it preserves whatever is currently set. Set to null only when explicitly releasing a goal you've been holding. Target ranges: gamma/alertness/focus → 0.80–0.95; alpha/calm/balance → 0.45–0.55; theta/deep meditation → 0.15–0.30. When the user asks you to target a brain state: set brightnessOverride, choose BPM/rhythm/voicing to reinforce the goal, and HOLD the override across subsequent cycles. Report EEG as progress feedback, not as a state to mirror: "Gamma still at 4% — holding bright scales to keep pushing" not "Your gamma suggests high cognition." Ease or clear the override when the goal is clearly achieved or the user changes direction.
 Brain state interpretation guidelines: Ignore delta — it is always the highest-amplitude band from forehead EEG and does not indicate sleep or drowsiness on its own. Use dominant_active (the strongest band excluding delta): alpha = calm, relaxed, meditative; theta = deepening meditation, drowsy, inward; beta = engaged, focused, active; gamma = high cognitive processing. Use theta_alpha_ratio to judge depth: > 1.5 suggests deep meditation or drowsiness, < 0.5 suggests alert wakefulness. Use beta_alpha_ratio to judge activation: > 1.5 suggests active focus, < 0.5 suggests relaxation. Only describe the state as deep/drowsy/sleep-like when theta_alpha_ratio actually supports it (> 1.5).
-Commentary discipline: The brain state is context, not the headline every cycle. Only mention the brain state in commentary when it has meaningfully shifted from the previous cycle (different dominant_active band, or ratio crossing a threshold). When the brain state is stable, focus commentary entirely on the musical choices — why this scale after the previous one, what the harmonic or tonal relationship is, how the texture or mood is evolving. Do not produce variations of the same brain state observation cycle after cycle.`,
+Commentary discipline: The brain state is context, not the headline every cycle. Only mention the brain state in commentary when it has meaningfully shifted from the previous cycle (different dominant_active band, or ratio crossing a threshold). When the brain state is stable, focus commentary entirely on the musical choices — why this scale after the previous one, what the harmonic or tonal relationship is, how the texture or mood is evolving. Do not produce variations of the same brain state observation cycle after cycle.
+Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard diatonic modes share the most pitches with the current scale (relatives, sharedPitches, totalPitches, ambiguity). currentState.diatonicContextActive tells you whether the user has turned on diatonic mode context. When diatonicContextActive is true: actively reference diatonic neighborhoods in commentary — anchor the scale in familiar modal language. When ambiguity is 1: name the parent mode directly — "this hexatonic is a Dorian variant with the 6th removed." When ambiguity is 2–3: describe the space between modes — "this pentatonic sits equally in Ionian and Lydian territory — the missing pitches are left to the listener." High ambiguity in sparse scales (tritonics, tetratonics) is musically meaningful, not a gap — a 3-note scale is inherently participatory, the listener fills in the missing pitches. Do not force a single mode label on an ambiguous scale. When diatonicContextActive is false: the neighborhood data is available if genuinely useful, but don't foreground modal labels — focus on the scale's own character.`,
         messages: [{
           role: "user",
           content: `${capturedUserMsg ? `User message: "${capturedUserMsg}"\n\n` : ""}Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore.${capturedUserMsg ? " Respond to the user's message and pick a scale accordingly." : " Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played."}`
@@ -2419,6 +2425,16 @@ Commentary discipline: The brain state is context, not the headline every cycle.
                 cursor: "pointer", fontFamily: "inherit", marginLeft: 2,
               }}>clear</button>
             )}
+            <button
+              onClick={() => setShowDiatonic(p => !p)}
+              title={showDiatonic ? "Hide diatonic mode context" : "Show nearest diatonic mode for each scale"}
+              style={{
+                background: showDiatonic ? K.ag : "none",
+                border: `1px solid ${showDiatonic ? K.a : K.br}`,
+                color: showDiatonic ? K.a : K.t2,
+                borderRadius: 3, padding: "2px 6px", fontSize: 8,
+                cursor: "pointer", fontFamily: "inherit", marginLeft: "auto",
+              }}>≈ mode</button>
           </div>
         </div>
 
@@ -2514,6 +2530,15 @@ Commentary discipline: The brain state is context, not the headline every cycle.
                           {!name && !isEditingThis && !customName && (
                             <button onClick={e => { e.stopPropagation(); setEditingName(mode); setNameInput(""); }} title="Name this scale" style={{ background: "none", border: "none", color: K.t2, cursor: "pointer", fontSize: 9, padding: "0 2px", flexShrink: 0 }}>✎</button>
                           )}
+                          {showDiatonic && (() => {
+                            const nb = diatonicNeighborhood(mode);
+                            return (
+                              <span
+                                title={`${nb.sharedPitches}/${nb.totalPitches} pitches shared with ${nb.relatives.join(', ')}`}
+                                style={{ color: K.t2, fontSize: 8, opacity: 0.75, marginLeft: "auto", flexShrink: 0, whiteSpace: "nowrap" }}
+                              >≈ {nb.relatives.join(' / ')}</span>
+                            );
+                          })()}
                         </div>
                       );
                     })}
