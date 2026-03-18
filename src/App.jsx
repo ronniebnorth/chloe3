@@ -1068,6 +1068,10 @@ export default function Chloe() {
   const [claudeBpmOverride, setClaudeBpmOverride] = useState(null); // "heart_rate" | number | null
   const claudeBpmOverrideRef = useRef(null);
   useEffect(() => { claudeBpmOverrideRef.current = claudeBpmOverride; }, [claudeBpmOverride]);
+  const [monasticMode, setMonasticMode] = useState(false);
+  const monasticModeRef = useRef(false);
+  useEffect(() => { monasticModeRef.current = monasticMode; }, [monasticMode]);
+  const preMonasticBpmRef = useRef(null);
   const [eegTarget,        setEegTarget]        = useState(null);  // last smoothed EEG target
   const [eegData,    setEegData]    = useState(null);  // live EEG from proxy
   const eegDataRef = useRef(null);
@@ -1527,23 +1531,29 @@ export default function Chloe() {
         effectiveTarget = claudeOvr;
       } else if (brainState) {
         // EEG-driven
+        const effectiveConfig = monasticModeRef.current
+          ? { ...BRIGHTNESS_CONFIG, smoothingWindow: 30, transitionThreshold: 0.15 }
+          : BRIGHTNESS_CONFIG;
         const rawTarget = targetBrightness(
           { derived: { dominant_active_band: brainState.dominant_active },
             bands:   { alpha_pct: brainState.alpha_pct, theta_pct: brainState.theta_pct, beta_pct: brainState.beta_pct } },
-          BRIGHTNESS_CONFIG
+          effectiveConfig
         );
         const hist = brightnessHistoryRef.current;
         hist.push(rawTarget);
-        if (hist.length > BRIGHTNESS_CONFIG.smoothingWindow) hist.shift();
+        if (hist.length > effectiveConfig.smoothingWindow) hist.shift();
         effectiveTarget = hist.reduce((a, b) => a + b, 0) / hist.length;
         setEegTarget(effectiveTarget);
       }
 
       if (effectiveTarget !== null) {
+        const effectiveConfig = monasticModeRef.current
+          ? { ...BRIGHTNESS_CONFIG, smoothingWindow: 30, transitionThreshold: 0.15 }
+          : BRIGHTNESS_CONFIG;
         const currentPattern = stRef.current.sel?.pattern;
         const currentNorm = currentPattern ? normalizedBrightness(currentPattern) : 0.5;
-        if (Math.abs(effectiveTarget - currentNorm) >= BRIGHTNESS_CONFIG.transitionThreshold) {
-          brightnessSelected = findClosestScale(effectiveTarget, catalogue, currentPattern, BRIGHTNESS_CONFIG);
+        if (Math.abs(effectiveTarget - currentNorm) >= effectiveConfig.transitionThreshold) {
+          brightnessSelected = findClosestScale(effectiveTarget, catalogue, currentPattern, effectiveConfig);
           if (brightnessSelected) {
             const bsFam = FAMILIES.find(f => f.id === brightnessSelected.familyId);
             if (bsFam) pick(bsFam, brightnessSelected.modeIdx, brightnessSelected.pattern);
@@ -1572,6 +1582,7 @@ export default function Chloe() {
         bpm: stRef.current.bpm,
         ...(brainState ? { brainState } : {}),
         ...(claudeBpmOverrideRef.current !== null ? { claudeBpmOverride: claudeBpmOverrideRef.current } : {}),
+        ...(monasticModeRef.current ? { monasticMode: true } : {}),
       };
 
       const recentHistory = demoLogRef.current.slice(0, 20).map(e =>
@@ -1597,6 +1608,7 @@ IMPORTANT: All scales in this app exclude any scale containing 3 or more consecu
 currentState.currentBrightnessNorm is the normalized brightness of the active scale (0.0 = darkest possible for this note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). currentState.brightnessSource tells you what is driving scale selection: 'eeg' = EEG headband is active and has pre-selected a scale; 'slider' = user has manually set a brightness target with the slider; 'locked' = user has locked the current brightness zone; 'claude' = you have set a brightnessOverride and are actively driving toward a goal; 'free' = no EEG, no override — you choose freely. When brightnessSource is 'eeg': a brightness-matching algorithm has pre-selected a scale (currentState.brightnessSelected) — your role is to choose BPM, rhythm, voicing, and effects to complement it; only override the scale if you have a strong musical reason. When brightnessSource is 'slider' or 'locked': the user has taken manual control of brightness — describe the musical character of the scale rather than brain state. When brightnessSource is 'free': choose scales autonomously.
 brightnessOverride: you may set this field (0.0–1.0) to lock a brightness target toward a goal state. When set, it overrides EEG-driven selection until you explicitly clear it (set to null) or the user takes manual control. OMIT this field entirely when you are not changing the current override state — omitting it preserves whatever is currently set. Set to null only when explicitly releasing a goal you've been holding. Target ranges: gamma/alertness/focus → 0.80–0.95; alpha/calm/balance → 0.45–0.55; theta/deep meditation → 0.15–0.30. When the user asks you to target a brain state: set brightnessOverride, choose BPM/rhythm/voicing to reinforce the goal, and HOLD the override across subsequent cycles. Report EEG as progress feedback, not as a state to mirror: "Gamma still at 4% — holding bright scales to keep pushing" not "Your gamma suggests high cognition." Ease or clear the override when the goal is clearly achieved or the user changes direction.
 bpmOverride: you may set this field to lock BPM persistently. The value "heart_rate" is a special literal string token — output it exactly as written, do NOT substitute the current heart rate number. When set to the string "heart_rate" (e.g. {"bpmOverride":"heart_rate"}), the app reads the live heart rate itself every cycle. Set to a number only to lock to a specific static tempo. Set null to release. Omit to preserve current state. When the user asks to sync BPM with their pulse or heart rate, output {"bpmOverride":"heart_rate"} and hold it until they ask to stop or change direction. While active, report as feedback: "Syncing BPM to your heart rate (N bpm)."
+Monastic mode: when currentState.monasticMode is true, your role changes — hold each scale for the full cycle interval (3+ minutes). Choose the slowest BPM you can justify (10–30 range). Prefer sparse scales (3–5 notes). Use sustained drone types (tanpura, pad, strings) — the drone is the primary voice. Commentary should be minimal — one short sentence about the scale character. Do not narrate the brain state unless it has changed significantly. Do not suggest feature improvements (omit the request field entirely). If the EEG brightness target hasn't shifted beyond the transition threshold, keep the current scale.
 Brain state interpretation guidelines: Ignore delta — it is always the highest-amplitude band from forehead EEG and does not indicate sleep or drowsiness on its own. Use dominant_active (the strongest band excluding delta): alpha = calm, relaxed, meditative; theta = deepening meditation, drowsy, inward; beta = engaged, focused, active; gamma = high cognitive processing. Use theta_alpha_ratio to judge depth: > 1.5 suggests deep meditation or drowsiness, < 0.5 suggests alert wakefulness. Use beta_alpha_ratio to judge activation: > 1.5 suggests active focus, < 0.5 suggests relaxation. Only describe the state as deep/drowsy/sleep-like when theta_alpha_ratio actually supports it (> 1.5).
 Commentary discipline: The brain state is context, not the headline every cycle. Only mention the brain state in commentary when it has meaningfully shifted from the previous cycle (different dominant_active band, or ratio crossing a threshold). When the brain state is stable, focus commentary entirely on the musical choices — why this scale after the previous one, what the harmonic or tonal relationship is, how the texture or mood is evolving. Do not produce variations of the same brain state observation cycle after cycle.
 Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard diatonic modes share the most pitches with the current scale (relatives, sharedPitches, totalPitches, ambiguity). currentState.diatonicContextActive tells you whether the user has turned on diatonic mode context. When diatonicContextActive is true: actively reference diatonic neighborhoods in commentary — anchor the scale in familiar modal language. When ambiguity is 1: name the parent mode directly — "this hexatonic is a Dorian variant with the 6th removed." When ambiguity is 2–3: describe the space between modes — "this pentatonic sits equally in Ionian and Lydian territory — the missing pitches are left to the listener." High ambiguity in sparse scales (tritonics, tetratonics) is musically meaningful, not a gap — a 3-note scale is inherently participatory, the listener fills in the missing pitches. Do not force a single mode label on an ambiguous scale. When diatonicContextActive is false: the neighborhood data is available if genuinely useful, but don't foreground modal labels — focus on the scale's own character.`,
@@ -1633,7 +1645,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           claudeBpmOverrideRef.current = "heart_rate";
           setClaudeBpmOverride("heart_rate");
         } else if (typeof choice.bpmOverride === 'number') {
-          const v = Math.max(40, Math.min(240, choice.bpmOverride));
+          const v = Math.max(monasticModeRef.current ? 10 : 40, Math.min(240, choice.bpmOverride));
           claudeBpmOverrideRef.current = v;
           setClaudeBpmOverride(v);
         }
@@ -1655,7 +1667,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const rhythm   = choice.rhythm    || "even";
       const arpDir   = choice.arpDir    || "asc";
       const chordVoice = choice.chordVoice || "off";
-      const bpm      = Math.max(40, Math.min(240, choice.bpm || 100));
+      const bpm      = Math.max(monasticModeRef.current ? 10 : 40, Math.min(240, choice.bpm || 100));
       const AL = autoLocksRef.current;
       if (AL.rootNote) setRootIdx(rootNote);
       if (AL.rhythm)     setRhythm(rhythm);
@@ -1667,7 +1679,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (!autoLocksRef.current.bpm) {
         // user has locked bpm in modal — don't override
       } else if (claudeBpmOverrideRef.current === "heart_rate" && eegDataRef.current && eegDataRef.current.heart_rate > 0) {
-        setBpm(Math.max(40, Math.min(240, Math.round(eegDataRef.current.heart_rate))));
+        setBpm(Math.max(monasticModeRef.current ? 10 : 40, Math.min(240, Math.round(eegDataRef.current.heart_rate))));
       } else if (typeof claudeBpmOverrideRef.current === 'number') {
         setBpm(claudeBpmOverrideRef.current);
       }
@@ -1700,7 +1712,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (pendingUserMsgRef.current) {
         timeout = setTimeout(callClaude, 0);
       } else {
-        const delay = 12000 + Math.random() * 4000;
+        const delay = monasticModeRef.current ? 180000 : 12000 + Math.random() * 4000;
         timeout = setTimeout(callClaude, delay);
       }
       callClaudeNowRef.current = () => { clearTimeout(timeout); callClaude(); };
@@ -1772,7 +1784,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         ts: Date.now(),
       }, ...prev].slice(0, 200));
 
-      timeout = setTimeout(pickNext, 12000 + Math.random() * 4000);
+      timeout = setTimeout(pickNext, monasticModeRef.current ? 180000 : 12000 + Math.random() * 4000);
     };
 
     pickNext();
@@ -2224,7 +2236,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           {/* BPM */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
             <span title="Tempo for arpeggio and melody modes (40-240 BPM)." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
-            <input type="range" min={40} max={240} value={bpm}
+            <input type="range" min={monasticMode ? 10 : 40} max={240} value={bpm}
               onChange={e => setBpm(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
@@ -2730,6 +2742,23 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   if (!demoKey) { setDemoKeyInput(true); return; }
                   if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
+                }},
+                { label: monasticMode ? "◎ Still" : "◎ Monastic", on: monasticMode, onClick: () => {
+                  if (monasticMode) {
+                    // Toggle OFF
+                    setMonasticMode(false);
+                    if (preMonasticBpmRef.current !== null) {
+                      setBpm(preMonasticBpmRef.current);
+                      preMonasticBpmRef.current = null;
+                    }
+                  } else {
+                    // Toggle ON
+                    preMonasticBpmRef.current = stRef.current.bpm;
+                    setMonasticMode(true);
+                    setBpm(15);
+                    setDroneOn(true);
+                    setDroneWave("tanpura");
+                  }
                 }},
                 // { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
               ].map(b => (
