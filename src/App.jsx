@@ -1159,7 +1159,8 @@ export default function Chloe() {
   const reverbRef  = useRef(null); // { convolver, wetGain }
   const delayRef   = useRef(null); // { delayNode, feedbackGain, wetGain }
   const noteCountRef = useRef(0);  // tracks nodes created; used to recycle AudioContext
-  const RECYCLE_THRESHOLD = 5000;  // recycle AudioContext after this many notes
+  const RECYCLE_THRESHOLD = 500;   // recycle AudioContext after this many notes
+  const [recycleGen, setRecycleGen] = useState(0); // incremented to trigger drone/arp restart after context recycle
   const arpRef      = useRef(null);
   const playGridRef  = useRef(null); // { startTime, bpm } set when arp starts; used by beat to sync
   const arpIdxRef   = useRef(0);
@@ -1209,6 +1210,23 @@ export default function Chloe() {
     return delayRef.current;
   }, []);
 
+  // Periodic AudioContext recycler — Firefox retains AudioNodes in the context graph even after
+  // disconnect() until the context is closed. Recycle every 2 minutes to prevent accumulation.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!ctxRef.current) return;
+      const old = ctxRef.current;
+      ctxRef.current = null;
+      reverbRef.current = null;
+      delayRef.current = null;
+      analyserRef.current = null;
+      noteCountRef.current = 0;
+      setTimeout(() => { try { old.close(); } catch {} }, 3000);
+      setRecycleGen(g => g + 1); // triggers drone to restart on fresh context
+    }, 120000); // every 2 minutes
+    return () => clearInterval(id);
+  }, []);
+
   // Keep delay wet gain in sync with delayAmt slider
   useEffect(() => {
     if (delayRef.current) delayRef.current.wetGain.gain.value = delayAmt;
@@ -1251,7 +1269,7 @@ export default function Chloe() {
         try { volGain.disconnect(); } catch {}
       }, 100);
     };
-  }, [droneOn, rootIdx, droneOct, droneWave, aRef, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
+  }, [droneOn, rootIdx, droneOct, droneWave, aRef, recycleGen, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
 
   // Keep drone volume in sync with droneVol slider
   useEffect(() => {
