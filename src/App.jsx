@@ -1107,6 +1107,9 @@ export default function Chloe() {
   const [showDiatonic,  setShowDiatonic]  = useState(false); // show diatonic neighborhood annotations
   const showDiatonicRef = useRef(false);
   useEffect(() => { showDiatonicRef.current = showDiatonic; }, [showDiatonic]);
+  const [bpmAutoEnabled, setBpmAutoEnabled] = useState(true); // allow auto/demo to change BPM
+  const bpmAutoEnabledRef = useRef(true);
+  useEffect(() => { bpmAutoEnabledRef.current = bpmAutoEnabled; }, [bpmAutoEnabled]);
   const customNamesRef = useRef({});
   useEffect(() => { customNamesRef.current = customNames; }, [customNames]);
   const demoAllScalesRef = useRef(true);
@@ -1628,7 +1631,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       setArpDir(arpDir);
       setChordVoice(chordVoice);
       setMelMode(!!choice.melMode);
-      setBpm(bpm);
+      if (bpmAutoEnabledRef.current) setBpm(bpm);
       if (choice.reverbAmt != null) setReverbAmt(Math.max(0, Math.min(1, choice.reverbAmt)));
       if (choice.delayAmt  != null) setDelayAmt(Math.max(0, Math.min(1, choice.delayAmt)));
       if (choice.delayTime != null) setDelayTime(Math.max(0.05, Math.min(1.5, choice.delayTime)));
@@ -1708,7 +1711,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       setRhythm(rhythm);
       setArpDir(arpDir);
       setChordVoice(chordVoice);
-      setBpm(bpm);
+      if (bpmAutoEnabledRef.current) setBpm(bpm);
       setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
       setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
       setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
@@ -2186,6 +2189,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
             <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 28 }}>{bpm}</span>
+            <input type="checkbox" checked={bpmAutoEnabled} onChange={e => setBpmAutoEnabled(e.target.checked)}
+              title={bpmAutoEnabled ? "Auto/Demo can change BPM — uncheck to lock" : "BPM locked — Auto/Demo will not change it"}
+              style={{ accentColor: K.a, cursor: "pointer", flexShrink: 0 }}
+            />
             {eegData?.heart_rate > 0 && (
               <button
                 onClick={() => setBpm(Math.max(40, Math.min(240, Math.round(eegData.heart_rate))))}
