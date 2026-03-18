@@ -751,9 +751,11 @@ function Visualizer({ analyserRef, playing, rootIdx, active, K }) {
         analyser.getByteTimeDomainData(data);
         const N = data.length;
 
-        // Waveform ring
+        // Waveform ring — subsample to every 4th point (512 pts, visually identical)
+        // Double-stroke glow avoids shadowBlur which forces Firefox to allocate
+        // a compositing surface every frame (~72MB/min at 60fps on a 600×500 canvas)
         ctx.beginPath();
-        for (let i = 0; i <= N; i++) {
+        for (let i = 0; i <= N; i += 4) {
           const idx = i % N;
           const v = (data[idx] / 128.0) - 1.0;
           const r = R + v * R * 0.55;
@@ -764,11 +766,14 @@ function Visualizer({ analyserRef, playing, rootIdx, active, K }) {
         }
         ctx.closePath();
         ctx.strokeStyle = noteColor;
-        ctx.lineWidth = 1.5;
-        ctx.shadowColor = noteColor;
-        ctx.shadowBlur = 12;
+        // Glow pass: wide + transparent, no shadowBlur
+        ctx.lineWidth = 6;
+        ctx.globalAlpha = 0.18;
         ctx.stroke();
-        ctx.shadowBlur = 0;
+        // Line pass: crisp
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 1;
+        ctx.stroke();
       }
 
       // Scale wheel
