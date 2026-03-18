@@ -1497,6 +1497,7 @@ export default function Chloe() {
         relaxation_index:   _eeg.derived.relaxation_index,
         theta_alpha_ratio:  parseFloat(((_eeg.bands.theta.left_pct + _eeg.bands.theta.right_pct) / Math.max(_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct, 0.01)).toFixed(2)),
         beta_alpha_ratio:   parseFloat(((_eeg.bands.beta.left_pct  + _eeg.bands.beta.right_pct)  / Math.max(_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct, 0.01)).toFixed(2)),
+        ...((_eeg.heart_rate > 0) ? { heart_rate: _eeg.heart_rate } : {}),
       } : null;
 
       // Brightness-based scale selection — priority: lock > slider > claude > eeg > free
@@ -2185,6 +2186,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
             <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 28 }}>{bpm}</span>
+            {eegData?.heart_rate > 0 && (
+              <button
+                onClick={() => setBpm(Math.max(40, Math.min(240, Math.round(eegData.heart_rate))))}
+                title={`Set BPM to heart rate (${Math.round(eegData.heart_rate)} bpm)`}
+                style={{ background: "none", border: `1px solid ${K.br}`, color: "#e84060", borderRadius: 3, padding: "1px 5px", fontSize: 9, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap" }}
+              >♥ {Math.round(eegData.heart_rate)}</button>
+            )}
           </div>
 
         </div>
