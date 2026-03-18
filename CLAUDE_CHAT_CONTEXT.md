@@ -75,7 +75,10 @@ Requires Anthropic API key (stored in browser). Uses `claude-haiku-4-5-20251001`
 - `'eeg'` — EEG pre-selected a scale; Claude should complement, not override freely
 - `'slider'` — user set brightness manually; describe musical character, not brain state
 - `'locked'` — user locked the current brightness zone
+- `'claude'` — Claude has set a `brightnessOverride` and is actively driving toward a goal
 - `'free'` — no EEG, no override; Claude picks freely
+
+**Claude goal-directed brightness override:** Claude's JSON response may include `brightnessOverride` (0.0–1.0) to lock a brightness target across cycles (e.g. "boost my gamma" → 0.85). Omitting the field preserves the existing override; returning `null` clears it. Priority chain: lock > slider > claude > eeg > free. The brightness bar shows an orange dot when Claude is driving. A `★✕` button lets the user release the Claude override manually.
 
 ---
 
@@ -137,9 +140,11 @@ eegData          — live from proxy poll
 eegTarget        — last smoothed EEG brightness target (0.0–1.0)
 overrideTarget   — manual brightness override (null = not set)
 brightnessLocked — bool
+claudeOverride   — Claude-set brightness override (null = not set)
+showDiatonic     — bool; shows diatonic neighborhood annotations in scale list + signals Claude to use modal language
 ```
 
-**Refs for async (stale closure) access:** `stRef` (mirrors all playback state), `overrideTargetRef`, `brightnessLockedRef`, `loopOnRef`, `brightnessHistoryRef`, `callClaudeNowRef`
+**Refs for async (stale closure) access:** `stRef` (mirrors all playback state), `overrideTargetRef`, `brightnessLockedRef`, `claudeOverrideRef`, `loopOnRef`, `brightnessHistoryRef`, `callClaudeNowRef`, `showDiatonicRef`
 
 ---
 
@@ -155,6 +160,8 @@ targetBrightness(eegState, config)                // ratio-based EEG → normali
 findClosestScale(target, catalogue, currentPattern, config)
 randomAtBrightness(target, tolerance, catalogue, currentPattern, config)
 countBits(pattern)
+DIATONIC_MODES                                    // [{name, pattern}] bright→dark, Lydian→Locrian
+diatonicNeighborhood(pattern)                     // { relatives[], sharedPitches, totalPitches, ambiguity }
 ```
 
 ---
@@ -166,6 +173,8 @@ countBits(pattern)
 - **Demo banner fix:** banner reduced to single-line parameter summary (scale · key · BPM · rhythm · chord · bX.XX). Commentary and ✦ requests routed to chat panel only.
 - **Firefox flex fix:** added `minHeight: 0` to main content row and all three panel children to fix Firefox's min-height:auto flex bug.
 - **Claude prompt discipline:** Claude only mentions brain state when it meaningfully shifts; focuses on musical choices when stable.
+- **Claude goal-directed brightness override:** Claude can set `brightnessOverride` (0.0–1.0) to hold a target brightness across cycles (e.g. for "boost my gamma"). Orange dot in brightness bar. User can release via `★✕` button or manual slider/lock.
+- **Diatonic neighborhood:** `diatonicNeighborhood(pattern)` in brightness.js finds which of the 7 diatonic modes share the most pitches with any scale. `≈ mode` toggle in the scale list shows the annotation inline. When on, Claude actively uses modal language in commentary; when off it has the data but doesn't emphasise it.
 
 ---
 
