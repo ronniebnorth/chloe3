@@ -1028,6 +1028,8 @@ export default function Chloe() {
   const [demoRequest, setDemoRequest] = useState("");
   const [chatInput,   setChatInput]   = useState("");
   const [chatLog,     setChatLog]     = useState([]); // { role:"user"|"claude", text, ts }
+  const chatLogRef = useRef([]);
+  useEffect(() => { chatLogRef.current = chatLog; }, [chatLog]);
   const [chatOpen,    setChatOpen]    = useState(false);
   const pendingUserMsgRef = useRef(null); // message waiting to be sent to Claude
   const callClaudeNowRef  = useRef(null); // fn to trigger immediate Claude call
@@ -1063,8 +1065,13 @@ export default function Chloe() {
   const [overrideTarget,   setOverrideTarget]   = useState(null);  // mirrors ref, for rendering
   const [brightnessLocked, setBrightnessLocked] = useState(false);
   const [claudeOverride,   setClaudeOverride]   = useState(null);  // Claude-driven target
+  const [claudeBpmOverride, setClaudeBpmOverride] = useState(null); // "heart_rate" | number | null
+  const claudeBpmOverrideRef = useRef(null);
+  useEffect(() => { claudeBpmOverrideRef.current = claudeBpmOverride; }, [claudeBpmOverride]);
   const [eegTarget,        setEegTarget]        = useState(null);  // last smoothed EEG target
   const [eegData,    setEegData]    = useState(null);  // live EEG from proxy
+  const eegDataRef = useRef(null);
+  useEffect(() => { eegDataRef.current = eegData; }, [eegData]);
   useEffect(() => { demoLogRef.current = demoLog; }, [demoLog]);
   // EEG proxy polling — always on so brainwave indicator works outside demo mode too
   useEffect(() => {
@@ -1564,11 +1571,16 @@ export default function Chloe() {
         arpDir: stRef.current.arpDir,
         bpm: stRef.current.bpm,
         ...(brainState ? { brainState } : {}),
+        ...(claudeBpmOverrideRef.current !== null ? { claudeBpmOverride: claudeBpmOverrideRef.current } : {}),
       };
 
       const recentHistory = demoLogRef.current.slice(0, 20).map(e =>
         `ID="${e.famId}.${e.modeIdx}" name="${e.scaleName}" root=${CHROMATIC[e.rootNote]} rhythm=${e.rhythm} bpm=${e.bpm}`
       );
+
+      const recentChat = chatLogRef.current.slice(-6).map(e =>
+        `${e.role === "user" ? "User" : "Claude"}: ${e.text}`
+      ).join("\n");
 
       const { Anthropic } = await import('@anthropic-ai/sdk');
       const client = new Anthropic({ apiKey: demoKey, dangerouslyAllowBrowser: true });
@@ -1578,18 +1590,19 @@ export default function Chloe() {
         max_tokens: 400,
         system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
 Respond ONLY with valid JSON matching this schema exactly:
-{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string","brightnessOverride":number|null}
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string","brightnessOverride":number|null,"bpmOverride":"heart_rate"|number|null}
 scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
 The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/sus4/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
 IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.
 currentState.currentBrightnessNorm is the normalized brightness of the active scale (0.0 = darkest possible for this note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). currentState.brightnessSource tells you what is driving scale selection: 'eeg' = EEG headband is active and has pre-selected a scale; 'slider' = user has manually set a brightness target with the slider; 'locked' = user has locked the current brightness zone; 'claude' = you have set a brightnessOverride and are actively driving toward a goal; 'free' = no EEG, no override — you choose freely. When brightnessSource is 'eeg': a brightness-matching algorithm has pre-selected a scale (currentState.brightnessSelected) — your role is to choose BPM, rhythm, voicing, and effects to complement it; only override the scale if you have a strong musical reason. When brightnessSource is 'slider' or 'locked': the user has taken manual control of brightness — describe the musical character of the scale rather than brain state. When brightnessSource is 'free': choose scales autonomously.
 brightnessOverride: you may set this field (0.0–1.0) to lock a brightness target toward a goal state. When set, it overrides EEG-driven selection until you explicitly clear it (set to null) or the user takes manual control. OMIT this field entirely when you are not changing the current override state — omitting it preserves whatever is currently set. Set to null only when explicitly releasing a goal you've been holding. Target ranges: gamma/alertness/focus → 0.80–0.95; alpha/calm/balance → 0.45–0.55; theta/deep meditation → 0.15–0.30. When the user asks you to target a brain state: set brightnessOverride, choose BPM/rhythm/voicing to reinforce the goal, and HOLD the override across subsequent cycles. Report EEG as progress feedback, not as a state to mirror: "Gamma still at 4% — holding bright scales to keep pushing" not "Your gamma suggests high cognition." Ease or clear the override when the goal is clearly achieved or the user changes direction.
+bpmOverride: you may set this field to lock BPM persistently. The value "heart_rate" is a special literal string token — output it exactly as written, do NOT substitute the current heart rate number. When set to the string "heart_rate" (e.g. {"bpmOverride":"heart_rate"}), the app reads the live heart rate itself every cycle. Set to a number only to lock to a specific static tempo. Set null to release. Omit to preserve current state. When the user asks to sync BPM with their pulse or heart rate, output {"bpmOverride":"heart_rate"} and hold it until they ask to stop or change direction. While active, report as feedback: "Syncing BPM to your heart rate (N bpm)."
 Brain state interpretation guidelines: Ignore delta — it is always the highest-amplitude band from forehead EEG and does not indicate sleep or drowsiness on its own. Use dominant_active (the strongest band excluding delta): alpha = calm, relaxed, meditative; theta = deepening meditation, drowsy, inward; beta = engaged, focused, active; gamma = high cognitive processing. Use theta_alpha_ratio to judge depth: > 1.5 suggests deep meditation or drowsiness, < 0.5 suggests alert wakefulness. Use beta_alpha_ratio to judge activation: > 1.5 suggests active focus, < 0.5 suggests relaxation. Only describe the state as deep/drowsy/sleep-like when theta_alpha_ratio actually supports it (> 1.5).
 Commentary discipline: The brain state is context, not the headline every cycle. Only mention the brain state in commentary when it has meaningfully shifted from the previous cycle (different dominant_active band, or ratio crossing a threshold). When the brain state is stable, focus commentary entirely on the musical choices — why this scale after the previous one, what the harmonic or tonal relationship is, how the texture or mood is evolving. Do not produce variations of the same brain state observation cycle after cycle.
 Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard diatonic modes share the most pitches with the current scale (relatives, sharedPitches, totalPitches, ambiguity). currentState.diatonicContextActive tells you whether the user has turned on diatonic mode context. When diatonicContextActive is true: actively reference diatonic neighborhoods in commentary — anchor the scale in familiar modal language. When ambiguity is 1: name the parent mode directly — "this hexatonic is a Dorian variant with the 6th removed." When ambiguity is 2–3: describe the space between modes — "this pentatonic sits equally in Ionian and Lydian territory — the missing pitches are left to the listener." High ambiguity in sparse scales (tritonics, tetratonics) is musically meaningful, not a gap — a 3-note scale is inherently participatory, the listener fills in the missing pitches. Do not force a single mode label on an ambiguous scale. When diatonicContextActive is false: the neighborhood data is available if genuinely useful, but don't foreground modal labels — focus on the scale's own character.`,
         messages: [{
           role: "user",
-          content: `${capturedUserMsg ? `User message: "${capturedUserMsg}"\n\n` : ""}Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore.${capturedUserMsg ? " Respond to the user's message and pick a scale accordingly." : " Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played."}`
+          content: `${recentChat.length ? `Recent conversation:\n${recentChat}\n\n` : ""}${capturedUserMsg ? `New message: "${capturedUserMsg}"\n\n` : ""}Current state: ${JSON.stringify(currentState)}${recentHistory.length ? `\n\nRecent history (most recent first):\n${recentHistory.join("\n")}` : ""}\n\nAvailable scales (use the ID exactly as shown):\n${catalogue.map(s => `ID="${s.familyId}.${s.modeIdx}" name="${s.name}" notes=${s.notes} intervals=${s.intervals}`).join("\n")}\n\nChoose the next scale to explore.${capturedUserMsg ? " Respond to the user's new message and pick a scale accordingly." : " Vary musically — contrast brightness, note density, and feel with the recent history. Avoid repeating scales just played."}`
         }]
       });
 
@@ -1608,6 +1621,21 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           const v = Math.max(0, Math.min(1, choice.brightnessOverride));
           claudeOverrideRef.current = v;
           setClaudeOverride(v);
+        }
+      }
+
+      // Claude BPM override — only act if field is present in response
+      if (Object.prototype.hasOwnProperty.call(choice, 'bpmOverride')) {
+        if (choice.bpmOverride === null) {
+          claudeBpmOverrideRef.current = null;
+          setClaudeBpmOverride(null);
+        } else if (choice.bpmOverride === "heart_rate") {
+          claudeBpmOverrideRef.current = "heart_rate";
+          setClaudeBpmOverride("heart_rate");
+        } else if (typeof choice.bpmOverride === 'number') {
+          const v = Math.max(40, Math.min(240, choice.bpmOverride));
+          claudeBpmOverrideRef.current = v;
+          setClaudeBpmOverride(v);
         }
       }
 
@@ -1635,6 +1663,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (AL.chordVoice) setChordVoice(chordVoice);
       if (AL.melMode)    setMelMode(!!choice.melMode);
       if (AL.bpm)        setBpm(bpm);
+      // BPM override takes priority over Claude's chosen bpm — apply after
+      if (!autoLocksRef.current.bpm) {
+        // user has locked bpm in modal — don't override
+      } else if (claudeBpmOverrideRef.current === "heart_rate" && eegDataRef.current && eegDataRef.current.heart_rate > 0) {
+        setBpm(Math.max(40, Math.min(240, Math.round(eegDataRef.current.heart_rate))));
+      } else if (typeof claudeBpmOverrideRef.current === 'number') {
+        setBpm(claudeBpmOverrideRef.current);
+      }
       if (AL.reverb    && choice.reverbAmt != null) setReverbAmt(Math.max(0, Math.min(1, choice.reverbAmt)));
       if (AL.delay     && choice.delayAmt  != null) setDelayAmt(Math.max(0, Math.min(1, choice.delayAmt)));
       if (AL.delayTime && choice.delayTime != null) setDelayTime(Math.max(0.05, Math.min(1.5, choice.delayTime)));
@@ -2200,7 +2236,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               <button
                 onClick={() => setBpm(Math.max(40, Math.min(240, Math.round(eegData.heart_rate))))}
                 title={`Set BPM to heart rate (${Math.round(eegData.heart_rate)} bpm)`}
-                style={{ background: "none", border: `1px solid ${K.br}`, color: "#e84060", borderRadius: 3, padding: "1px 5px", fontSize: 9, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap" }}
+                style={{ background: claudeBpmOverride === "heart_rate" ? K.a : "none", border: `1px solid ${claudeBpmOverride === "heart_rate" ? K.a : K.br}`, color: claudeBpmOverride === "heart_rate" ? "#000" : "#e84060", borderRadius: 3, padding: "1px 5px", fontSize: 9, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap" }}
               >♥ {Math.round(eegData.heart_rate)}</button>
             )}
           </div>
@@ -2687,12 +2723,12 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 { label: arpOn && !demoOn && !autoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn && !autoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
                 { label: autoOn ? "⟲ Stop" : "⟲ Auto", on: autoOn, onClick: () => {
                   wake();
-                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; }
+                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; }
                   else { setDemoOn(false); setAutoOn(true); }
                 }},
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
-                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; }
+                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
                 // { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
