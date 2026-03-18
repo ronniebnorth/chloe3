@@ -1107,9 +1107,11 @@ export default function Chloe() {
   const [showDiatonic,  setShowDiatonic]  = useState(false); // show diatonic neighborhood annotations
   const showDiatonicRef = useRef(false);
   useEffect(() => { showDiatonicRef.current = showDiatonic; }, [showDiatonic]);
-  const [bpmAutoEnabled, setBpmAutoEnabled] = useState(true); // allow auto/demo to change BPM
-  const bpmAutoEnabledRef = useRef(true);
-  useEffect(() => { bpmAutoEnabledRef.current = bpmAutoEnabled; }, [bpmAutoEnabled]);
+  const AUTO_LOCKS_DEFAULT = { rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, bpm:true, reverb:true, delay:true, delayTime:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
+  const [autoLocks, setAutoLocks] = useState(AUTO_LOCKS_DEFAULT);
+  const autoLocksRef = useRef(AUTO_LOCKS_DEFAULT);
+  useEffect(() => { autoLocksRef.current = autoLocks; }, [autoLocks]);
+  const [showAutoLocks, setShowAutoLocks] = useState(false);
   const customNamesRef = useRef({});
   useEffect(() => { customNamesRef.current = customNames; }, [customNames]);
   const demoAllScalesRef = useRef(true);
@@ -1626,19 +1628,20 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const arpDir   = choice.arpDir    || "asc";
       const chordVoice = choice.chordVoice || "off";
       const bpm      = Math.max(40, Math.min(240, choice.bpm || 100));
-      setRootIdx(rootNote);
-      setRhythm(rhythm);
-      setArpDir(arpDir);
-      setChordVoice(chordVoice);
-      setMelMode(!!choice.melMode);
-      if (bpmAutoEnabledRef.current) setBpm(bpm);
-      if (choice.reverbAmt != null) setReverbAmt(Math.max(0, Math.min(1, choice.reverbAmt)));
-      if (choice.delayAmt  != null) setDelayAmt(Math.max(0, Math.min(1, choice.delayAmt)));
-      if (choice.delayTime != null) setDelayTime(Math.max(0.05, Math.min(1.5, choice.delayTime)));
-      if (choice.droneOn   != null) setDroneOn(!!choice.droneOn);
-      if (choice.droneVol  != null) setDroneVol(Math.max(0, Math.min(2, choice.droneVol)));
-      if (choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
-      if (choice.droneWave != null && ["sine","organ","pad","strings","tanpura"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
+      const AL = autoLocksRef.current;
+      if (AL.rootNote) setRootIdx(rootNote);
+      if (AL.rhythm)     setRhythm(rhythm);
+      if (AL.arpDir)     setArpDir(arpDir);
+      if (AL.chordVoice) setChordVoice(chordVoice);
+      if (AL.melMode)    setMelMode(!!choice.melMode);
+      if (AL.bpm)        setBpm(bpm);
+      if (AL.reverb    && choice.reverbAmt != null) setReverbAmt(Math.max(0, Math.min(1, choice.reverbAmt)));
+      if (AL.delay     && choice.delayAmt  != null) setDelayAmt(Math.max(0, Math.min(1, choice.delayAmt)));
+      if (AL.delayTime && choice.delayTime != null) setDelayTime(Math.max(0.05, Math.min(1.5, choice.delayTime)));
+      if (AL.droneOn   && choice.droneOn   != null) setDroneOn(!!choice.droneOn);
+      if (AL.droneVol  && choice.droneVol  != null) setDroneVol(Math.max(0, Math.min(2, choice.droneVol)));
+      if (AL.droneOct  && choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
+      if (AL.droneWave && choice.droneWave != null && ["sine","organ","pad","strings","tanpura"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
       setArpOn(true);
       // Commentary and requests go to chat panel; banner shows parameter summary only
       const chatParts = [choice.commentary, choice.request ? `✦ ${choice.request}` : null].filter(Boolean);
@@ -1708,17 +1711,18 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (ac.state === "suspended") ac.resume();
 
       pick(entry.fam, entry.modeIdx, entry.fam.modes[entry.modeIdx]);
-      setRhythm(rhythm);
-      setArpDir(arpDir);
-      setChordVoice(chordVoice);
-      if (bpmAutoEnabledRef.current) setBpm(bpm);
-      setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
-      setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
-      setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
-      setDroneOn(Math.random() > 0.35);
-      setDroneWave(["sine","organ","pad","strings","tanpura"][Math.floor(Math.random() * 5)]);
-      setDroneOct([-12, -24, -36][Math.floor(Math.random() * 3)]);
-      setDroneVol(parseFloat((0.3 + Math.random() * 0.7).toFixed(2)));
+      const _al = autoLocksRef.current;
+      if (_al.rhythm)    setRhythm(rhythm);
+      if (_al.arpDir)    setArpDir(arpDir);
+      if (_al.chordVoice) setChordVoice(chordVoice);
+      if (_al.bpm)       setBpm(bpm);
+      if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
+      if (_al.delay)     setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
+      if (_al.delayTime) setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
+      if (_al.droneOn)   setDroneOn(Math.random() > 0.35);
+      if (_al.droneWave) setDroneWave(["sine","organ","pad","strings","tanpura"][Math.floor(Math.random() * 5)]);
+      if (_al.droneOct)  setDroneOct([-12, -24, -36][Math.floor(Math.random() * 3)]);
+      if (_al.droneVol)  setDroneVol(parseFloat((0.3 + Math.random() * 0.7).toFixed(2)));
       setArpOn(true);
 
       const scaleName = KNOWN[entry.fam.modes[entry.modeIdx]] || customNamesRef.current[entry.fam.modes[entry.modeIdx]] || `${entry.fam.id}.${entry.modeIdx}`;
@@ -2189,10 +2193,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
             <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 28 }}>{bpm}</span>
-            <input type="checkbox" checked={bpmAutoEnabled} onChange={e => setBpmAutoEnabled(e.target.checked)}
-              title={bpmAutoEnabled ? "Auto/Demo can change BPM — uncheck to lock" : "BPM locked — Auto/Demo will not change it"}
-              style={{ accentColor: K.a, cursor: "pointer", flexShrink: 0 }}
-            />
+            <button onClick={() => setShowAutoLocks(true)}
+              title="Configure which settings Auto and Demo modes can change"
+              style={{ background: "none", border: `1px solid ${K.br}`, color: K.t2, borderRadius: 3, padding: "1px 6px", fontSize: 10, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>⚙</button>
             {eegData?.heart_rate > 0 && (
               <button
                 onClick={() => setBpm(Math.max(40, Math.min(240, Math.round(eegData.heart_rate))))}
@@ -3082,6 +3085,72 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               borderRadius: 3, padding: "6px 12px",
               fontSize: 13, cursor: "pointer", fontWeight: 700,
             }}>→</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Auto/Demo control locks modal ── */}
+      {showAutoLocks && (
+        <div onClick={() => setShowAutoLocks(false)} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 600,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: K.bg2, border: `1px solid ${K.br}`, borderRadius: 6,
+            padding: "20px 24px", minWidth: 320, maxWidth: 420,
+            fontFamily: "inherit", boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span style={{ color: K.a, fontSize: 10, letterSpacing: 2, fontWeight: 600 }}>AUTO / DEMO CONTROLS</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button onClick={() => setAutoLocks(Object.fromEntries(Object.keys(AUTO_LOCKS_DEFAULT).map(k => [k, true])))}
+                  style={{ background: "none", border: `1px solid ${K.br}`, color: K.t2, borderRadius: 3, padding: "2px 7px", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>all on</button>
+                <button onClick={() => setAutoLocks(Object.fromEntries(Object.keys(AUTO_LOCKS_DEFAULT).map(k => [k, false])))}
+                  style={{ background: "none", border: `1px solid ${K.br}`, color: K.t2, borderRadius: 3, padding: "2px 7px", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>all off</button>
+                <button onClick={() => setShowAutoLocks(false)}
+                  style={{ background: "none", border: "none", color: K.t2, fontSize: 16, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
+              </div>
+            </div>
+            <p style={{ color: K.t2, fontSize: 9, margin: "0 0 14px", lineHeight: 1.5 }}>
+              Check to allow Auto / Demo to change that setting. Uncheck to keep your current value.
+            </p>
+            {[
+              { label: "PLAYBACK", items: [
+                { key: "bpm",       label: "BPM" },
+                { key: "reverb",    label: "Reverb" },
+                { key: "delay",     label: "Delay" },
+                { key: "delayTime", label: "Delay Time" },
+                { key: "rootNote",  label: "Root Note", demoOnly: true },
+              ]},
+              { label: "ARPEGGIO / MELODY", items: [
+                { key: "rhythm",     label: "Rhythm" },
+                { key: "arpDir",     label: "Arp Direction" },
+                { key: "chordVoice", label: "Chord Voicing" },
+                { key: "melMode",    label: "Melody Mode", demoOnly: true },
+              ]},
+              { label: "DRONE", items: [
+                { key: "droneOn",   label: "Drone On/Off" },
+                { key: "droneVol",  label: "Drone Volume" },
+                { key: "droneOct",  label: "Drone Octave" },
+                { key: "droneWave", label: "Drone Type" },
+              ]},
+            ].map(group => (
+              <div key={group.label} style={{ marginBottom: 14 }}>
+                <div style={{ color: K.t2, fontSize: 8, letterSpacing: 2, marginBottom: 6 }}>{group.label}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 12px" }}>
+                  {group.items.map(({ key, label, demoOnly }) => (
+                    <label key={key} style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!!autoLocks[key]}
+                        onChange={e => setAutoLocks(prev => ({ ...prev, [key]: e.target.checked }))}
+                        style={{ accentColor: K.a, cursor: "pointer" }}
+                      />
+                      <span style={{ color: autoLocks[key] ? K.txt : K.t2, fontSize: 10 }}>{label}</span>
+                      {demoOnly && <span style={{ color: K.t2, fontSize: 8, opacity: 0.6 }}>demo</span>}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
