@@ -2211,7 +2211,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
 
           {/* VOL */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
             <span title="Note volume. Drone volume is independent." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>VOL</span>
             <input type="range" min={0} max={1} step={0.01} value={noteVol}
               onChange={e => setNoteVol(+e.target.value)}
@@ -2221,7 +2221,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           </div>
 
           {/* REV */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
             <span title="Reverb wet level. Convolution reverb shared by drone and all notes." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>REV</span>
             <input type="range" min={0} max={1} step={0.01} value={reverbAmt}
               onChange={e => setReverbAmt(+e.target.value)}
@@ -2231,7 +2231,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           </div>
 
           {/* DEL */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
             <span title="Delay wet level." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>DEL</span>
             <input type="range" min={0} max={1} step={0.01} value={delayAmt}
               onChange={e => setDelayAmt(+e.target.value)}
@@ -2241,7 +2241,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           </div>
 
           {/* SUS */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
             <span title="Note sustain — multiplier on note duration. Below 1.0 = staccato, above 1.0 = legato/overlapping." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>SUS</span>
             <input type="range" min={0.1} max={3} step={0.05} value={sustainMult}
               onChange={e => setSustainMult(+e.target.value)}
@@ -2251,7 +2251,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           </div>
 
           {/* DEL TIME */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
             <span title="Delay time in seconds." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>D.T</span>
             <input type="range" min={0.05} max={1.5} step={0.01} value={delayTime}
               onChange={e => setDelayTime(+e.target.value)}
@@ -2263,17 +2263,17 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           <div style={{ width: 1, height: 22, background: K.t2, opacity: 0.3, flexShrink: 0 }} />
 
           {/* TUNE */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
             <span title="Concert pitch reference. 440 Hz standard, 432 Hz alternative." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>A =</span>
             <input type="range" min={432} max={440} step={1} value={aRef}
               onChange={e => setARef(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
-            <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 42 }}>{aRef} Hz</span>
+            <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 24 }}>{aRef}</span>
           </div>
 
           {/* BPM */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
             <span title="Tempo for arpeggio and melody modes (40-240 BPM)." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
             <input type="range" min={monasticMode ? 1 : 40} max={240} value={bpm}
               onChange={e => setBpm(+e.target.value)}
