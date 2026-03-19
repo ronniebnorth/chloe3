@@ -1125,7 +1125,7 @@ export default function Chloe() {
   const [showDiatonic,  setShowDiatonic]  = useState(false); // show diatonic neighborhood annotations
   const showDiatonicRef = useRef(false);
   useEffect(() => { showDiatonicRef.current = showDiatonic; }, [showDiatonic]);
-  const AUTO_LOCKS_DEFAULT = { rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, bpm:true, reverb:true, delay:true, delayTime:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
+  const AUTO_LOCKS_DEFAULT = { rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
   const [autoLocks, setAutoLocks] = useState(AUTO_LOCKS_DEFAULT);
   const autoLocksRef = useRef(AUTO_LOCKS_DEFAULT);
   useEffect(() => { autoLocksRef.current = autoLocks; }, [autoLocks]);
@@ -1712,7 +1712,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (AL.reverb    && choice.reverbAmt != null) setReverbAmt(Math.max(0, Math.min(1, choice.reverbAmt)));
       if (AL.delay     && choice.delayAmt  != null) setDelayAmt(Math.max(0, Math.min(1, choice.delayAmt)));
       if (AL.delayTime && choice.delayTime != null) setDelayTime(Math.max(0.05, Math.min(1.5, choice.delayTime)));
-      if (choice.sustainMult != null) setSustainMult(Math.max(0.1, Math.min(3, choice.sustainMult)));
+      if (AL.sustain && choice.sustainMult != null) setSustainMult(Math.max(0.1, Math.min(3, choice.sustainMult)));
       if (AL.droneOn   && choice.droneOn   != null) setDroneOn(!!choice.droneOn);
       if (AL.droneVol  && choice.droneVol  != null) setDroneVol(Math.max(0, Math.min(2, choice.droneVol)));
       if (AL.droneOct  && choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
@@ -1794,7 +1794,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
       if (_al.delay)     setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
       if (_al.delayTime) setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
-      setSustainMult([0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]);
+      if (_al.sustain) setSustainMult([0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]);
       if (_al.droneOn)   setDroneOn(Math.random() > 0.35);
       if (_al.droneWave) setDroneWave(["sine","organ","pad","strings","tanpura"][Math.floor(Math.random() * 5)]);
       if (_al.droneOct)  setDroneOct([-12, -24, -36][Math.floor(Math.random() * 3)]);
@@ -3224,6 +3224,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 { key: "reverb",    label: "Reverb" },
                 { key: "delay",     label: "Delay" },
                 { key: "delayTime", label: "Delay Time" },
+                { key: "sustain",   label: "Sustain" },
                 { key: "rootNote",  label: "Root Note", demoOnly: true },
               ]},
               { label: "ARPEGGIO / MELODY", items: [
