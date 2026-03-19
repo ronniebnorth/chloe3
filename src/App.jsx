@@ -2208,7 +2208,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         <div style={{ width: 1, height: 22, background: K.t2, opacity: 0.3, flexShrink: 0 }} />
 
         {/* VOL / REV / A= / BPM — flex: 1 so they fill remaining width */}
-        <div style={{ display: "flex", alignItems: "center", gap: 16, flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
 
           {/* VOL */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
