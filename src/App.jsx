@@ -1009,6 +1009,7 @@ export default function Chloe() {
   const [reverbAmt,  setReverbAmt]  = useState(_u.reverbAmt  ?? 0.75);
   const [delayAmt,   setDelayAmt]   = useState(_u.delayAmt   ?? 0.15);
   const [delayTime,  setDelayTime]  = useState(0.375); // seconds
+  const [sustainMult, setSustainMult] = useState(() => parseFloat(new URLSearchParams(window.location.search).get("su") ?? "1"));
   const [bpm,        setBpm]        = useState(_u.bpm        ?? 100);
   const [filter,     setFilter]     = useState(_u.filter     ?? "");
   const [sel,        setSel]        = useState(null); // resolved after FAMILIES built
@@ -1172,8 +1173,8 @@ export default function Chloe() {
   const arpIdxRef   = useRef(0);
   const rhythmIdxRef = useRef(0);
   const melPrevRef  = useRef(0);
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1394,7 +1395,7 @@ export default function Chloe() {
       const del = getOrCreateDelay(ac);
       const an = getOrCreateAnalyser(ac);
       const freq = ar * 2 ** ((60 + OFFS[ri] + semi - 69) / 12);
-      const beatDur = (dur * 60 / b / 2);
+      const beatDur = (dur * 60 / b / 2) * stRef.current.sustainMult;
       synthNote(ac, freq, vel * nv, inst, t, beatDur, rev.convolver, del.delayNode, an.node);
       noteCountRef.current++;
       setPlaying(semi % 12);
@@ -1604,6 +1605,7 @@ export default function Chloe() {
         rhythm: stRef.current.rhythm,
         arpDir: stRef.current.arpDir,
         bpm: stRef.current.bpm,
+        sustainMult,
         ...(brainState ? { brainState } : {}),
         ...(claudeBpmOverrideRef.current !== null ? { claudeBpmOverride: claudeBpmOverrideRef.current } : {}),
         ...(monasticModeRef.current ? { monasticMode: true } : {}),
@@ -1625,8 +1627,8 @@ export default function Chloe() {
         max_tokens: 400,
         system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
 Respond ONLY with valid JSON matching this schema exactly:
-{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string","brightnessOverride":number|null,"bpmOverride":"heart_rate"|number|null}
-scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"sustainMult":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string","brightnessOverride":number|null,"bpmOverride":"heart_rate"|number|null}
+scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). sustainMult 0.1-3.0 (note duration multiplier: 0.1 = very staccato, 1.0 = default, 2.0 = legato, 3.0 = long overlapping notes — particularly effective with sparse scales and slow BPM). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
 The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/sus4/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
 IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.
 currentState.currentBrightnessNorm is the normalized brightness of the active scale (0.0 = darkest possible for this note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). currentState.brightnessSource tells you what is driving scale selection: 'eeg' = EEG headband is active and has pre-selected a scale; 'slider' = user has manually set a brightness target with the slider; 'locked' = user has locked the current brightness zone; 'claude' = you have set a brightnessOverride and are actively driving toward a goal; 'free' = no EEG, no override — you choose freely. When brightnessSource is 'eeg': a brightness-matching algorithm has pre-selected a scale (currentState.brightnessSelected) — your role is to choose BPM, rhythm, voicing, and effects to complement it; only override the scale if you have a strong musical reason. When brightnessSource is 'slider' or 'locked': the user has taken manual control of brightness — describe the musical character of the scale rather than brain state. When brightnessSource is 'free': choose scales autonomously.
@@ -1710,6 +1712,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (AL.reverb    && choice.reverbAmt != null) setReverbAmt(Math.max(0, Math.min(1, choice.reverbAmt)));
       if (AL.delay     && choice.delayAmt  != null) setDelayAmt(Math.max(0, Math.min(1, choice.delayAmt)));
       if (AL.delayTime && choice.delayTime != null) setDelayTime(Math.max(0.05, Math.min(1.5, choice.delayTime)));
+      if (choice.sustainMult != null) setSustainMult(Math.max(0.1, Math.min(3, choice.sustainMult)));
       if (AL.droneOn   && choice.droneOn   != null) setDroneOn(!!choice.droneOn);
       if (AL.droneVol  && choice.droneVol  != null) setDroneVol(Math.max(0, Math.min(2, choice.droneVol)));
       if (AL.droneOct  && choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
@@ -1791,6 +1794,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
       if (_al.delay)     setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
       if (_al.delayTime) setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
+      setSustainMult([0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]);
       if (_al.droneOn)   setDroneOn(Math.random() > 0.35);
       if (_al.droneWave) setDroneWave(["sine","organ","pad","strings","tanpura"][Math.floor(Math.random() * 5)]);
       if (_al.droneOct)  setDroneOct([-12, -24, -36][Math.floor(Math.random() * 3)]);
@@ -2014,6 +2018,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (noteVol !== 0.7)   p.set("v",  noteVol.toFixed(2));
     if (reverbAmt !== 0.75) p.set("rv", reverbAmt.toFixed(2));
     if (delayAmt  !== 0.15) p.set("dl", delayAmt.toFixed(2));
+    if (sustainMult !== 1) p.set("su", sustainMult.toFixed(2));
     if (bpm !== 100) p.set("b",  bpm);
     if (filter)      p.set("f",  filter);
     if (sel)         p.set("s",  sel.id);
@@ -2023,7 +2028,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, bpm, filter, sel, aRef, droneOct, melMode, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -2233,6 +2238,16 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
             <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{Math.round(delayAmt * 100)}</span>
+          </div>
+
+          {/* SUS */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+            <span title="Note sustain — multiplier on note duration. Below 1.0 = staccato, above 1.0 = legato/overlapping." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>SUS</span>
+            <input type="range" min={0.1} max={3} step={0.05} value={sustainMult}
+              onChange={e => setSustainMult(+e.target.value)}
+              style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
+            />
+            <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 22 }}>{sustainMult.toFixed(1)}</span>
           </div>
 
           {/* DEL TIME */}
@@ -2759,12 +2774,12 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 { label: arpOn && !demoOn && !autoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn && !autoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
                 { label: autoOn ? "⟲ Stop" : "⟲ Auto", on: autoOn, onClick: () => {
                   wake();
-                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; }
+                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); setSustainMult(1); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; }
                   else { setDemoOn(false); setAutoOn(true); }
                 }},
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
-                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; }
+                  if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); setSustainMult(1); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; }
                   else { wake(); setAutoOn(false); setDemoOn(true); }
                 }},
                 { label: monasticMode ? "◎ Still" : "◎ Monastic", on: monasticMode, onClick: () => {
