@@ -1538,6 +1538,13 @@ export default function Chloe() {
         relaxation_index:   _eeg.derived.relaxation_index,
         theta_alpha_ratio:  parseFloat(((_eeg.bands.theta.left_pct + _eeg.bands.theta.right_pct) / Math.max(_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct, 0.01)).toFixed(2)),
         beta_alpha_ratio:   parseFloat(((_eeg.bands.beta.left_pct  + _eeg.bands.beta.right_pct)  / Math.max(_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct, 0.01)).toFixed(2)),
+        hemispheric_balance: (() => {
+          const bs = ['gamma','beta','alpha','theta'].map(b => {
+            const l = _eeg.bands[b]?.left_pct || 0, r = _eeg.bands[b]?.right_pct || 0;
+            return (l + r) > 0.5 ? 0.5 + 0.5 * (r - l) / (l + r) : null;
+          }).filter(v => v !== null);
+          return bs.length ? parseFloat((bs.reduce((a,b) => a+b, 0) / bs.length).toFixed(3)) : 0.5;
+        })(),
         ...((_eeg.heart_rate > 0) ? { heart_rate: _eeg.heart_rate } : {}),
       } : null;
 
@@ -1560,8 +1567,9 @@ export default function Chloe() {
           ? { ...BRIGHTNESS_CONFIG, smoothingWindow: 30, transitionThreshold: 0.15 }
           : BRIGHTNESS_CONFIG;
         const rawTarget = targetBrightness(
-          { derived: { dominant_active_band: brainState.dominant_active },
-            bands:   { alpha_pct: brainState.alpha_pct, theta_pct: brainState.theta_pct, beta_pct: brainState.beta_pct } },
+          { derived:              { dominant_active_band: brainState.dominant_active },
+            bands:                { alpha_pct: brainState.alpha_pct, theta_pct: brainState.theta_pct, beta_pct: brainState.beta_pct },
+            hemispheric_balance:  brainState.hemispheric_balance },
           effectiveConfig
         );
         const hist = brightnessHistoryRef.current;

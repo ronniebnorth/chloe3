@@ -5,6 +5,7 @@ export const BRIGHTNESS_CONFIG = {
   alphaNeutralWeight:   0.5,    // how strongly alpha-dominant pulls toward 0.5 neutral
   thetaDarkWeight:      0.3,    // how strongly theta/alpha ratio pushes darker
   betaBrightWeight:     0.3,    // how strongly beta/alpha ratio pushes brighter
+  hemisphericWeight:    0.4,    // how strongly left/right asymmetry steers brightness (0 = off)
   randomTolerance:      0.1,    // ± range for brightness-constrained randomizer
   noteCountPreference:  true,   // prefer same cardinality as tiebreaker
   commonTonePreference: true,   // prefer scales sharing pitches with current
@@ -45,6 +46,8 @@ export function normalizedBrightness(pattern) {
 // Returns a normalized target brightness (0.0–1.0) from EEG state.
 // Uses alpha/theta and beta/alpha ratios — delta is excluded as it is always
 // dominant at forehead sites and carries no useful cognitive state information.
+// Also uses hemispheric_balance (0=left dominant/bright, 1=right dominant/dark)
+// when available — this is the direct valence axis from left/right asymmetry.
 // 0.0 = darkest possible, 1.0 = brightest possible, 0.5 = Dorian-neutral.
 export function targetBrightness(eegState, config) {
   const { dominant_active_band } = eegState.derived;
@@ -66,6 +69,15 @@ export function targetBrightness(eegState, config) {
   // Alpha-dominant (excl. delta) pulls toward neutral
   if (dominant_active_band === 'alpha') {
     target = target * (1 - config.alphaNeutralWeight) + 0.5 * config.alphaNeutralWeight;
+  }
+
+  // Hemispheric balance — direct valence signal (left=bright, right=dark).
+  // balance is 0.5=centred, <0.5=left dominant, >0.5=right dominant.
+  // Invert so left (approach/positive) → brighter, right (withdrawal) → darker.
+  if (eegState.hemispheric_balance !== undefined && config.hemisphericWeight > 0) {
+    const valence = 1.0 - eegState.hemispheric_balance; // 1=left/bright, 0=right/dark
+    const valenceShift = (valence - 0.5) * config.hemisphericWeight;
+    target += valenceShift;
   }
 
   return Math.max(0.0, Math.min(1.0, target));
