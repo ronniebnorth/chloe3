@@ -1783,8 +1783,35 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (loopOnRef.current) { timeout = setTimeout(pickNext, 1000); return; }
       const { sel: cur } = stRef.current;
 
-      const options = catalogue.filter(e => !cur || e.fam.modes[e.modeIdx] !== cur.pattern);
-      const entry = options[Math.floor(Math.random() * options.length)];
+      // EEG-aware scale selection: use brain state brightness when available
+      let entry = null;
+      const _eeg = eegDataRef.current;
+      if (_eeg && _eeg.connected && _eeg.bands && _eeg.derived) {
+        const bands = _eeg.bands;
+        const balSamples = ['gamma','beta','alpha','theta'].map(b => {
+          const l = bands[b]?.left_pct || 0, r = bands[b]?.right_pct || 0;
+          return (l + r) > 0.5 ? 0.5 + 0.5 * (r - l) / (l + r) : null;
+        }).filter(v => v !== null);
+        const hemBalance = balSamples.length ? balSamples.reduce((a,b) => a+b,0) / balSamples.length : 0.5;
+        const brightTarget = targetBrightness(
+          { derived:             { dominant_active_band: _eeg.derived.dominant_active_band },
+            bands:               { alpha_pct: (_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct) / 2,
+                                   theta_pct: (_eeg.bands.theta.left_pct + _eeg.bands.theta.right_pct) / 2,
+                                   beta_pct:  (_eeg.bands.beta.left_pct  + _eeg.bands.beta.right_pct)  / 2 },
+            hemispheric_balance: hemBalance },
+          BRIGHTNESS_CONFIG
+        );
+        const catFlat = catalogue.map(e => ({ familyId: e.fam.id, modeIdx: e.modeIdx, pattern: e.fam.modes[e.modeIdx] }));
+        const picked = randomAtBrightness(brightTarget, BRIGHTNESS_CONFIG.randomTolerance * 2, catFlat, cur?.pattern, BRIGHTNESS_CONFIG);
+        if (picked) {
+          const fam = catalogue.find(e => e.fam.id === picked.familyId && e.modeIdx === picked.modeIdx)?.fam;
+          if (fam) entry = { fam, modeIdx: picked.modeIdx, pat: picked.pattern };
+        }
+      }
+      if (!entry) {
+        const options = catalogue.filter(e => !cur || e.fam.modes[e.modeIdx] !== cur.pattern);
+        entry = options[Math.floor(Math.random() * options.length)];
+      }
       const rhythm     = RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
       const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
       const chordVoice = VOICES[Math.floor(Math.random() * VOICES.length)];
