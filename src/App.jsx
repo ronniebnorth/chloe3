@@ -1838,12 +1838,35 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
       const scaleName = KNOWN[entry.fam.modes[entry.modeIdx]] || customNamesRef.current[entry.fam.modes[entry.modeIdx]] || `${entry.fam.id}.${entry.modeIdx}`;
 
+      // Build EEG commentary if brain state drove the pick
+      let eegNote = "";
+      const _eegSnap = eegDataRef.current;
+      if (_eegSnap && _eegSnap.connected && _eegSnap.bands && _eegSnap.derived) {
+        const bs = ['gamma','beta','alpha','theta'].map(b => {
+          const l = _eegSnap.bands[b]?.left_pct || 0, r = _eegSnap.bands[b]?.right_pct || 0;
+          return (l + r) > 0.5 ? 0.5 + 0.5 * (r - l) / (l + r) : null;
+        }).filter(v => v !== null);
+        const hem = bs.length ? bs.reduce((a,b) => a+b,0) / bs.length : 0.5;
+        const brightTarget = targetBrightness(
+          { derived:             { dominant_active_band: _eegSnap.derived.dominant_active_band },
+            bands:               { alpha_pct: (_eegSnap.bands.alpha.left_pct + _eegSnap.bands.alpha.right_pct) / 2,
+                                   theta_pct: (_eegSnap.bands.theta.left_pct + _eegSnap.bands.theta.right_pct) / 2,
+                                   beta_pct:  (_eegSnap.bands.beta.left_pct  + _eegSnap.bands.beta.right_pct)  / 2 },
+            hemispheric_balance: hem },
+          BRIGHTNESS_CONFIG
+        );
+        const dom = _eegSnap.derived.dominant_active_band || "?";
+        const hemDir = hem > 0.55 ? "R" : hem < 0.45 ? "L" : "C";
+        const brightLabel = brightTarget > 0.65 ? "bright" : brightTarget < 0.35 ? "dark" : "neutral";
+        eegNote = `EEG → ${brightLabel} (${brightTarget.toFixed(2)}) · dom:${dom} · L/R:${hemDir} (${hem.toFixed(2)})`;
+      }
+
       setDemoLog(prev => [{
         scaleName,
         famId: entry.fam.id, modeIdx: entry.modeIdx,
         rootNote: stRef.current.rootIdx,
         rhythm, arpDir, chordVoice, bpm,
-        commentary: `${scaleName} — ${entry.fam.n} notes · ${rhythm} · ${bpm}bpm`,
+        commentary: eegNote || `${scaleName} — ${entry.fam.n} notes · ${rhythm} · ${bpm}bpm`,
         ts: Date.now(),
       }, ...prev].slice(0, 200));
 
