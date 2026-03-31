@@ -167,6 +167,8 @@ function synthDrone(ac, freq, type) {
   oscs.forEach(o => o.start());
   return {
     node: master,
+    oscs,       // exposed for frequency gliding
+    baseFreq: freq, // the frequency they were created at
     stop: () => {
       oscs.forEach(o => { try { o.stop(); } catch {} });
       setTimeout(() => { try { master.disconnect(); } catch {} }, 150);
@@ -1064,6 +1066,8 @@ export default function Chloe() {
   const beatTimeout  = useRef(null);
   const droneGainRef   = useRef(null);
   const droneFilterRef = useRef(null);
+  const droneVoiceRef  = useRef(null);
+  const droneFreqRef   = useRef(0);
   const demoLogRef   = useRef([]);
   const brightnessHistoryRef = useRef([]);  // rolling window of raw targets for smoothing
   const overrideTargetRef    = useRef(null); // live value for callClaude (avoids stale closure)
@@ -1258,6 +1262,8 @@ export default function Chloe() {
     droneFilterRef.current = f;
     const dFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
     const voice = synthDrone(ac, dFreq, droneWave);
+    droneVoiceRef.current = voice;
+    droneFreqRef.current = dFreq;
     const volGain = ac.createGain();
     volGain.gain.setValueAtTime(0, ac.currentTime);
     volGain.gain.linearRampToValueAtTime(droneVol, ac.currentTime + 0.08);
@@ -1270,13 +1276,35 @@ export default function Chloe() {
       volGain.gain.setValueAtTime(volGain.gain.value, now);
       volGain.gain.linearRampToValueAtTime(0, now + 0.08);
       droneGainRef.current = null; droneFilterRef.current = null;
+      droneVoiceRef.current = null; droneFreqRef.current = 0;
       setTimeout(() => {
         try { voice.stop(); } catch {}
         try { f.disconnect(); } catch {}
         try { volGain.disconnect(); } catch {}
       }, 100);
     };
-  }, [droneOn, rootIdx, droneOct, droneWave, aRef, recycleGen, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [droneOn, droneWave, aRef, recycleGen, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
+
+  // Glide drone frequency smoothly when root or octave changes
+  useEffect(() => {
+    const voice = droneVoiceRef.current;
+    if (!voice || !voice.oscs.length) return;
+    const ac = voice.oscs[0].context;
+    const newFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
+    const oldFreq = droneFreqRef.current;
+    if (oldFreq <= 0 || newFreq === oldFreq) return;
+    const ratio = newFreq / oldFreq;
+    const now = ac.currentTime;
+    const glideTime = 0.3; // 300ms glide
+    for (const osc of voice.oscs) {
+      const curFreq = osc.frequency.value;
+      osc.frequency.cancelScheduledValues(now);
+      osc.frequency.setValueAtTime(curFreq, now);
+      osc.frequency.exponentialRampToValueAtTime(curFreq * ratio, now + glideTime);
+    }
+    droneFreqRef.current = newFreq;
+  }, [rootIdx, droneOct, aRef]);
 
   // Keep drone volume in sync with droneVol slider
   useEffect(() => {
