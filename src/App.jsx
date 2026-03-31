@@ -1014,7 +1014,16 @@ export default function Chloe() {
   const [sustainMult, setSustainMult] = useState(() => parseFloat(new URLSearchParams(window.location.search).get("su") ?? "1"));
   const [bpm,        setBpm]        = useState(_u.bpm        ?? 100);
   const [filter,     setFilter]     = useState(_u.filter     ?? "");
-  const [sel,        setSel]        = useState(null); // resolved after FAMILIES built
+  const [sel,        setSelRaw]     = useState(null); // resolved after FAMILIES built
+  // Smooth scale transition: if arp is playing, queue the change
+  const setSel = useCallback((newSel) => {
+    if (!newSel) { setSelRaw(newSel); return; }
+    // If arp is not running, apply immediately
+    if (!arpRef.current) { setSelRaw(newSel); return; }
+    // Queue it — melTick will apply it at the right moment
+    pendingSelRef.current = newSel;
+    pendingSelTimeRef.current = Date.now();
+  }, []);
   const [aRef,       setARef]       = useState(_u.aRef       ?? 440);
   const [droneOn,    setDroneOn]    = useState(false);
   const [droneOct,   setDroneOct]   = useState(_u.droneOct   ?? -24);
@@ -1177,6 +1186,8 @@ export default function Chloe() {
   const arpIdxRef   = useRef(0);
   const rhythmIdxRef = useRef(0);
   const melPrevRef  = useRef(0);
+  const pendingSelRef = useRef(null);  // pending scale transition
+  const pendingSelTimeRef = useRef(0); // when the pending scale was requested
   const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
   useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
@@ -1366,7 +1377,7 @@ export default function Chloe() {
   useEffect(() => {
     clearInterval(arpRef.current);
     setPlaying(null);
-    if (!arpOn || !sel) { playGridRef.current = null; return; }
+    if (!arpOn || !stRef.current.sel) { playGridRef.current = null; return; }
 
     // Recycle AudioContext periodically to prevent Chrome node accumulation leak
     if (noteCountRef.current > RECYCLE_THRESHOLD) {
@@ -1458,6 +1469,22 @@ export default function Chloe() {
     };
 
     const melTick = () => {
+      // Check for pending scale transition
+      const pending = pendingSelRef.current;
+      if (pending) {
+        const elapsed = Date.now() - pendingSelTimeRef.current;
+        const atRoot = (arpIdxRef.current % (toSemis(stRef.current.sel?.pattern || 0).length || 1)) === 0;
+        if (atRoot || elapsed > 2000) {
+          pendingSelRef.current = null;
+          setSelRaw(pending);
+          stRef.current = { ...stRef.current, sel: pending };
+          arpIdxRef.current = 0;
+          melPrevRef.current = 0;
+          // Brief pause (breath) then continue
+          melTimeout = setTimeout(melTick, 350);
+          return;
+        }
+      }
       const { sel: s, bpm: b, melMode: mm, chordVoice: cv, arpOct: aOct = 1 } = stRef.current;
       if (!s) return;
       const baseNotes = toSemis(s.pattern);
@@ -1521,10 +1548,10 @@ export default function Chloe() {
 
     melTick();
     return () => { clearTimeout(melTimeout); clearInterval(arpRef.current); };
-  // melTick/playNote read all playback state live from stRef — only arpOn and sel
-  // are needed as deps (for the guard). Stable callbacks (getCtx etc.) never change.
+  // melTick/playNote read all playback state live from stRef — only arpOn is needed
+  // as a dep (for the guard). sel changes are handled via pendingSelRef for smooth transitions.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arpOn, sel, getCtx]);
+  }, [arpOn, getCtx]);
 
   useEffect(() => () => clearInterval(arpRef.current), []);
 
