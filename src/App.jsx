@@ -544,6 +544,53 @@ const pickOutside = (opts) => {
   return last[Math.floor(Math.random() * last.length)];
 };
 
+// Brain-derived brightness target (0–1) from one /eeg snapshot; null when not streaming
+function eegBrainTarget(eeg, config) {
+  if (!eeg || !eeg.connected || !eeg.bands || !eeg.derived) return null;
+  const b = eeg.bands;
+  const avg = k => ((b[k]?.left_pct || 0) + (b[k]?.right_pct || 0)) / 2;
+  const bal = ['gamma', 'beta', 'alpha', 'theta'].map(k => {
+    const l = b[k]?.left_pct || 0, r = b[k]?.right_pct || 0;
+    return (l + r) > 0.5 ? 0.5 + 0.5 * (r - l) / (l + r) : null;
+  }).filter(v => v !== null);
+  return targetBrightness(
+    { derived:             { dominant_active_band: eeg.derived.dominant_active_band },
+      bands:               { alpha_pct: avg('alpha'), theta_pct: avg('theta'), beta_pct: avg('beta') },
+      hemispheric_balance: bal.length ? bal.reduce((a, v) => a + v, 0) / bal.length : 0.5 },
+    config
+  );
+}
+
+/* ── Session arc ──
+   Lead: 1 min baseline (no steering), then the brightness target glides from
+   the baseline brain average to baseline ± amount over the chosen minutes,
+   then holds until stopped. Mirror: no steering, logging only (a baseline to
+   compare leads against). Every session logs a row every 5 s. */
+const ARC_BASELINE_MS = 60000;
+const ARC_LOG_MS      = 5000;
+const ARC_COLOR       = "#5fd08a";
+const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const ARC_CSV_COLS = ["t_s", "phase", "lead_target", "brain_target", "scale_id", "scale_name", "scale_brightness",
+                      "dominant", "alpha_pct", "theta_pct", "beta_pct", "gamma_pct", "relaxation_index", "hemi_balance"];
+const sessionCSV = (sess) => [
+  `# Chloe session ${sess.startedAt} · ${sess.mode}${sess.mode === "lead" ? ` ${sess.from?.toFixed(2)} -> ${sess.to?.toFixed(2)} over ${sess.mins} min` : ` ${sess.mins} min`}`,
+  ARC_CSV_COLS.join(","),
+  ...sess.rows.map(r => ARC_CSV_COLS.map(c => {
+    const v = r[c];
+    if (v === null || v === undefined) return "";
+    return typeof v === "string" && /[",]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  }).join(",")),
+].join("\n");
+// Mean brain target over the first / last 2 minutes — the at-a-glance result
+const sessionSummary = (sess) => {
+  const pts = sess.rows.filter(r => r.brain_target !== null);
+  if (pts.length < 4) return null;
+  const mean = a => a.reduce((x, r) => x + r.brain_target, 0) / a.length;
+  const end = pts[pts.length - 1].t_s;
+  const first = pts.filter(r => r.t_s <= pts[0].t_s + 120), last = pts.filter(r => r.t_s >= end - 120);
+  return { start: mean(first), end: mean(last), mins: end / 60 };
+};
+
 // Arpeggio rhythm patterns: arrays of step durations in eighth-note units.
 // Single notes use each value directly; chords use value × 2.
 const ARP_RHYTHM_PATS = {
@@ -1145,6 +1192,107 @@ export default function Chloe() {
   const [eegData,    setEegData]    = useState(null);  // live EEG from proxy
   const eegDataRef = useRef(null);
   useEffect(() => { eegDataRef.current = eegData; }, [eegData]);
+  // Session arc — see ARC_* above
+  const [arc,      setArc]      = useState(null); // { mode, mins, dir, amount, startMs, from, to, rows } while running
+  const arcRef = useRef(null);
+  useEffect(() => { arcRef.current = arc; }, [arc]);
+  const [arcNow,   setArcNow]   = useState(0);    // elapsed ms, for the timer display
+  const [showArc,  setShowArc]  = useState(false);
+  const [arcCfg,   setArcCfg]   = useState({ mode: "lead", mins: 15, dir: 1, amount: 0.25 });
+  const [sessions, setSessions] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("chloe-sessions") || "[]"); } catch { return []; }
+  });
+  useEffect(() => { try { localStorage.setItem("chloe-sessions", JSON.stringify(sessions)); } catch {} }, [sessions]);
+
+  const setLeadTarget = (v) => {
+    overrideTargetRef.current = v; setOverrideTarget(v);
+    brightnessLockedRef.current = false; setBrightnessLocked(false);
+  };
+  const startArc = () => {
+    const now = Date.now();
+    setArc({ ...arcCfg, startMs: now, from: null, to: null, rows: [], lastLog: 0 });
+    setArcNow(0);
+    if (arcCfg.mode === "lead") { overrideTargetRef.current = null; setOverrideTarget(null); }
+  };
+  const stopArc = () => {
+    const a = arcRef.current;
+    if (!a) return;
+    arcRef.current = null; setArc(null);
+    if (a.mode === "lead") { overrideTargetRef.current = null; setOverrideTarget(null); }
+    if (a.rows.length) {
+      const sess = { id: a.startMs, startedAt: new Date(a.startMs).toISOString(), mode: a.mode, mins: a.mins,
+                     from: a.from, to: a.to, rows: a.rows };
+      setSessions(p => [sess, ...p].slice(0, 20));
+    }
+  };
+  const downloadSession = (sess) => {
+    const blob = new Blob([sessionCSV(sess)], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `chloe-session-${sess.startedAt.slice(0, 16).replace(/[:T]/g, "-")}-${sess.mode}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  // Arc clock: steer the lead target once a second, log a row every ARC_LOG_MS
+  useEffect(() => {
+    if (!arc) return;
+    const id = setInterval(() => {
+      const a = arcRef.current;
+      if (!a) return;
+      const el = Date.now() - a.startMs;
+      setArcNow(el);
+      const brain = eegBrainTarget(eegDataRef.current, BRIGHTNESS_CONFIG);
+      let phase = a.mode, lead = null;
+      if (a.mode === "lead") {
+        if (el < ARC_BASELINE_MS) phase = "baseline";
+        else {
+          if (a.from === null) {
+            // Baseline over: start from where the brain sat, or from the current scale without EEG
+            const pts = a.rows.map(r => r.brain_target).filter(v => v !== null);
+            const cur = stRef.current.sel;
+            a.from = pts.length ? pts.reduce((x, v) => x + v, 0) / pts.length
+                   : cur && !isOutsideId(cur.id) ? normalizedBrightness(cur.pattern) : 0.5;
+            a.to = Math.min(0.95, Math.max(0.05, a.from + a.dir * a.amount));
+          }
+          const f = Math.min(1, (el - ARC_BASELINE_MS) / (a.mins * 60000));
+          lead = a.from + (a.to - a.from) * f;
+          phase = f < 1 ? "lead" : "hold";
+          setLeadTarget(lead);
+        }
+      } else if (el >= a.mins * 60000) phase = "mirror-over";
+      if (el - a.lastLog >= ARC_LOG_MS || !a.rows.length) {
+        a.lastLog = el;
+        const eeg = eegDataRef.current, b = eeg?.connected ? eeg.bands : null;
+        const avg = k => b?.[k] ? +(((b[k].left_pct || 0) + (b[k].right_pct || 0)) / 2).toFixed(1) : null;
+        const sel = stRef.current.sel, out = sel ? isOutsideId(sel.id) : false;
+        let hemi = null;
+        if (b) {
+          const bal = ['gamma', 'beta', 'alpha', 'theta'].map(k => {
+            const l = b[k]?.left_pct || 0, r = b[k]?.right_pct || 0;
+            return (l + r) > 0.5 ? 0.5 + 0.5 * (r - l) / (l + r) : null;
+          }).filter(v => v !== null);
+          if (bal.length) hemi = +(bal.reduce((x, v) => x + v, 0) / bal.length).toFixed(3);
+        }
+        a.rows.push({
+          t_s: Math.round(el / 1000), phase,
+          lead_target: lead === null ? null : +lead.toFixed(3),
+          brain_target: brain === null ? null : +brain.toFixed(3),
+          scale_id: sel?.id ?? null,
+          scale_name: sel ? (KNOWN[sel.pattern] || customNamesRef.current[sel.pattern] || sel.id) : null,
+          scale_brightness: sel && !out ? +normalizedBrightness(sel.pattern).toFixed(3) : null,
+          dominant: b ? eeg.derived?.dominant_active_band ?? null : null,
+          alpha_pct: avg('alpha'), theta_pct: avg('theta'), beta_pct: avg('beta'), gamma_pct: avg('gamma'),
+          relaxation_index: b ? eeg.derived?.relaxation_index ?? null : null,
+          hemi_balance: hemi,
+        });
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [arc]);
+
+  // Stopping Auto / Claude ends the session and saves its log
+  useEffect(() => { if (!autoOn && !demoOn && arcRef.current) stopArc(); }, [autoOn, demoOn]);
   useEffect(() => { demoLogRef.current = demoLog; }, [demoLog]);
   // EEG proxy polling — always on so brainwave indicator works outside demo mode too
   useEffect(() => {
@@ -1898,25 +2046,17 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (outsideOpts.length && Math.random() < OUTSIDE_CHANCE)
         entry = pickOutside(outsideOpts);
 
-      // EEG-aware scale selection: use brain state brightness when available
-      const _eeg = eegDataRef.current;
-      if (!entry && _eeg && _eeg.connected && _eeg.bands && _eeg.derived) {
-        const bands = _eeg.bands;
-        const balSamples = ['gamma','beta','alpha','theta'].map(b => {
-          const l = bands[b]?.left_pct || 0, r = bands[b]?.right_pct || 0;
-          return (l + r) > 0.5 ? 0.5 + 0.5 * (r - l) / (l + r) : null;
-        }).filter(v => v !== null);
-        const hemBalance = balSamples.length ? balSamples.reduce((a,b) => a+b,0) / balSamples.length : 0.5;
-        const brightTarget = targetBrightness(
-          { derived:             { dominant_active_band: _eeg.derived.dominant_active_band },
-            bands:               { alpha_pct: (_eeg.bands.alpha.left_pct + _eeg.bands.alpha.right_pct) / 2,
-                                   theta_pct: (_eeg.bands.theta.left_pct + _eeg.bands.theta.right_pct) / 2,
-                                   beta_pct:  (_eeg.bands.beta.left_pct  + _eeg.bands.beta.right_pct)  / 2 },
-            hemispheric_balance: hemBalance },
-          BRIGHTNESS_CONFIG
-        );
+      // Brightness-aware selection — priority: slider / lock / arc override > EEG > random
+      const override = overrideTargetRef.current;
+      const brainTarget = eegBrainTarget(eegDataRef.current, BRIGHTNESS_CONFIG);
+      if (brainTarget !== null) setEegTarget(brainTarget);
+      const brightTarget = override !== null ? override : brainTarget;
+      if (!entry && brightTarget !== null) {
         const catFlat = catalogue.map(e => ({ familyId: e.fam.id, modeIdx: e.modeIdx, pattern: e.fam.modes[e.modeIdx] }));
-        const picked = randomAtBrightness(brightTarget, BRIGHTNESS_CONFIG.randomTolerance * 2, catFlat, cur?.pattern, BRIGHTNESS_CONFIG);
+        // A set target (slider, lock, arc) is held tighter than EEG wandering
+        const tol = override !== null ? BRIGHTNESS_CONFIG.randomTolerance : BRIGHTNESS_CONFIG.randomTolerance * 2;
+        const picked = randomAtBrightness(brightTarget, tol, catFlat, cur?.pattern, BRIGHTNESS_CONFIG)
+          ?? findClosestScale(brightTarget, catFlat, cur?.pattern, BRIGHTNESS_CONFIG);
         if (picked) {
           const fam = catalogue.find(e => e.fam.id === picked.familyId && e.modeIdx === picked.modeIdx)?.fam;
           if (fam) entry = { fam, modeIdx: picked.modeIdx, pat: picked.pattern };
@@ -2541,7 +2681,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             const curNorm = sel ? normalizedBrightness(sel.pattern) : null;
             const displayTarget = overrideTarget !== null ? overrideTarget : claudeOverride !== null ? claudeOverride : eegTarget;
             const isOverride = overrideTarget !== null;
-            const dotColor = brightnessLocked ? "#f0a030" : isOverride ? "#6060e8" : claudeOverride !== null ? "#e87020" : eegStreaming ? "#3ee8d0" : K.a;
+            const arcLead = arc?.mode === "lead" && arc.from !== null;
+            const dotColor = arcLead ? ARC_COLOR : brightnessLocked ? "#f0a030" : isOverride ? "#6060e8" : claudeOverride !== null ? "#e87020" : eegStreaming ? "#3ee8d0" : K.a;
             const sliderVal = overrideTarget !== null ? Math.round(overrideTarget * 100)
               : claudeOverride !== null ? Math.round(claudeOverride * 100)
               : eegTarget !== null ? Math.round(eegTarget * 100) : 50;
@@ -2564,7 +2705,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   {/* Target arrow */}
                   {displayTarget !== null && (
                     <div style={{ position: "absolute", bottom: 0, left: `${displayTarget * 100}%`,
-                      color: isOverride ? "#6060e8" : "#3ee8d0", fontSize: 6, transform: "translateX(-50%)", lineHeight: 1 }}>▲</div>
+                      color: arcLead ? ARC_COLOR : isOverride ? "#6060e8" : "#3ee8d0", fontSize: 6, transform: "translateX(-50%)", lineHeight: 1 }}>▲</div>
                   )}
                 </div>
                 {/* Value */}
@@ -2617,6 +2758,86 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   }
                 }} title={`Pick random scale within ±${BRIGHTNESS_CONFIG.randomTolerance} brightness of current target`}
                   style={btnStyle}>⇄ explore</button>
+                {/* Session arc */}
+                <button onClick={() => setShowArc(p => !p)}
+                  title="Session arc — lead your brightness over time, or log a mirror session"
+                  style={{ ...btnStyle, color: arc ? ARC_COLOR : K.demoT2, borderColor: arc ? ARC_COLOR : K.demoBr }}>
+                  {arc ? `● ${mmss(arcNow)}` : "↗ arc"}
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Session arc panel */}
+          {showArc && (() => {
+            const chip = (on) => ({ background: on ? ARC_COLOR + "22" : "none", border: `1px solid ${on ? ARC_COLOR : K.demoBr}`,
+              color: on ? ARC_COLOR : K.demoT2, fontSize: 9, padding: "2px 7px", cursor: arc ? "default" : "pointer",
+              borderRadius: 3, fontFamily: "inherit" });
+            const set = (k, v) => { if (!arc) setArcCfg(p => ({ ...p, [k]: v })); };
+            const c = arc || arcCfg;
+            const lbl = { color: K.lbl, fontSize: 8, letterSpacing: 2, minWidth: 52 };
+            let status = null;
+            if (arc) {
+              if (arc.mode === "mirror") status = arcNow < arc.mins * 60000
+                ? `Mirror · logging · ${mmss(arcNow)} of ${arc.mins}:00`
+                : `Mirror · ${arc.mins} min done · still logging until you stop`;
+              else if (arc.from === null) status = `Baseline · listening to where you are · ${mmss(ARC_BASELINE_MS - arcNow)} left`;
+              else {
+                const f = Math.min(1, (arcNow - ARC_BASELINE_MS) / (arc.mins * 60000));
+                status = f < 1
+                  ? `Lead · ${arc.from.toFixed(2)} → ${arc.to.toFixed(2)} · now ${(arc.from + (arc.to - arc.from) * f).toFixed(2)} · ${mmss(arc.mins * 60000 - (arcNow - ARC_BASELINE_MS))} left`
+                  : `Holding at ${arc.to.toFixed(2)} · arc complete · still logging until you stop`;
+              }
+            }
+            return (
+              <div style={{ borderTop: `1px solid ${K.demoBr}`, padding: "8px 18px", display: "flex", flexDirection: "column", gap: 6, fontSize: 9 }}>
+                <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={lbl}>SESSION</span>
+                  <button style={chip(c.mode === "lead")} onClick={() => set("mode", "lead")}
+                    title="Chloe leads: 1 min baseline, then the target glides away from where you started">Lead</button>
+                  <button style={chip(c.mode === "mirror")} onClick={() => set("mode", "mirror")}
+                    title="Chloe follows your brain as usual — logging only, a baseline to compare leads against">Mirror</button>
+                  <span style={{ ...lbl, minWidth: 0, marginLeft: 10 }}>MIN</span>
+                  {[5, 10, 15, 20, 30].map(m => <button key={m} style={chip(c.mins === m)} onClick={() => set("mins", m)}>{m}</button>)}
+                </div>
+                {c.mode === "lead" && (
+                  <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={lbl}>TOWARD</span>
+                    <button style={chip(c.dir === 1)} onClick={() => set("dir", 1)}>brighter</button>
+                    <button style={chip(c.dir === -1)} onClick={() => set("dir", -1)}>darker</button>
+                    <span style={{ ...lbl, minWidth: 0, marginLeft: 10 }}>BY</span>
+                    {[[0.1, "a little"], [0.25, "some"], [0.4, "a lot"]].map(([v, t]) =>
+                      <button key={v} style={chip(c.amount === v)} onClick={() => set("amount", v)} title={`±${v} on the 0–1 brightness scale`}>{t}</button>)}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  {arc
+                    ? <button onClick={stopArc} style={{ ...chip(true), cursor: "pointer" }}>■ stop &amp; save</button>
+                    : <button onClick={startArc} style={{ ...chip(true), cursor: "pointer" }}>▶ start</button>}
+                  <span style={{ color: arc ? ARC_COLOR : K.demoT2 }}>
+                    {status || (eegData?.connected ? "Headband data is coming in." : "No headband data — the log will hold scales only.")}
+                  </span>
+                </div>
+                {sessions.length > 0 && (
+                  <div style={{ borderTop: `1px solid ${K.demoBr}`, paddingTop: 6, display: "flex", flexDirection: "column", gap: 3 }}>
+                    <span style={lbl}>PAST SESSIONS</span>
+                    {sessions.slice(0, 8).map(sess => {
+                      const sum = sessionSummary(sess);
+                      return (
+                        <div key={sess.id} style={{ display: "flex", gap: 8, alignItems: "center", color: K.demoT2 }}>
+                          <span style={{ minWidth: 92 }}>{new Date(sess.id).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                          <span style={{ minWidth: 150 }}>
+                            {sess.mode === "lead" && sess.from !== null ? `lead ${sess.from.toFixed(2)} → ${sess.to.toFixed(2)}` : sess.mode === "lead" ? "lead (baseline only)" : "mirror"}
+                          </span>
+                          <span style={{ flex: 1 }} title="Your brain-derived brightness: mean of the first 2 min → mean of the last 2 min">
+                            {sum ? `brain ${sum.start.toFixed(2)} → ${sum.end.toFixed(2)} · ${sum.mins.toFixed(0)} min` : `${sess.rows.length} rows, no EEG`}
+                          </span>
+                          <button onClick={() => downloadSession(sess)} style={{ ...chip(false), cursor: "pointer" }} title="Download this session as CSV">csv</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })()}
