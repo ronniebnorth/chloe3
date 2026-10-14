@@ -227,11 +227,18 @@ const BEAT_PATTERNS = {
   clave:  { sub: 0.25, sw: 0,    loop: [[1,0,0],[0,0,0],[0,0,0],[1,0,0],[0,0,0],[0,0,0],[1,0,0],[0,0,0],[0,0,0],[0,0,0],[1,0,0],[0,0,0],[1,0,0],[0,0,0],[0,0,0],[0,0,0]] },
 };
 
+// Main families (no 3-semitone cluster) keep their ids; "outside" families
+// (3-8 notes WITH a cluster) are appended after them as x-<pfx>-<k> so the
+// main ids never shift.
 function buildFamilies() {
+  return [...buildFamilySet(false), ...buildFamilySet(true)];
+}
+
+function buildFamilySet(outside) {
   const seen = new Map();
   for (let p = 1; p < 4096; p += 2) {
     const n = bitCt(p);
-    if (n < 3 || n > 8 || hasTriple(p)) continue;
+    if (n < 3 || n > 8 || hasTriple(p) !== outside) continue;
     let canon = p;
     for (let s = 1; s < 12; s++) {
       const r = rot12(p, s);
@@ -252,7 +259,7 @@ function buildFamilies() {
     .sort(([a, { n: na }], [b, { n: nb }]) => na - nb || a - b)
     .map(([canon, { n, modes }]) => {
       cnt[n] = (cnt[n] || 0) + 1;
-      return { id: `${pfx[n]}-${cnt[n]}`, n, canon, modes };
+      return { id: `${outside ? "x-" : ""}${pfx[n]}-${cnt[n]}`, n, canon, modes, outside };
     });
 }
 
@@ -503,6 +510,12 @@ const TIMBRES = ["sine", "triangle", "square", "sawtooth"];
 const INSTRUMENTS = ["piano", "guitar", "xylo", "space"];
 const GRP_NAME = { 3: "Tritonic", 4: "Tetratonic", 5: "Pentatonic", 6: "Hexatonic", 7: "Heptatonic", 8: "Octatonic" };
 const GRP_PFX  = { 3: "tri", 4: "tet", 5: "pen", 6: "hex", 7: "hep", 8: "oct" };
+// Sidebar group key — outside families get their own groups below the main ones
+const grpKey = (fam) => (fam.outside ? "x-" : "") + GRP_PFX[fam.n];
+// Outside scales are passing colour, not a brightness position: brightness/EEG
+// picks never choose them, and auto mode drops one in on this share of picks.
+const OUTSIDE_CHANCE = 0.1;
+const isOutsideId = (id) => !!id && id.startsWith("x-");
 
 // Arpeggio rhythm patterns: arrays of step durations in eighth-note units.
 // Single notes use each value directly; chords use value × 2.
@@ -972,10 +985,19 @@ function ScaleInfo({ sel, selName, selIvs, selNotes, demoKey, K }) {
 
 export default function Chloe() {
   const FAMILIES = useMemo(buildFamilies, []);
-  // Full catalogue of all scales (used by randomizer — includes unnamed)
+  // Outside scales (3-semitone clusters): shown in the list and used by
+  // demo/auto/randomizer only when this is on
+  const [showOutside, setShowOutside] = useState(() => {
+    try { return localStorage.getItem("chloe-show-outside") === "1"; } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem("chloe-show-outside", showOutside ? "1" : "0"); } catch {} }, [showOutside]);
+  const ACTIVE_FAMILIES = useMemo(() => showOutside ? FAMILIES : FAMILIES.filter(f => !f.outside), [FAMILIES, showOutside]);
+  const activeFamiliesRef = useRef(ACTIVE_FAMILIES);
+  useEffect(() => { activeFamiliesRef.current = ACTIVE_FAMILIES; }, [ACTIVE_FAMILIES]);
+  // Full catalogue of all scales (used by brightness randomizer — includes unnamed, never outside)
   const fullCatalogue = useMemo(() => {
     const result = [];
-    for (const fam of FAMILIES) {
+    for (const fam of FAMILIES.filter(f => !f.outside)) {
       fam.modes.forEach((pat, mi) => result.push({ familyId: fam.id, modeIdx: mi, name: KNOWN[pat] || `${fam.id}.${mi}`, notes: fam.n, pattern: pat }));
     }
     return result;
@@ -1154,7 +1176,7 @@ export default function Chloe() {
     if (!(autoOn || demoOn) || !sel) return;
     const famId = sel.id.slice(0, sel.id.lastIndexOf("."));
     const fam = FAMILIES.find(f => f.id === famId);
-    if (fam) setExpanded(p => { const s = new Set(p); s.add(GRP_PFX[fam.n]); return s; });
+    if (fam) setExpanded(p => { const s = new Set(p); s.add(grpKey(fam)); return s; });
     // Small delay so the row has rendered before scrolling
     setTimeout(() => selRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
   }, [sel, autoOn, demoOn]);
@@ -1570,7 +1592,7 @@ export default function Chloe() {
       const allScales = demoAllScalesRef.current;
       const cNames = customNamesRef.current;
       const catalogue = [];
-      for (const fam of FAMILIES) {
+      for (const fam of activeFamiliesRef.current) {
         fam.modes.forEach((pat, mi) => {
           const name = KNOWN[pat] || cNames[pat];
           if (name || allScales) {
@@ -1639,9 +1661,11 @@ export default function Chloe() {
           ? { ...BRIGHTNESS_CONFIG, smoothingWindow: 30, transitionThreshold: 0.15 }
           : BRIGHTNESS_CONFIG;
         const currentPattern = stRef.current.sel?.pattern;
+        // An outside scale has no brightness position — always move back onto the brightness line
+        const onOutside = isOutsideId(stRef.current.sel?.id);
         const currentNorm = currentPattern ? normalizedBrightness(currentPattern) : 0.5;
-        if (Math.abs(effectiveTarget - currentNorm) >= effectiveConfig.transitionThreshold) {
-          brightnessSelected = findClosestScale(effectiveTarget, catalogue, currentPattern, effectiveConfig);
+        if (onOutside || Math.abs(effectiveTarget - currentNorm) >= effectiveConfig.transitionThreshold) {
+          brightnessSelected = findClosestScale(effectiveTarget, catalogue.filter(e => !isOutsideId(e.familyId)), currentPattern, effectiveConfig);
           if (brightnessSelected) {
             const bsFam = FAMILIES.find(f => f.id === brightnessSelected.familyId);
             if (bsFam) pick(bsFam, brightnessSelected.modeIdx, brightnessSelected.pattern);
@@ -1655,8 +1679,8 @@ export default function Chloe() {
 
       const currentState = {
         currentScale: stRef.current.sel ? (KNOWN[stRef.current.sel.pattern] || stRef.current.sel.id) : "none",
-        currentBrightness: stRef.current.sel ? brightnessScore(stRef.current.sel.pattern) : null,
-        currentBrightnessNorm: stRef.current.sel ? parseFloat(normalizedBrightness(stRef.current.sel.pattern).toFixed(3)) : null,
+        currentBrightness: stRef.current.sel && !isOutsideId(stRef.current.sel.id) ? brightnessScore(stRef.current.sel.pattern) : null,
+        currentBrightnessNorm: stRef.current.sel && !isOutsideId(stRef.current.sel.id) ? parseFloat(normalizedBrightness(stRef.current.sel.pattern).toFixed(3)) : null,
         diatonicNeighborhood: stRef.current.sel ? diatonicNeighborhood(stRef.current.sel.pattern) : null,
         diatonicContextActive: showDiatonicRef.current,
         brightnessSource: bSource,
@@ -1693,7 +1717,7 @@ Respond ONLY with valid JSON matching this schema exactly:
 {"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"sustainMult":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string","brightnessOverride":number|null,"bpmOverride":"heart_rate"|number|null}
 scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). sustainMult 0.1-3.0 (note duration multiplier: 0.1 = very staccato, 1.0 = default, 2.0 = legato, 3.0 = long overlapping notes — particularly effective with sparse scales and slow BPM). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
 The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/sus4/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
-IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available. Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.
+${activeFamiliesRef.current.some(f => f.outside) ? "IMPORTANT: The catalogue includes \"outside\" scales (IDs starting with x-) that contain 3 consecutive semitones — chromatic clusters with a tense, crowded sound. Treat them like passing tones: a brief moment of chromatic confusion or human imperfection between normal scales. Use one rarely — about 1 turn in 10 — and only for a single turn before returning to a normal scale. They have no brightness position." : "IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available."} Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.
 currentState.currentBrightnessNorm is the normalized brightness of the active scale (0.0 = darkest possible for this note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). currentState.brightnessSource tells you what is driving scale selection: 'eeg' = EEG headband is active and has pre-selected a scale; 'slider' = user has manually set a brightness target with the slider; 'locked' = user has locked the current brightness zone; 'claude' = you have set a brightnessOverride and are actively driving toward a goal; 'free' = no EEG, no override — you choose freely. When brightnessSource is 'eeg': a brightness-matching algorithm has pre-selected a scale (currentState.brightnessSelected) — your role is to choose BPM, rhythm, voicing, and effects to complement it; only override the scale if you have a strong musical reason. When brightnessSource is 'slider' or 'locked': the user has taken manual control of brightness — describe the musical character of the scale rather than brain state. When brightnessSource is 'free': choose scales autonomously.
 brightnessOverride: you may set this field (0.0–1.0) to lock a brightness target toward a goal state. When set, it overrides EEG-driven selection until you explicitly clear it (set to null) or the user takes manual control. OMIT this field entirely when you are not changing the current override state — omitting it preserves whatever is currently set. Set to null only when explicitly releasing a goal you've been holding. Target ranges: gamma/alertness/focus → 0.80–0.95; alpha/calm/balance → 0.45–0.55; theta/deep meditation → 0.15–0.30. When the user asks you to target a brain state: set brightnessOverride, choose BPM/rhythm/voicing to reinforce the goal, and HOLD the override across subsequent cycles. Report EEG as progress feedback, not as a state to mirror: "Gamma still at 4% — holding bright scales to keep pushing" not "Your gamma suggests high cognition." Ease or clear the override when the goal is clearly achieved or the user changes direction.
 bpmOverride: you may set this field to lock BPM persistently. The value "heart_rate" is a special literal string token — output it exactly as written, do NOT substitute the current heart rate number. When set to the string "heart_rate" (e.g. {"bpmOverride":"heart_rate"}), the app reads the live heart rate itself every cycle. Set to a number only to lock to a specific static tempo. Set null to release. Omit to preserve current state. When the user asks to sync BPM with their pulse or heart rate, output {"bpmOverride":"heart_rate"} and hold it until they ask to stop or change direction. While active, report as feedback: "Syncing BPM to your heart rate (N bpm)."
@@ -1825,7 +1849,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     let cancelled = false;
     let timeout = null;
 
-    const catalogue = FAMILIES.flatMap(fam =>
+    // Rebuilt each pick so the outside / all-scales toggles take effect mid-run
+    const buildCatalogue = () => activeFamiliesRef.current.flatMap(fam =>
       fam.modes.map((pat, i) => ({ fam, modeIdx: i, pat }))
     ).filter(({ pat }) => demoAllScalesRef.current || KNOWN[pat] || customNamesRef.current[pat]);
 
@@ -1837,11 +1862,18 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (cancelled) return;
       if (loopOnRef.current) { timeout = setTimeout(pickNext, 1000); return; }
       const { sel: cur } = stRef.current;
+      const all = buildCatalogue();
+      const outsideOpts = all.filter(e => e.fam.outside && (!cur || e.pat !== cur.pattern));
+      const catalogue = all.filter(e => !e.fam.outside);
+
+      // Now and then, a passing outside scale (only when the outside toggle is on)
+      let entry = null;
+      if (outsideOpts.length && Math.random() < OUTSIDE_CHANCE)
+        entry = outsideOpts[Math.floor(Math.random() * outsideOpts.length)];
 
       // EEG-aware scale selection: use brain state brightness when available
-      let entry = null;
       const _eeg = eegDataRef.current;
-      if (_eeg && _eeg.connected && _eeg.bands && _eeg.derived) {
+      if (!entry && _eeg && _eeg.connected && _eeg.bands && _eeg.derived) {
         const bands = _eeg.bands;
         const balSamples = ['gamma','beta','alpha','theta'].map(b => {
           const l = bands[b]?.left_pct || 0, r = bands[b]?.right_pct || 0;
@@ -1950,7 +1982,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
   const filtered = useMemo(() => {
     // When favsOnly, restrict each family to only its starred modes
     // Carry origIdx so favId stays correct after filtering
-    let base = FAMILIES.map(f => {
+    let base = ACTIVE_FAMILIES.map(f => {
       if (!favsOnly) return { ...f, origIdxs: f.modes.map((_, i) => i) };
       const origIdxs = f.modes.map((_, i) => i).filter(i => favs.has(f.id + "." + i));
       const modes = origIdxs.map(i => f.modes[i]);
@@ -1992,11 +2024,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         )
       )
     );
-  }, [FAMILIES, filter, favs, favsOnly, customNames, listSearch, noteCountFilter]);
+  }, [ACTIVE_FAMILIES, filter, favs, favsOnly, customNames, listSearch, noteCountFilter]);
 
   const grouped = useMemo(() => {
     const g = {};
-    for (const f of filtered) (g[f.n] = g[f.n] || []).push(f);
+    for (const f of filtered) (g[grpKey(f)] = g[grpKey(f)] || []).push(f);
     return g;
   }, [filtered]);
 
@@ -2119,8 +2151,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     : [];
   const selName = sel ? (KNOWN[sel.pattern] || customNames[sel.pattern] || null) : null;
 
-  const toggleGrp = n => setExpanded(p => { const s = new Set(p); s.has(GRP_PFX[n]) ? s.delete(GRP_PFX[n]) : s.add(GRP_PFX[n]); return s; });
-  const isExp = n => (filter.trim() || listSearch.trim() || noteCountFilter !== null) ? true : expanded.has(GRP_PFX[n]);
+  const toggleGrp = k => setExpanded(p => { const s = new Set(p); s.has(k) ? s.delete(k) : s.add(k); return s; });
+  const isExp = k => (filter.trim() || listSearch.trim() || noteCountFilter !== null) ? true : expanded.has(k);
   const wake = () => getCtx();
 
   const buildURL = useCallback(() => {
@@ -2653,21 +2685,36 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 borderRadius: 3, padding: "2px 6px", fontSize: 8,
                 cursor: "pointer", fontFamily: "inherit", marginLeft: "auto",
               }}>≈ mode</button>
+            <button
+              onClick={() => setShowOutside(p => !p)}
+              title={showOutside
+                ? "Hide outside scales (patterns with three consecutive semitones)"
+                : "Show outside scales — patterns with three consecutive semitones, normally excluded. When on, demo and auto modes can pick them too."}
+              style={{
+                background: showOutside ? K.ag : "none",
+                border: `1px solid ${showOutside ? K.a : K.br}`,
+                color: showOutside ? K.a : K.t2,
+                borderRadius: 3, padding: "2px 6px", fontSize: 8,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>outside</button>
           </div>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
-          {Object.keys(grouped).sort((a, b) => +a - +b).map(nc => {
-            const n = +nc, fams = grouped[n], exp = isExp(n);
+          {Object.keys(grouped).sort((a, b) => {
+            const fa = grouped[a][0], fb = grouped[b][0];
+            return (fa.outside - fb.outside) || fa.n - fb.n;
+          }).map(gk => {
+            const fams = grouped[gk], n = fams[0].n, outside = fams[0].outside, exp = isExp(gk);
             return (
-              <div key={n}>
+              <div key={gk} style={outside ? { opacity: 0.7 } : undefined}>
                 {/* Group header */}
-                <div onClick={() => toggleGrp(n)} style={{
+                <div onClick={() => toggleGrp(gk)} title={outside ? "Outside scales: contain three consecutive semitones, so Chloe's main rules exclude them" : undefined} style={{
                   padding: "7px 16px", background: K.bg2, borderBottom: `1px solid ${K.br}`,
                   display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
                   position: "sticky", top: 0, zIndex: 10, userSelect: "none",
                 }}>
-                  <span style={{ color: K.a, fontSize: 9, letterSpacing: 3, fontWeight: 600 }}>{GRP_NAME[n].toUpperCase()}</span>
+                  <span style={{ color: K.a, fontSize: 9, letterSpacing: 3, fontWeight: 600 }}>{outside ? "OUTSIDE · " : ""}{GRP_NAME[n].toUpperCase()}</span>
                   <span style={{ color: K.txt, fontSize: 9 }}>{fams.length} scale{fams.length !== 1 ? "s" : ""}</span>
                   <span style={{ marginLeft: "auto", color: K.txt, fontSize: 11 }}>{exp ? "▾" : "▸"}</span>
                 </div>
@@ -2715,7 +2762,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                             {toBin(mode)}
                           </span>
                           <span style={{ color: K.t2, fontSize: 9, minWidth: 40 }}>({mode})</span>
-                          <span style={{ color: K.t2, fontSize: 9, opacity: 0.7, minWidth: 28 }}>b{bright(mode)}</span>
+                          <span style={{ color: K.t2, fontSize: 9, opacity: 0.7, minWidth: 28 }}>{fam.outside ? "b—" : `b${bright(mode)}`}</span>
                           {name && (
                             <span style={{ color: isSel ? K.a : K.t1, fontSize: 10 }}>{name}</span>
                           )}
