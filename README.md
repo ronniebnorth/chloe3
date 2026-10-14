@@ -8,7 +8,54 @@ An interactive musical scale explorer built on binary scale encoding. Every poss
 
 Every combination of notes within an octave can be represented as a 12-bit binary number — one bit per semitone, 1 if the pitch is present, 0 if absent. The major scale is `101011010101`, which is `2741` in decimal. There are 4096 possible combinations. Modes are rotations of the same binary pattern.
 
-Chloe generates scales by iterating through binary numbers, filtering by note count and musical constraints (no three consecutive semitones), and deduplicating rotational equivalents. The result is every musically valid scale from tritonic (3 notes) through octatonic (8 notes), with all their modes sorted from brightest to darkest.
+**Bit order.** Patterns are written root-first: the leftmost digit is the root, then each digit to the right is one semitone higher (C, C♯, D, D♯, E, F, … B when the root is C). Read left to right, the pattern is the scale as you would play it. This is the reverse of standard binary notation — 2741 in conventional binary is `101010110101`, with the root at the right. The decimal value is the same either way: bit *i* of the number is the note *i* semitones above the root, the same convention used by Ian Ring.
+
+Chloe generates scales by iterating through binary numbers, filtering by note count and musical constraints (no three consecutive semitones), and deduplicating rotational equivalents. The result is every scale from tritonic (3 notes) through octatonic (8 notes) that satisfies these rules, with all their modes sorted from brightest to darkest.
+
+### The rules, exactly
+
+A pattern is included if:
+
+1. The root is present (bit 0 is set).
+2. It has 3 to 8 notes.
+3. It contains no three consecutive semitones — checked **around the octave**, so B–C–C♯ counts as a run of three just as C–C♯–D does.
+
+Patterns that are rotations of each other are the same family; each family is stored once and its modes are the rotations that start on a note of the scale. The family's reference pattern is the smallest decimal value among its modes.
+
+These rules produce exactly **124 families and 560 modes**:
+
+| Notes | Families |
+|---|---|
+| 3 (tritonic) | 18 |
+| 4 (tetratonic) | 35 |
+| 5 (pentatonic) | 38 |
+| 6 (hexatonic) | 26 |
+| 7 (heptatonic) | 6 |
+| 8 (octatonic) | 1 |
+
+The rules define Chloe's universe. Pitch collections with a three-semitone cluster, or with fewer than 3 or more than 8 notes, are valid pitch-class sets but are outside what Chloe explores.
+
+### Brightness score
+
+A mode's brightness is the sum of the semitone positions of its notes, counting the root as 0:
+
+```
+brightness = sum of the semitone positions present (0–11)
+```
+
+Ionian `{0,2,4,5,7,9,11}` scores 38; Lydian, with the raised 4th, scores 39; Dorian scores 36. Within a family every mode has the same number of notes, so the raw score sorts the modes directly.
+
+To compare scales with different numbers of notes, Chloe also uses a normalized score from 0 (darkest possible for that note count) to 1 (brightest possible):
+
+```
+min = N(N−1)/2          // root plus the N−1 lowest semitones
+max = (N−1)(24−N)/2     // root plus the N−1 highest semitones
+normalized = (brightness − min) / (max − min)
+```
+
+where *N* is the number of notes. Dorian normalizes to exactly 0.5, which makes it the neutral point across all note counts.
+
+The score is a precise, reproducible definition of brightness. It matches the familiar diatonic ordering, but it is a mathematical proxy: how bright a scale actually sounds also depends on harmony, register, melody and the listener.
 
 The brightness ordering — modes arranged from most augmented (Lydian-like) to most diminished (Locrian-like) — falls directly out of the binary representation. It was observed immediately upon generating the first scales in December 2017 and is a core organising principle of the explorer.
 
@@ -29,7 +76,7 @@ The brightness ordering — modes arranged from most augmented (Lydian-like) to 
 
 Chloe organises modes along a brightness axis. Brighter modes have wider intervals from the root (more augmented character — openness, lift, forward motion). Darker modes have narrower intervals (more diminished character — weight, gravity, introspection). For the familiar diatonic modes, the ordering runs: Lydian → Ionian → Mixolydian → Dorian → Aeolian → Phrygian → Locrian.
 
-This principle applies universally across all scale families — pentatonic, hexatonic, octatonic, everything. The "courage" dimension extends brightness into an emotional and compositional framework, with the "brave frog" metaphor providing an intuitive, non-technical way to understand modal character.
+The same score orders the modes of every scale family — pentatonic, hexatonic, octatonic, everything. The "courage" dimension extends brightness into an emotional and compositional framework, with the "brave frog" metaphor providing an intuitive, non-technical way to understand modal character.
 
 ## History
 
@@ -45,7 +92,7 @@ Binary scale encoding — representing scales as 12-bit numbers, modes as rotati
 
 The earliest verifiable public record of Chloe's binary encoding is a [Facebook post to the Music Theory group](docs/provenance/) dated December 14, 2017. The earliest verifiable code commit is [December 20, 2017](https://github.com/ronniebnorth/ronniebnorth.github.io/commit/afe96127d9daed61222eb4783f810e6c29291e2e).
 
-What is original to Chloe — the brightness/darkness ordering, the courage framework, the brave frog metaphor, the environment-based emotional framing, and the interactive exploration approach — is documented in [chloe_scale_explorer_provenance.docx](docs/provenance/chloe_scale_explorer_provenance.docx).
+The brightest-to-darkest order of the seven diatonic modes is long-standing music-theory teaching. What is original to Chloe — applying a brightness score to order the modes of all 124 scale families, the courage framework, the brave frog metaphor, the environment-based emotional framing, and the interactive exploration approach — is documented in [chloe_scale_explorer_provenance.docx](docs/provenance/chloe_scale_explorer_provenance.docx).
 
 ## Support
 
