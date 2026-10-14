@@ -95,6 +95,9 @@ const KNOWN = {
   // ── Octatonics ───────────────────────────────────
   1755: "Octatonic HW",   //  half-whole diminished
   2925: "Octatonic WH",   //  whole-half diminished
+
+  // ── Outside (contain a 3-semitone run) ───────────
+  1843: "Coltrane Dominant", // 0 1 4 5 8 9 10 — augmented hexatonic + ♭7
 };
 
 function synthDrone(ac, freq, type) {
@@ -2027,7 +2030,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     // Rebuilt each pick so the outside / all-scales toggles take effect mid-run
     const buildCatalogue = () => activeFamiliesRef.current.flatMap(fam =>
       fam.modes.map((pat, i) => ({ fam, modeIdx: i, pat }))
-    ).filter(({ pat }) => demoAllScalesRef.current || KNOWN[pat] || customNamesRef.current[pat]);
+    ).filter(({ fam, pat }) => fam.outside || demoAllScalesRef.current || KNOWN[pat] || customNamesRef.current[pat]);
 
     const RHYTHMS = ["even", "swing", "gallop", "waltz", "clave"];
     const DIRS    = ["asc", "desc", "rand"];
