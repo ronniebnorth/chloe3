@@ -1097,6 +1097,7 @@ export default function Chloe() {
         aRef:       parseInt(p.get("a") ?? "440"),
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         melMode:    p.get("m") === "1",
+        grouping:   [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
     } catch { return {}; }
@@ -1129,6 +1130,10 @@ export default function Chloe() {
   const [arpOn,      setArpOn]      = useState(false);
   const [arpDir,     setArpDir]     = useState("asc"); // "asc" | "desc" | "rand"
   const [arpOct,     setArpOct]     = useState(3);
+  // Note grouping (0 = off): play the line in repeating groups of N even notes,
+  // each group shifted one scale step, so the group cycle runs against the pulse
+  // (Eric Johnson style 5s/6s) and the ear can't settle on where the beat is.
+  const [grouping,   setGrouping]   = useState(_u.grouping ?? 0);
   const [rhythm,     setRhythm]     = useState("even");
   const [melMode,    setMelMode]    = useState(_u.melMode     ?? false);
   const [chordVoice, setChordVoice] = useState("off"); // off | triad | 7th | sus2 | power | all | rand
@@ -1388,8 +1393,8 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1596,6 +1601,11 @@ export default function Chloe() {
     arpIdxRef.current = 0;
     rhythmIdxRef.current = 0;
     melPrevRef.current = 0;
+    // Grouping state: position inside the current group, the group's starting
+    // scale degree, the melody motif (degree offsets) and how many more times
+    // it is sequenced before a new one is drawn. tick counts every grouped note
+    // so the pulse accent lands on every 4th one regardless of the group size.
+    const grp = { pos: 0, start: 0, dir: 1, motif: null, left: 0, tick: 0 };
 
     // Rhythm subdivisions: multiples of one 8th note (60000/bpm/2 ms)
     // values: 1=8th, 2=quarter, 3=dotted quarter, 4=half
@@ -1680,6 +1690,7 @@ export default function Chloe() {
           stRef.current = { ...stRef.current, sel: pending };
           arpIdxRef.current = 0;
           melPrevRef.current = 0;
+          grp.pos = 0; grp.start = 0; grp.motif = null; grp.left = 0; grp.tick = 0;
           // Brief pause (breath) then continue
           melTimeout = setTimeout(melTick, 350);
           return;
@@ -1693,8 +1704,57 @@ export default function Chloe() {
       melPrevRef.current = Math.min(melPrevRef.current, notes.length - 1);
       const eighth = 60000 / b / 2;
       const isChord = cv !== "off";  // "rand" also counts as chord
+      const G = stRef.current.grouping || 0;
 
-      if (!mm) {
+      if (G && !isChord) {
+        // Grouped line: even 8ths, group start accented, a lighter accent every
+        // 4th note as the pulse, so N-note groups audibly cross the 4-count.
+        const L = baseNotes.length;
+        const span = notes.length;              // degrees available across aOct octaves
+        const degSemi = (k) => baseNotes[((k % L) + L) % L] + 12 * Math.floor(k / L);
+        if (grp.pos === 0) {
+          if (!mm) {
+            // Arpeggio: a run of G degrees, each group starting one step on
+            // (asc/desc follow the arp direction, rand picks per group)
+            const { arpDir: ad } = stRef.current;
+            const d = ad === "desc" ? -1 : ad === "rand" ? (Math.random() < 0.5 ? -1 : 1) : 1;
+            if (grp.motif === null) { grp.start = d > 0 ? 0 : span - 1; }
+            else grp.start += d;
+            if (grp.start > span - 1) grp.start = 0;
+            if (grp.start < 0) grp.start = span - 1;
+            grp.motif = Array.from({ length: G }, (_, i) => i * d);
+          } else {
+            // Melody: draw a stepwise motif and sequence it up or down a step
+            // per repeat, 3-6 times, before drawing a new one
+            if (!grp.motif || grp.left <= 0) {
+              const m = [0];
+              for (let i = 1; i < G; i++) {
+                const r = Math.random();
+                m.push(m[i - 1] + (r < 0.38 ? 1 : r < 0.76 ? -1 : r < 0.88 ? 2 : -2));
+              }
+              grp.motif = m;
+              grp.dir = Math.random() < 0.5 ? -1 : 1;
+              grp.left = 3 + Math.floor(Math.random() * 4);
+              grp.start = melPrevRef.current;
+            } else grp.start += grp.dir;
+            // Turn the sequence around rather than run off the playing range
+            const lo = Math.min(...grp.motif), hi = Math.max(...grp.motif);
+            if (grp.start + hi > span - 1 || grp.start + lo < 0) {
+              grp.dir = -grp.dir;
+              grp.start = Math.max(-lo, Math.min(span - 1 - hi, grp.start + 2 * grp.dir));
+            }
+            grp.left--;
+          }
+        }
+        const k = grp.start + grp.motif[grp.pos];
+        melPrevRef.current = Math.max(0, Math.min(span - 1, k));
+        arpIdxRef.current = ((k % L) + L) % L;   // lets a pending scale change land on the root
+        const vel = grp.pos === 0 ? 0.3 : grp.tick % 4 === 0 ? 0.2 : 0.14;
+        playNote(degSemi(k), 1, vel);
+        grp.pos = (grp.pos + 1) % G;
+        grp.tick++;
+        melTimeout = setTimeout(melTick, eighth);
+      } else if (!mm) {
         // Arpeggio/chord step mode
         const { arpDir: ad, rhythm: rhy } = stRef.current;
         const n = notes.length;
@@ -2272,6 +2332,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       melMode: st.melMode,
       arpDir: st.arpDir,
       arpOct: st.arpOct,
+      grouping: st.grouping,
       rhythm: st.rhythm,
       chordVoice: st.chordVoice,
       instrument: st.instrument,
@@ -2297,6 +2358,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     setMelMode(m.melMode);
     setArpDir(m.arpDir);
     if (m.arpOct) setArpOct(m.arpOct);
+    setGrouping(m.grouping || 0);
     setRhythm(m.rhythm);
     setChordVoice(m.chordVoice);
     if (m.instrument !== undefined) setInstrument(m.instrument);
@@ -2340,10 +2402,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (aRef !== 440) p.set("a", aRef);
     if (droneOct)    p.set("do", droneOct);
     if (melMode)     p.set("m",  "1");
+    if (grouping)    p.set("g",  grouping);
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -3382,8 +3445,24 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 ))}
               </div>
             </div>
+            {/* Grouping — overrides rhythm with even notes in groups of N */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="Play the line in repeating groups of N even notes, each group moved one scale step. Groups of 5 or 6 run against the 4-count, Eric Johnson style, so the line sounds faster and more tangled than it is. The first note of each group is accented. Off = normal rhythm." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>GROUPS</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {[0, 3, 5, 6, 7].map(g => (
+                  <button key={g} onClick={() => setGrouping(g)} style={{
+                    background: grouping === g ? K.a : K.bg3,
+                    color: grouping === g ? "#000" : K.txt,
+                    border: `1px solid ${grouping === g ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 8px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: grouping === g ? 600 : 400,
+                  }}>{g || "off"}</button>
+                ))}
+              </div>
+            </div>
             {/* Rhythm — only applies in arpeggio mode */}
-            <div style={{ marginBottom: 8, opacity: melMode ? 0.35 : 1, transition: "opacity .2s" }}>
+            <div style={{ marginBottom: 8, opacity: melMode || grouping ? 0.35 : 1, transition: "opacity .2s" }}>
               <div title="Arpeggio rhythm pattern. Even = straight quarters. Swing = long-short. Gallop = short-short-long. Waltz = 3/4 feel. Clave = son clave." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>RHYTHM</div>
               <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                 {[
