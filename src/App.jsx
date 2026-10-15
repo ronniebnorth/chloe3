@@ -518,6 +518,15 @@ const grpKey = (fam) => (fam.outside ? "x-" : "") + GRP_PFX[fam.n];
 // Outside scales are passing colour, not a brightness position: brightness/EEG
 // picks never choose them, and auto mode drops one in on this share of picks.
 const OUTSIDE_CHANCE = 0.33;
+// GROUPS "mix": group sizes (in 8th notes) that add up to whole 4/4 bars
+// (16 = 2 bars, 32 = 4), so the line crosses the beat then lands back on a
+// downbeat at the end of each pattern, Eric Johnson style.
+const MIX_PATTERNS = [
+  [5, 5, 6], [6, 5, 5], [5, 6, 5],
+  [3, 3, 5, 5], [5, 5, 3, 3], [3, 5, 3, 5],
+  [7, 4, 5], [4, 5, 7],
+  [5, 4, 5, 5, 4, 5, 4], [5, 4, 5, 5, 4, 4, 5],
+];
 // Settings Auto may change; unticked ones in the ⚙ panel are left alone
 const AUTO_LOCKS_DEFAULT = { rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
 const isOutsideId = (id) => !!id && id.startsWith("x-");
@@ -1100,7 +1109,7 @@ export default function Chloe() {
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         melMode:    p.get("m") === "1",
         autoOff:    p.get("al") ?? "",
-        grouping:   [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
+        grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
     } catch { return {}; }
@@ -1136,6 +1145,7 @@ export default function Chloe() {
   // Note grouping (0 = off): play the line in repeating groups of N even notes,
   // each group shifted one scale step, so the group cycle runs against the pulse
   // (Eric Johnson style 5s/6s) and the ear can't settle on where the beat is.
+  // "mix" varies the size per group in patterns that fill whole bars (MIX_PATTERNS).
   const [grouping,   setGrouping]   = useState(_u.grouping ?? 0);
   const [rhythm,     setRhythm]     = useState("even");
   const [melMode,    setMelMode]    = useState(_u.melMode     ?? false);
@@ -1611,7 +1621,7 @@ export default function Chloe() {
     // scale degree, the melody motif (degree offsets) and how many more times
     // it is sequenced before a new one is drawn. tick counts every grouped note
     // so the pulse accent lands on every 4th one regardless of the group size.
-    const grp = { pos: 0, start: 0, dir: 1, motif: null, left: 0, tick: 0, G: 0 };
+    const grp = { pos: 0, start: 0, dir: 1, motif: null, cur: null, size: 0, left: 0, tick: 0, G: 0, pat: null, pi: 0, reps: 0 };
 
     // Rhythm subdivisions: multiples of one 8th note (60000/bpm/2 ms)
     // values: 1=8th, 2=quarter, 3=dotted quarter, 4=half
@@ -1707,7 +1717,7 @@ export default function Chloe() {
           stRef.current = { ...stRef.current, sel: pending };
           arpIdxRef.current = 0;
           melPrevRef.current = 0;
-          grp.pos = 0; grp.start = 0; grp.motif = null; grp.left = 0; grp.tick = 0;
+          grp.pos = 0; grp.start = 0; grp.motif = null; grp.left = 0; grp.tick = 0; grp.pat = null;
           // Brief pause (breath) then continue
           melTimeout = setTimeout(melTick, 350);
           return;
@@ -1724,7 +1734,7 @@ export default function Chloe() {
       const G = stRef.current.grouping || 0;
       // Group size changed mid-group (Auto or a click): start a fresh group,
       // or the old position runs past the end of the new motif
-      if (G !== grp.G) { grp.G = G; grp.pos = 0; grp.left = 0; }
+      if (G !== grp.G) { grp.G = G; grp.pos = 0; grp.left = 0; grp.tick = 0; grp.pat = null; }
 
       if (G && !isChord) {
         // Grouped line: even 8ths, group start accented, a lighter accent every
@@ -1733,8 +1743,21 @@ export default function Chloe() {
         const span = notes.length;              // degrees available across aOct octaves
         const degSemi = (k) => baseNotes[((k % L) + L) % L] + 12 * Math.floor(k / L);
         if (grp.pos === 0) {
+          // This group's size: fixed, or the next entry of a bar-filling mix
+          // pattern (each pattern is played 1-2 times before another is drawn)
+          if (G === "mix") {
+            if (!grp.pat || grp.pi >= grp.pat.length) {
+              if (!grp.pat || --grp.reps <= 0) {
+                grp.pat = MIX_PATTERNS[Math.floor(Math.random() * MIX_PATTERNS.length)];
+                grp.reps = 1 + Math.floor(Math.random() * 2);
+              }
+              grp.pi = 0;
+            }
+            grp.size = grp.pat[grp.pi++];
+          } else grp.size = G;
+          const size = grp.size;
           if (!mm) {
-            // Arpeggio: a run of G degrees, each group starting one step on
+            // Arpeggio: a run of `size` degrees, each group starting one step on
             // (asc/desc follow the arp direction, rand picks per group)
             const { arpDir: ad } = stRef.current;
             const d = ad === "desc" ? -1 : ad === "rand" ? (Math.random() < 0.5 ? -1 : 1) : 1;
@@ -1742,13 +1765,15 @@ export default function Chloe() {
             else grp.start += d;
             if (grp.start > span - 1) grp.start = 0;
             if (grp.start < 0) grp.start = span - 1;
-            grp.motif = Array.from({ length: G }, (_, i) => i * d);
+            grp.motif = Array.from({ length: size }, (_, i) => i * d);
+            grp.cur = grp.motif;
           } else {
-            // Melody: draw a stepwise motif and sequence it up or down a step
-            // per repeat, 3-6 times, before drawing a new one
+            // Melody: draw a stepwise 7-note motif and sequence it up or down a
+            // step per repeat, 3-6 times, before drawing a new one. Each group
+            // plays the first `size` notes of it, so mixed sizes share one idea.
             if (!grp.motif || grp.left <= 0) {
               const m = [0];
-              for (let i = 1; i < G; i++) {
+              for (let i = 1; i < 7; i++) {
                 const r = Math.random();
                 m.push(m[i - 1] + (r < 0.38 ? 1 : r < 0.76 ? -1 : r < 0.88 ? 2 : -2));
               }
@@ -1757,8 +1782,9 @@ export default function Chloe() {
               grp.left = 3 + Math.floor(Math.random() * 4);
               grp.start = melPrevRef.current;
             } else grp.start += grp.dir;
+            grp.cur = grp.motif.slice(0, size);
             // Turn the sequence around rather than run off the playing range
-            const lo = Math.min(...grp.motif), hi = Math.max(...grp.motif);
+            const lo = Math.min(...grp.cur), hi = Math.max(...grp.cur);
             if (grp.start + hi > span - 1 || grp.start + lo < 0) {
               grp.dir = -grp.dir;
               grp.start = Math.max(-lo, Math.min(span - 1 - hi, grp.start + 2 * grp.dir));
@@ -1766,12 +1792,14 @@ export default function Chloe() {
             grp.left--;
           }
         }
-        const k = grp.start + grp.motif[grp.pos];
+        const k = grp.start + grp.cur[grp.pos];
         melPrevRef.current = Math.max(0, Math.min(span - 1, k));
         arpIdxRef.current = ((k % L) + L) % L;   // lets a pending scale change land on the root
-        const vel = grp.pos === 0 ? 0.3 : grp.tick % 4 === 0 ? 0.2 : 0.14;
+        // Mix patterns start on the bar line: the resolution back onto the
+        // downbeat gets the strongest accent
+        const vel = grp.pos === 0 ? (G === "mix" && grp.pi === 1 ? 0.36 : 0.3) : grp.tick % 4 === 0 ? 0.2 : 0.14;
         playNote(degSemi(k), 1, vel);
-        grp.pos = (grp.pos + 1) % G;
+        grp.pos = (grp.pos + 1) % grp.size;
         grp.tick++;
         melTimeout = setTimeout(melTick, eighth);
       } else if (!mm) {
@@ -2161,8 +2189,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const _al = autoLocksRef.current;
       if (_al.rhythm)    setRhythm(rhythm);
       if (_al.arpDir)    setArpDir(arpDir);
-      // Off about a third of the time; 5s and 6s favoured
-      if (_al.grouping)  setGrouping([0, 0, 0, 3, 5, 5, 5, 6, 6, 7][Math.floor(Math.random() * 10)]);
+      // Off ~27% of the time; 5s, 6s and bar-filling mixes favoured
+      if (_al.grouping)  setGrouping([0, 0, 0, 3, 5, 5, 6, 6, 7, "mix", "mix"][Math.floor(Math.random() * 11)]);
       if (_al.chordVoice) setChordVoice(chordVoice);
       if (_al.bpm)       setBpm(bpm);
       if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
@@ -3471,14 +3499,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Grouping — overrides rhythm with even notes in groups of N */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Play the line in repeating groups of N even notes, each group moved one scale step. Groups of 5 or 6 run against the 4-count, Eric Johnson style, so the line sounds faster and more tangled than it is. The first note of each group is accented. Off = normal rhythm." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>GROUPS</span>
+              <span title="Play the line in repeating groups of N even notes, each group moved one scale step. Groups of 5 or 6 run against the 4-count, Eric Johnson style, so the line sounds faster and more tangled than it is. The first note of each group is accented. mix = group sizes change within the bar (5+5+6, 3+3+5+5, 5+4+5+5+4+5+4…) and always add up to whole bars, so the line lands back on the downbeat. Off = normal rhythm." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>GROUPS</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
-                {[0, 3, 5, 6, 7].map(g => (
+                {[0, 3, 5, 6, 7, "mix"].map(g => (
                   <button key={g} onClick={() => setGrouping(g)} style={{
                     background: grouping === g ? K.a : K.bg3,
                     color: grouping === g ? "#000" : K.txt,
                     border: `1px solid ${grouping === g ? K.a : K.br}`,
-                    borderRadius: 3, padding: "3px 8px",
+                    borderRadius: 3, padding: "3px 6px",
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
                     fontWeight: grouping === g ? 600 : 400,
                   }}>{g || "off"}</button>
