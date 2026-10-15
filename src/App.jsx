@@ -1109,6 +1109,7 @@ export default function Chloe() {
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         melMode:    p.get("m") === "1",
         autoOff:    p.get("al") ?? "",
+        blend:      p.get("bl") !== "0",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1151,6 +1152,11 @@ export default function Chloe() {
   const [melMode,    setMelMode]    = useState(_u.melMode     ?? false);
   const [chordVoice, setChordVoice] = useState("off"); // off | triad | 7th | sus2 | power | all | rand
   const [playing,    setPlaying]    = useState(null);
+  // Scale blend: when the scale (or key) changes while playing, the line moves
+  // to the new notes one voice-leading step at a time instead of cutting.
+  // morphSemis is the in-between note set (relative to the root) for the wheel.
+  const [blend,      setBlend]      = useState(_u.blend ?? true);
+  const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
   const [listW,      setListW]      = useState(360);
@@ -1409,8 +1415,8 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1621,6 +1627,10 @@ export default function Chloe() {
     // scale degree, the melody motif (degree offsets) and how many more times
     // it is sequenced before a new one is drawn. tick counts every grouped note
     // so the pulse accent lands on every 4th one regardless of the group size.
+    // Blend state: the pitch classes actually sounding (absolute, C = 0), the
+    // set being moved toward, the planned steps, and notes left until the next
+    const mo = { cur: null, key: "", steps: [], every: 8, wait: 0 };
+    const pcsOf = (pattern, root) => toSemis(pattern).map(x => (x + root) % 12);
     const grp = { pos: 0, start: 0, dir: 1, motif: null, cur: null, size: 0, left: 0, tick: 0, G: 0, pat: null, pi: 0, reps: 0 };
 
     // Rhythm subdivisions: multiples of one 8th note (60000/bpm/2 ms)
@@ -1694,6 +1704,49 @@ export default function Chloe() {
       setPlaying(tones[0] % 12);
     };
 
+    // The scale notes to play this tick (semitones above the root, ascending).
+    // With blend on, a change of scale or key is planned as voice-leading moves:
+    // each departing note is paired with the nearest arriving one (smallest
+    // moves first), unpaired ones are plain adds/removes, and one move is
+    // applied per bar (every 6 notes when there are many). Retargets mid-blend
+    // start from whatever is sounding.
+    const blendedNotes = (pattern, root, on) => {
+      const target = pcsOf(pattern, root);
+      const key = pattern + "@" + root;
+      if (!on || !mo.cur) {
+        mo.cur = target; mo.key = key; mo.steps = [];
+        setMorphSemis(null);
+      } else if (key !== mo.key) {
+        mo.key = key;
+        const cur = new Set(mo.cur), tgt = new Set(target);
+        const out = mo.cur.filter(x => !tgt.has(x));
+        const inn = target.filter(x => !cur.has(x));
+        const dist = (a, c) => { const d = Math.abs(a - c) % 12; return Math.min(d, 12 - d); };
+        const steps = [];
+        while (out.length && inn.length) {
+          let best = null;
+          for (const o of out) for (const i of inn)
+            if (!best || dist(o, i) < best.d) best = { o, i, d: dist(o, i) };
+          steps.push(best);
+          out.splice(out.indexOf(best.o), 1); inn.splice(inn.indexOf(best.i), 1);
+        }
+        inn.forEach(i => steps.push({ o: null, i, d: 6 }));
+        out.forEach(o => steps.push({ o, i: null, d: 6 }));
+        mo.steps = steps;
+        mo.every = steps.length > 3 ? 6 : 8;
+        mo.wait = 0;                             // first move right away
+      }
+      if (mo.steps.length && --mo.wait <= 0) {
+        const { o, i } = mo.steps.shift();
+        mo.cur = mo.cur.filter(x => x !== o);
+        if (i !== null) mo.cur.push(i);
+        mo.wait = mo.every;
+        const rel = mo.cur.map(x => (x - root + 12) % 12).sort((a, c) => a - c);
+        setMorphSemis(mo.steps.length ? rel : null);
+      }
+      return mo.cur.map(x => (x - root + 12) % 12).sort((a, c) => a - c);
+    };
+
     // Any throw inside a tick would end the setTimeout chain and leave only
     // the drone playing, so a failed tick logs and schedules the next one.
     const melTick = () => {
@@ -1723,9 +1776,9 @@ export default function Chloe() {
           return;
         }
       }
-      const { sel: s, bpm: b, melMode: mm, chordVoice: cv, arpOct: aOct = 1 } = stRef.current;
+      const { sel: s, bpm: b, melMode: mm, chordVoice: cv, arpOct: aOct = 1, rootIdx: ri, blend: bl } = stRef.current;
       if (!s) return;
-      const baseNotes = toSemis(s.pattern);
+      const baseNotes = blendedNotes(s.pattern, ri, bl);
       const notes = [];
       for (let o = 0; o < aOct; o++) baseNotes.forEach(n => notes.push(n + o * 12));
       melPrevRef.current = Math.min(melPrevRef.current, notes.length - 1);
@@ -2426,7 +2479,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     setArpOn(true);
   };
 
-  const selSemis = sel ? new Set(toSemis(sel.pattern)) : new Set();
+  const selSemis = morphSemis ? new Set(morphSemis) : sel ? new Set(toSemis(sel.pattern)) : new Set();
   const selNotes = sel ? toSemis(sel.pattern).map(s => CHROMATIC[(rootIdx + s) % 12]) : [];
   const selIvs = sel
     ? (() => { const s = toSemis(sel.pattern); return s.slice(1).map((v, i) => v - s[i]).concat(12 - s[s.length - 1]); })()
@@ -2453,12 +2506,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (droneOct)    p.set("do", droneOct);
     if (melMode)     p.set("m",  "1");
     if (grouping)    p.set("g",  grouping);
+    if (!blend)      p.set("bl", "0");
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !autoLocks[k]);
     if (autoOff.length) p.set("al", autoOff.join(","));
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, blend, autoLocks, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -3510,6 +3564,22 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
                     fontWeight: grouping === g ? 600 : 400,
                   }}>{g || "off"}</button>
+                ))}
+              </div>
+            </div>
+            {/* Scale change — hard cut, or blend through voice-leading moves */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="How the line moves to a new scale while playing. Cut = switch at once. Blend = swap the notes that differ one at a time, each to its nearest new note, about one per bar; shared notes stay put, so close scales glide and distant ones take a few bars. The wheel shows the in-between shape." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SCALE CHANGE</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {[{ l: "cut", v: false }, { l: "blend", v: true }].map(o => (
+                  <button key={o.l} onClick={() => setBlend(o.v)} style={{
+                    background: blend === o.v ? K.a : K.bg3,
+                    color: blend === o.v ? "#000" : K.txt,
+                    border: `1px solid ${blend === o.v ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 8px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: blend === o.v ? 600 : 400,
+                  }}>{o.l}</button>
                 ))}
               </div>
             </div>
