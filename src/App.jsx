@@ -1110,6 +1110,7 @@ export default function Chloe() {
         melMode:    p.get("m") === "1",
         autoOff:    p.get("al") ?? "",
         blend:      p.get("bl") !== "0",
+        tempoGlide: p.get("tg") !== "0",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1156,6 +1157,8 @@ export default function Chloe() {
   // to the new notes one voice-leading step at a time instead of cutting.
   // morphSemis is the in-between note set (relative to the root) for the wheel.
   const [blend,      setBlend]      = useState(_u.blend ?? true);
+  // Tempo glide: BPM changes ease over ~4 s per doubling/halving instead of jumping
+  const [tempoGlide, setTempoGlide] = useState(_u.tempoGlide ?? true);
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
@@ -1415,8 +1418,8 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1630,6 +1633,23 @@ export default function Chloe() {
     // Blend state: the pitch classes actually sounding (absolute, C = 0), the
     // set being moved toward, the planned steps, and notes left until the next
     const mo = { cur: null, key: "", steps: [], every: 8, wait: 0 };
+    // Tempo glide: the BPM actually played eases from `from` to `to` in log
+    // space (equal ratios feel like equal steps), 4 s per octave of change,
+    // 1-10 s, smoothstep-shaped. A new target mid-glide starts from where it is.
+    const tg = { cur: null, from: 0, to: 0, t0: 0, dur: 0 };
+    const playBpm = () => {
+      const { bpm: target, tempoGlide: on } = stRef.current;
+      const now = performance.now();
+      if (!on || tg.cur === null) { tg.cur = tg.from = tg.to = target; tg.dur = 0; return target; }
+      if (target !== tg.to) {
+        tg.from = tg.cur; tg.to = target; tg.t0 = now;
+        tg.dur = 1000 * Math.max(1, Math.min(10, 4 * Math.abs(Math.log2(target / tg.from))));
+      }
+      const x = tg.dur ? Math.min(1, (now - tg.t0) / tg.dur) : 1;
+      const e = x * x * (3 - 2 * x);
+      tg.cur = tg.from * Math.pow(tg.to / tg.from, e);
+      return tg.cur;
+    };
     const pcsOf = (pattern, root) => toSemis(pattern).map(x => (x + root) % 12);
     const grp = { pos: 0, start: 0, dir: 1, motif: null, cur: null, size: 0, left: 0, tick: 0, G: 0, pat: null, pi: 0, reps: 0 };
 
@@ -1664,7 +1684,8 @@ export default function Chloe() {
     let melTimeout = null;
 
     const playNote = (semi, dur, vel) => {
-      const { rootIdx: ri, timbre: t, bpm: b, instrument: inst, noteVol: nv, aRef: ar } = stRef.current;
+      const { rootIdx: ri, timbre: t, instrument: inst, noteVol: nv, aRef: ar } = stRef.current;
+      const b = tg.cur ?? stRef.current.bpm;
       const ac = getCtx();
       const rev = getOrCreateReverb(ac);
       const del = getOrCreateDelay(ac);
@@ -1776,13 +1797,13 @@ export default function Chloe() {
           return;
         }
       }
-      const { sel: s, bpm: b, melMode: mm, chordVoice: cv, arpOct: aOct = 1, rootIdx: ri, blend: bl } = stRef.current;
+      const { sel: s, melMode: mm, chordVoice: cv, arpOct: aOct = 1, rootIdx: ri, blend: bl } = stRef.current;
       if (!s) return;
       const baseNotes = blendedNotes(s.pattern, ri, bl);
       const notes = [];
       for (let o = 0; o < aOct; o++) baseNotes.forEach(n => notes.push(n + o * 12));
       melPrevRef.current = Math.min(melPrevRef.current, notes.length - 1);
-      const eighth = 60000 / b / 2;
+      const eighth = 60000 / playBpm() / 2;
       const isChord = cv !== "off";  // "rand" also counts as chord
       const G = stRef.current.grouping || 0;
       // Group size changed mid-group (Auto or a click): start a fresh group,
@@ -2507,12 +2528,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (melMode)     p.set("m",  "1");
     if (grouping)    p.set("g",  grouping);
     if (!blend)      p.set("bl", "0");
+    if (!tempoGlide) p.set("tg", "0");
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !autoLocks[k]);
     if (autoOff.length) p.set("al", autoOff.join(","));
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, blend, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, blend, tempoGlide, autoLocks, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -3579,6 +3601,22 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     borderRadius: 3, padding: "3px 8px",
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
                     fontWeight: blend === o.v ? 600 : 400,
+                  }}>{o.l}</button>
+                ))}
+              </div>
+            </div>
+            {/* Tempo change — jump, or glide between BPMs */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="How the tempo moves when the BPM changes (Auto, Claude or the slider). Cut = jump at once. Glide = ease to the new tempo, about 4 seconds per doubling or halving, so it never drops from fast straight to very slow." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TEMPO CHANGE</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {[{ l: "cut", v: false }, { l: "glide", v: true }].map(o => (
+                  <button key={o.l} onClick={() => setTempoGlide(o.v)} style={{
+                    background: tempoGlide === o.v ? K.a : K.bg3,
+                    color: tempoGlide === o.v ? "#000" : K.txt,
+                    border: `1px solid ${tempoGlide === o.v ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 8px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: tempoGlide === o.v ? 600 : 400,
                   }}>{o.l}</button>
                 ))}
               </div>
