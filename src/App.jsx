@@ -518,6 +518,8 @@ const grpKey = (fam) => (fam.outside ? "x-" : "") + GRP_PFX[fam.n];
 // Outside scales are passing colour, not a brightness position: brightness/EEG
 // picks never choose them, and auto mode drops one in on this share of picks.
 const OUTSIDE_CHANCE = 0.33;
+// Settings Auto may change; unticked ones in the ⚙ panel are left alone
+const AUTO_LOCKS_DEFAULT = { rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
 const isOutsideId = (id) => !!id && id.startsWith("x-");
 
 // Longest run of consecutive semitones (circular) — 3..8 for outside scales
@@ -1097,6 +1099,7 @@ export default function Chloe() {
         aRef:       parseInt(p.get("a") ?? "440"),
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         melMode:    p.get("m") === "1",
+        autoOff:    p.get("al") ?? "",
         grouping:   [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1343,8 +1346,11 @@ export default function Chloe() {
   const [showDiatonic,  setShowDiatonic]  = useState(false); // show diatonic neighborhood annotations
   const showDiatonicRef = useRef(false);
   useEffect(() => { showDiatonicRef.current = showDiatonic; }, [showDiatonic]);
-  const AUTO_LOCKS_DEFAULT = { rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
-  const [autoLocks, setAutoLocks] = useState(AUTO_LOCKS_DEFAULT);
+  // Settings unticked in the Auto ⚙ panel travel in shared links as al=bpm,rootNote,...
+  const [autoLocks, setAutoLocks] = useState(() => {
+    const off = (_u.autoOff || "").split(",").filter(k => k in AUTO_LOCKS_DEFAULT);
+    return { ...AUTO_LOCKS_DEFAULT, ...Object.fromEntries(off.map(k => [k, false])) };
+  });
   const autoLocksRef = useRef(AUTO_LOCKS_DEFAULT);
   useEffect(() => { autoLocksRef.current = autoLocks; }, [autoLocks]);
   const [showAutoLocks, setShowAutoLocks] = useState(false);
@@ -2403,10 +2409,12 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (droneOct)    p.set("do", droneOct);
     if (melMode)     p.set("m",  "1");
     if (grouping)    p.set("g",  grouping);
+    const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !autoLocks[k]);
+    if (autoOff.length) p.set("al", autoOff.join(","));
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, autoLocks, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
