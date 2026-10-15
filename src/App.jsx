@@ -519,7 +519,7 @@ const grpKey = (fam) => (fam.outside ? "x-" : "") + GRP_PFX[fam.n];
 // picks never choose them, and auto mode drops one in on this share of picks.
 const OUTSIDE_CHANCE = 0.33;
 // Settings Auto may change; unticked ones in the ⚙ panel are left alone
-const AUTO_LOCKS_DEFAULT = { rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
+const AUTO_LOCKS_DEFAULT = { rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
 const isOutsideId = (id) => !!id && id.startsWith("x-");
 
 // Longest run of consecutive semitones (circular) — 3..8 for outside scales
@@ -2147,6 +2147,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const _al = autoLocksRef.current;
       if (_al.rhythm)    setRhythm(rhythm);
       if (_al.arpDir)    setArpDir(arpDir);
+      // Off about a third of the time; 5s and 6s favoured
+      if (_al.grouping)  setGrouping([0, 0, 0, 3, 5, 5, 5, 6, 6, 7][Math.floor(Math.random() * 10)]);
       if (_al.chordVoice) setChordVoice(chordVoice);
       if (_al.bpm)       setBpm(bpm);
       if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
@@ -3728,6 +3730,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               { label: "ARPEGGIO / MELODY", items: [
                 { key: "rhythm",     label: "Rhythm" },
                 { key: "arpDir",     label: "Arp Direction" },
+                { key: "grouping",   label: "Groups" },
                 { key: "chordVoice", label: "Chord Voicing" },
                 { key: "melMode",    label: "Melody Mode", demoOnly: true },
               ]},
