@@ -1611,7 +1611,7 @@ export default function Chloe() {
     // scale degree, the melody motif (degree offsets) and how many more times
     // it is sequenced before a new one is drawn. tick counts every grouped note
     // so the pulse accent lands on every 4th one regardless of the group size.
-    const grp = { pos: 0, start: 0, dir: 1, motif: null, left: 0, tick: 0 };
+    const grp = { pos: 0, start: 0, dir: 1, motif: null, left: 0, tick: 0, G: 0 };
 
     // Rhythm subdivisions: multiples of one 8th note (60000/bpm/2 ms)
     // values: 1=8th, 2=quarter, 3=dotted quarter, 4=half
@@ -1653,7 +1653,7 @@ export default function Chloe() {
       const beatDur = (dur * 60 / b / 2) * stRef.current.sustainMult;
       synthNote(ac, freq, vel * nv, inst, t, beatDur, rev.convolver, del.delayNode, an.node);
       noteCountRef.current++;
-      setPlaying(semi % 12);
+      setPlaying(((semi % 12) + 12) % 12);  // grouped runs can dip below the root
     };
 
     // Build chord tones from a root index within the scale
@@ -1684,7 +1684,18 @@ export default function Chloe() {
       setPlaying(tones[0] % 12);
     };
 
+    // Any throw inside a tick would end the setTimeout chain and leave only
+    // the drone playing, so a failed tick logs and schedules the next one.
     const melTick = () => {
+      try { melTickBody(); }
+      catch (e) {
+        console.error("note scheduler:", e);
+        clearTimeout(melTimeout);
+        melTimeout = setTimeout(melTick, 60000 / (stRef.current.bpm || 100) / 2);
+      }
+    };
+
+    const melTickBody = () => {
       // Check for pending scale transition
       const pending = pendingSelRef.current;
       if (pending) {
@@ -1711,6 +1722,9 @@ export default function Chloe() {
       const eighth = 60000 / b / 2;
       const isChord = cv !== "off";  // "rand" also counts as chord
       const G = stRef.current.grouping || 0;
+      // Group size changed mid-group (Auto or a click): start a fresh group,
+      // or the old position runs past the end of the new motif
+      if (G !== grp.G) { grp.G = G; grp.pos = 0; grp.left = 0; }
 
       if (G && !isChord) {
         // Grouped line: even 8ths, group start accented, a lighter accent every
