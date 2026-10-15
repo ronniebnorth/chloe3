@@ -2652,8 +2652,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
           {/* BPM */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-            <span title="Tempo for arpeggio and melody modes (40-240 BPM)." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
-            <input type="range" min={monasticMode ? 1 : 40} max={240} value={bpm}
+            <span title="Tempo for arpeggio and melody modes (40-480 BPM). Above 240 is for fast runs — try it with GROUPS." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
+            <input type="range" min={monasticMode ? 1 : 40} max={480} value={bpm}
               onChange={e => setBpm(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
             />
