@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { Soundfont } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
 
 /* ═══════════════════════════════════════════════════════
@@ -1151,6 +1152,7 @@ export default function Chloe() {
         soundBlend: p.get("sb") !== "0",
         tuning:     ["just", "pyth"].includes(p.get("tu")) ? p.get("tu") : "equal",
         autoTempo:  p.get("at") === "drift" ? "drift" : "bursts",
+        symphonic:  p.get("sy") === "1",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1203,6 +1205,10 @@ export default function Chloe() {
   const [tuning, setTuning] = useState(_u.tuning ?? "equal");
   // Auto tempo: drift = wander in small steps; bursts = hold steady, with short surprises
   const [autoTempo, setAutoTempo] = useState(_u.autoTempo ?? "bursts");
+  // Symphonic: sampled strings + double bass play the scale's chords under the line
+  const [symphonic, setSymphonic] = useState(_u.symphonic ?? false);
+  const [orchLoading, setOrchLoading] = useState(false);
+  const orchRef = useRef(null);
   const tempoSnapRef = useRef(false); // next BPM change jumps instead of gliding
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
@@ -1464,8 +1470,8 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1486,6 +1492,27 @@ export default function Chloe() {
     reverbRef.current = { convolver, wetGain, ac };
     return reverbRef.current;
   }, []);
+
+  // Orchestra: free MusyngKite samples (gleitz/midi-js-soundfonts, ~3 MB each),
+  // loaded once on first use. Its bus feeds the master limiter and the reverb.
+  const getOrchestra = useCallback((ac) => {
+    if (orchRef.current && orchRef.current.ac === ac) return orchRef.current;
+    const bus = ac.createGain(); bus.gain.value = 0.5;
+    bus.connect(masterOut(ac)); bus.connect(getOrCreateReverb(ac).convolver);
+    const strings = Soundfont(ac, { instrument: "string_ensemble_1", destination: bus });
+    const bass = Soundfont(ac, { instrument: "contrabass", destination: bus });
+    setOrchLoading(true);
+    Promise.all([strings.ready, bass.ready]).finally(() => setOrchLoading(false));
+    orchRef.current = { ac, bus, strings, bass };
+    return orchRef.current;
+  }, [getOrCreateReverb]);
+
+  // Start the download as soon as Symphonic is switched on
+  // and let the strings fade out at once when it's switched off
+  useEffect(() => {
+    if (symphonic && ctxRef.current) getOrchestra(ctxRef.current);
+    if (!symphonic && orchRef.current) { orchRef.current.strings.stop(); orchRef.current.bass.stop(); }
+  }, [symphonic, getOrchestra]);
 
   // Keep reverb wet gain in sync with reverbAmt slider
   useEffect(() => {
@@ -1737,6 +1764,42 @@ export default function Chloe() {
     // For melody mode, we schedule with variable intervals using setTimeout chains
     let melTimeout = null;
 
+    // Symphonic layer: every few seconds (1-4 bars, ~5 s) strings hold a triad
+    // stacked from the scale and the double bass plays its root. Chords move by
+    // 4ths/5ths in scale steps with a pull home. Uses the notes the line is
+    // playing (blend-aware) and the current tuning.
+    let orchT = null, orchDeg = 0, lastBase = null;
+    const orchTick = () => {
+      let hold = 4;
+      try {
+        const st = stRef.current;
+        const b = tg.cur ?? st.bpm;
+        const barSec = 240 / b;
+        hold = Math.max(1, Math.min(4, Math.round(5 / barSec))) * barSec;
+        if (st.symphonic && st.sel && lastBase && lastBase.length >= 3) {
+          const ac = getCtx();
+          const o = getOrchestra(ac);
+          const L = lastBase.length;
+          const moves = [[0, 1], [3, 3], [4, 3], [5, 1.5], [1, 1], [L - 1, 1]];
+          let r = Math.random() * moves.reduce((a, m) => a + m[1], 0), next = orchDeg;
+          for (const [d, w] of moves) { if ((r -= w) < 0) { next = d === 0 ? 0 : (orchDeg + d) % L; break; } }
+          if (next === orchDeg) next = orchDeg === 0 ? 4 % L : 0;
+          orchDeg = next;
+          const semiOf = k => lastBase[k % L] + 12 * Math.floor(k / L);
+          const rootMidi = 60 + OFFS[st.rootIdx];
+          const tune = semi => 1200 * Math.log2(tunedRatio(semi, st.tuning) * st.aRef / 440) - 100 * semi;
+          const t0 = ac.currentTime + 0.02;
+          [0, 2, 4].forEach(k => {
+            const semi = semiOf(orchDeg + k) - 12;
+            o.strings.start({ note: rootMidi + semi, velocity: 70, time: t0, duration: hold + 0.15, detune: tune(semi) });
+          });
+          const bassSemi = semiOf(orchDeg) - 24;
+          o.bass.start({ note: rootMidi + bassSemi, velocity: 85, time: t0, duration: hold * 0.95, detune: tune(bassSemi) });
+        }
+      } catch (e) { console.error("orchestra:", e); }
+      orchT = setTimeout(orchTick, hold * 1000);
+    };
+
     const playNote = (semi, dur, vel) => {
       const { rootIdx: ri, timbre: t, instrument: inst, noteVol: nv, aRef: ar, tuning: tu } = stRef.current;
       const b = tg.cur ?? stRef.current.bpm;
@@ -1864,6 +1927,7 @@ export default function Chloe() {
       const { sel: s, melMode: mm, chordVoice: cv, arpOct: aOct = 1, rootIdx: ri, blend: bl } = stRef.current;
       if (!s) return;
       const baseNotes = blendedNotes(s.pattern, ri, bl);
+      lastBase = baseNotes;
       const notes = [];
       for (let o = 0; o < aOct; o++) baseNotes.forEach(n => notes.push(n + o * 12));
       melPrevRef.current = Math.min(melPrevRef.current, notes.length - 1);
@@ -1993,7 +2057,11 @@ export default function Chloe() {
     };
 
     melTick();
-    return () => { clearTimeout(melTimeout); clearInterval(arpRef.current); };
+    orchT = setTimeout(orchTick, 50);
+    return () => {
+      clearTimeout(melTimeout); clearInterval(arpRef.current); clearTimeout(orchT);
+      if (orchRef.current) { orchRef.current.strings.stop(); orchRef.current.bass.stop(); }
+    };
   // melTick/playNote read all playback state live from stRef — only arpOn is needed
   // as a dep (for the guard). sel changes are handled via pendingSelRef for smooth transitions.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2646,6 +2714,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (!soundBlend) p.set("sb", "0");
     if (tuning !== "equal") p.set("tu", tuning);
     if (autoTempo !== "bursts") p.set("at", autoTempo);
+    if (symphonic) p.set("sy", "1");
     // Only differences from the defaults travel: al = unticked, an = ticked-but-off-by-default
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => AUTO_LOCKS_DEFAULT[k] && !autoLocks[k]);
     const autoOn  = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !AUTO_LOCKS_DEFAULT[k] && autoLocks[k]);
@@ -2654,7 +2723,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, autoLocks, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -3786,6 +3855,22 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
                     fontWeight: tuning === v ? 600 : 400,
                   }}>{v}</button>
+                ))}
+              </div>
+            </div>
+            {/* Symphonic — sampled strings + double bass under the line */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="Adds an orchestra under the line: a string section holds chords built from the current scale and a double bass plays their roots, changing about every 5 seconds. Uses real recorded samples, a one-time download of about 6 MB the first time you switch it on." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SYMPHONIC{orchLoading ? " · loading…" : ""}</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {[{ l: "off", v: false }, { l: "strings + bass", v: true }].map(o => (
+                  <button key={o.l} onClick={() => { setSymphonic(o.v); if (o.v) getOrchestra(getCtx()); }} style={{
+                    background: symphonic === o.v ? K.a : K.bg3,
+                    color: symphonic === o.v ? "#000" : K.txt,
+                    border: `1px solid ${symphonic === o.v ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 8px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: symphonic === o.v ? 600 : 400,
+                  }}>{o.l}</button>
                 ))}
               </div>
             </div>
