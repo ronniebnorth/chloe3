@@ -1150,6 +1150,7 @@ export default function Chloe() {
         tempoGlide: p.get("tg") !== "0",
         soundBlend: p.get("sb") !== "0",
         tuning:     ["just", "pyth"].includes(p.get("tu")) ? p.get("tu") : "equal",
+        autoTempo:  p.get("at") === "drift" ? "drift" : "bursts",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1200,6 +1201,9 @@ export default function Chloe() {
   const [tempoGlide, setTempoGlide] = useState(_u.tempoGlide ?? true);
   const [soundBlend, setSoundBlend] = useState(_u.soundBlend ?? true);
   const [tuning, setTuning] = useState(_u.tuning ?? "equal");
+  // Auto tempo: drift = wander in small steps; bursts = hold steady, with short surprises
+  const [autoTempo, setAutoTempo] = useState(_u.autoTempo ?? "bursts");
+  const tempoSnapRef = useRef(false); // next BPM change jumps instead of gliding
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
@@ -1460,8 +1464,8 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1686,6 +1690,11 @@ export default function Chloe() {
       const { bpm: target, tempoGlide: on } = stRef.current;
       const now = performance.now();
       if (!on || tg.cur === null) { tg.cur = tg.from = tg.to = target; tg.dur = 0; return target; }
+      if (target !== tg.to && tempoSnapRef.current) {
+        tempoSnapRef.current = false;
+        tg.cur = tg.from = tg.to = target; tg.dur = 0;
+        return target;
+      }
       if (target !== tg.to) {
         tg.from = tg.cur; tg.to = target; tg.t0 = now;
         tg.dur = 1000 * Math.max(2, Math.min(12, 6 * Math.abs(Math.log2(target / tg.from))));
@@ -2282,6 +2291,36 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       return Math.round(Math.min(240, Math.max(60, next)));
     };
 
+    // Bursts: tempo holds at home; every 20-60 s a 2-4 bar surprise, then back.
+    // Double/half time snap in and out; push/pull glide.
+    const BURSTS = [
+      { f: 2,   snap: true,  w: 35 },  // double time
+      { f: 1.2, snap: false, w: 30 },  // push
+      { f: 0.8, snap: false, w: 20 },  // pull back
+      { f: 0.5, snap: true,  w: 15 },  // half time
+    ];
+    let burstT = null, burstHome = null;
+    const scheduleBurst = () => { burstT = setTimeout(doBurst, 20000 + Math.random() * 40000); };
+    const doBurst = () => {
+      if (cancelled) return;
+      const st = stRef.current;
+      if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm) { scheduleBurst(); return; }
+      let r = Math.random() * 100, b = BURSTS[0];
+      for (const x of BURSTS) { if ((r -= x.w) < 0) { b = x; break; } }
+      burstHome = st.bpm;
+      const to = Math.round(Math.min(480, Math.max(40, burstHome * b.f)));
+      const bars = 2 + Math.floor(Math.random() * 3);
+      tempoSnapRef.current = b.snap;
+      setBpm(to);
+      burstT = setTimeout(() => {
+        if (cancelled) return;
+        tempoSnapRef.current = b.snap;
+        setBpm(burstHome); burstHome = null;
+        scheduleBurst();
+      }, bars * 4 * 60000 / to);
+    };
+    scheduleBurst();
+
     const pickNext = () => {
       if (cancelled) return;
       if (loopOnRef.current) { timeout = setTimeout(pickNext, 1000); return; }
@@ -2337,7 +2376,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       }
       // Tuning changes on ~30% of picks; equal stays the most common
       if (_al.tuning && Math.random() < 0.3) setTuning(["equal", "equal", "just", "just", "pyth"][Math.floor(Math.random() * 5)]);
-      if (_al.bpm)       setBpm(bpm);
+      if (_al.bpm && stRef.current.autoTempo === "drift") setBpm(bpm);
       if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
       if (_al.delay)     setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
       if (_al.delayTime) setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
@@ -2386,7 +2425,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     };
 
     pickNext();
-    return () => { cancelled = true; clearTimeout(timeout); };
+    return () => {
+      cancelled = true; clearTimeout(timeout); clearTimeout(burstT);
+      if (burstHome !== null) { tempoSnapRef.current = false; setBpm(burstHome); }
+    };
   }, [autoOn]); // reads live state via stRef; getCtx/pick/set* are stable
 
   /* ── Interval pattern match e.g. "2-2-1" or "2 2 1" ──
@@ -2603,6 +2645,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (!tempoGlide) p.set("tg", "0");
     if (!soundBlend) p.set("sb", "0");
     if (tuning !== "equal") p.set("tu", tuning);
+    if (autoTempo !== "bursts") p.set("at", autoTempo);
     // Only differences from the defaults travel: al = unticked, an = ticked-but-off-by-default
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => AUTO_LOCKS_DEFAULT[k] && !autoLocks[k]);
     const autoOn  = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !AUTO_LOCKS_DEFAULT[k] && autoLocks[k]);
@@ -2611,7 +2654,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, autoLocks, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -3695,6 +3738,22 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
                     fontWeight: tempoGlide === o.v ? 600 : 400,
                   }}>{o.l}</button>
+                ))}
+              </div>
+            </div>
+            {/* Auto tempo — wander, or hold steady with short surprise bursts */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="How Auto moves the tempo. Drift = wander in small steps (about ±20%) around the BPM you started at. Bursts = hold your BPM steady, and every 20-60 seconds throw in a 2-4 bar surprise: double time, a push up, a pull back or half time, then return. Untick BPM in Auto's ⚙ to stop all tempo changes." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>AUTO TEMPO</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {["drift", "bursts"].map(v => (
+                  <button key={v} onClick={() => setAutoTempo(v)} style={{
+                    background: autoTempo === v ? K.a : K.bg3,
+                    color: autoTempo === v ? "#000" : K.txt,
+                    border: `1px solid ${autoTempo === v ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 8px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: autoTempo === v ? 600 : 400,
+                  }}>{v}</button>
                 ))}
               </div>
             </div>
