@@ -299,6 +299,20 @@ function makeImpulse(ac, duration, decay) {
   return buf;
 }
 
+// Tunings, as ratios above the scale root for each semitone. Equal = 2^(n/12).
+// just: 5-limit (Zarlino's pure 5/4 thirds). pyth: Pythagorean, built only from
+// stacked 3/2 fifths, so 5ths are pure but 3rds come out sharp (81/64).
+const TUNINGS = {
+  just: [1, 16/15, 9/8, 6/5, 5/4, 4/3, 45/32, 3/2, 8/5, 5/3, 9/5, 15/8],
+  pyth: [1, 256/243, 9/8, 32/27, 81/64, 4/3, 729/512, 3/2, 128/81, 27/16, 16/9, 243/128],
+};
+const tunedRatio = (semi, tuning) => {
+  const r = TUNINGS[tuning];
+  if (!r) return 2 ** (semi / 12);
+  const pc = ((semi % 12) + 12) % 12;
+  return 2 ** ((semi - pc) / 12) * r[pc];
+};
+
 // Per-sound gain so every instrument/wave plays at about the same loudness
 // (measured K-weighted, eighth-note runs C3-C5, levelled to -28 LUFS).
 const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
@@ -1133,6 +1147,7 @@ export default function Chloe() {
         blend:      p.get("bl") !== "0",
         tempoGlide: p.get("tg") !== "0",
         soundBlend: p.get("sb") !== "0",
+        tuning:     ["just", "pyth"].includes(p.get("tu")) ? p.get("tu") : "equal",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1182,6 +1197,7 @@ export default function Chloe() {
   // Tempo glide: BPM changes ease over ~4 s per doubling/halving instead of jumping
   const [tempoGlide, setTempoGlide] = useState(_u.tempoGlide ?? true);
   const [soundBlend, setSoundBlend] = useState(_u.soundBlend ?? true);
+  const [tuning, setTuning] = useState(_u.tuning ?? "equal");
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
@@ -1441,8 +1457,8 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1512,7 +1528,7 @@ export default function Chloe() {
     if (delayRef.current) delayRef.current.delayNode.delayTime.value = delayTime;
   }, [delayTime]);
 
-  const noteFreq = (semi, ri) => aRef * 2 ** ((60 + OFFS[ri] + semi - 69) / 12);
+  const noteFreq = (semi, ri) => aRef * 2 ** ((60 + OFFS[ri] - 69) / 12) * tunedRatio(semi, tuning);
 
   /* ── Drone ── */
   useEffect(() => {
@@ -1710,13 +1726,13 @@ export default function Chloe() {
     let melTimeout = null;
 
     const playNote = (semi, dur, vel) => {
-      const { rootIdx: ri, timbre: t, instrument: inst, noteVol: nv, aRef: ar } = stRef.current;
+      const { rootIdx: ri, timbre: t, instrument: inst, noteVol: nv, aRef: ar, tuning: tu } = stRef.current;
       const b = tg.cur ?? stRef.current.bpm;
       const ac = getCtx();
       const rev = getOrCreateReverb(ac);
       const del = getOrCreateDelay(ac);
       const an = getOrCreateAnalyser(ac);
-      const freq = ar * 2 ** ((60 + OFFS[ri] + semi - 69) / 12);
+      const freq = ar * 2 ** ((60 + OFFS[ri] - 69) / 12) * tunedRatio(semi, tu);
       const beatDur = (dur * 60 / b / 2) * stRef.current.sustainMult;
       const snd = { inst, t };
       const same = (a, b) => a && a.inst === b.inst && (a.inst || a.t === b.t);
@@ -2571,12 +2587,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (!blend)      p.set("bl", "0");
     if (!tempoGlide) p.set("tg", "0");
     if (!soundBlend) p.set("sb", "0");
+    if (tuning !== "equal") p.set("tu", tuning);
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !autoLocks[k]);
     if (autoOff.length) p.set("al", autoOff.join(","));
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, blend, tempoGlide, soundBlend, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoLocks, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -3676,6 +3693,22 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
                     fontWeight: soundBlend === o.v ? 600 : 400,
                   }}>{o.l}</button>
+                ))}
+              </div>
+            </div>
+            {/* Tuning — equal temperament, or pure ratios above the root */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="How the notes are tuned. Equal = standard 12-tone equal temperament, like a piano or fretted guitar. Just = pure ratios above the root (5/4 major 3rd, 3/2 fifth): very still against the drone; major 3rds are 14 cents flatter than a guitar's. Pyth = Pythagorean, built only from pure 3/2 fifths: fifths are pure, major 3rds come out 8 cents sharp and bright." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TUNING</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {["equal", "just", "pyth"].map(v => (
+                  <button key={v} onClick={() => setTuning(v)} style={{
+                    background: tuning === v ? K.a : K.bg3,
+                    color: tuning === v ? "#000" : K.txt,
+                    border: `1px solid ${tuning === v ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 8px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: tuning === v ? 600 : 400,
+                  }}>{v}</button>
                 ))}
               </div>
             </div>
