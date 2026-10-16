@@ -1540,9 +1540,12 @@ export default function Chloe() {
     const drums = ac.createGain(); drums.gain.value = 0.8; drums.connect(bus);
     const timpani = Soundfont(ac, { instrument: "timpani", destination: drums });
     const taiko = Soundfont(ac, { instrument: "taiko_drum", destination: drums });
+    // Fast licks woven through: violin and flute runs and turns
+    const violin = Soundfont(ac, { instrument: "violin", destination: bus });
+    const flute = Soundfont(ac, { instrument: "flute", destination: bus });
     setOrchLoading(true);
-    Promise.all([strings.ready, bass.ready, cello.ready, timpani.ready, taiko.ready]).finally(() => setOrchLoading(false));
-    orchRef.current = { ac, bus, wet, swell, strings, bass, cello, timpani, taiko, all: [strings, bass, cello, timpani, taiko] };
+    Promise.all([strings.ready, bass.ready, cello.ready, timpani.ready, taiko.ready, violin.ready, flute.ready]).finally(() => setOrchLoading(false));
+    orchRef.current = { ac, bus, wet, swell, strings, bass, cello, timpani, taiko, violin, flute, all: [strings, bass, cello, timpani, taiko, violin, flute] };
     return orchRef.current;
   }, [getOrCreateReverb]);
 
@@ -1825,7 +1828,7 @@ export default function Chloe() {
           for (const [d, w] of moves) { if ((r -= w) < 0) { next = d === 0 ? 0 : (orchDeg + d) % L; break; } }
           if (next === orchDeg) next = orchDeg === 0 ? 4 % L : 0;
           orchDeg = next;
-          const semiOf = k => lastBase[k % L] + 12 * Math.floor(k / L);
+          const semiOf = k => lastBase[((k % L) + L) % L] + 12 * Math.floor(k / L);  // k may go below 0 (downward runs)
           const rootMidi = 60 + OFFS[st.rootIdx];
           const tune = semi => 1200 * Math.log2(tunedRatio(semi, st.tuning) * st.aRef / 440) - 100 * semi;
           const t0 = ac.currentTime + 0.02;
@@ -1883,6 +1886,28 @@ export default function Chloe() {
             o.timpani.start({ note: tn, velocity: rollIn ? 112 : 92, time: t0, detune: tTune });
             if (Math.random() < 0.3) o.taiko.start({ note: 40, velocity: 92, time: t0 });
           }
+          // Licks: on ~45% of chords a violin or flute plays a fast scale run
+          // (5-9 notes) landing on a chord tone an octave or two above the
+          // root, or a quick turn around one. Placed to lead into the next
+          // chord or mid-chord. 16ths, kept between 60 and 120 ms a note.
+          if (Math.random() < 0.45) {
+            const inst = Math.random() < 0.6 ? o.violin : o.flute;
+            const sp = Math.min(0.12, Math.max(0.06, beat / 4));
+            const land = orchDeg + [0, 2, 4][Math.floor(Math.random() * 3)] + L * (1 + Math.floor(Math.random() * 2));
+            let ks;
+            if (Math.random() < 0.7) {
+              const n = 5 + Math.floor(Math.random() * 5), dir = Math.random() < 0.6 ? 1 : -1;
+              ks = Array.from({ length: n }, (_, i) => land - dir * (n - 1 - i));
+            } else ks = [land, land + 1, land, land - 1, land];
+            const span = ks.length * sp;
+            const ls = Math.random() < 0.6 ? t0 + hold - span : t0 + beat * (1 + Math.floor(Math.random() * Math.max(1, hold / beat - 2)));
+            ks.forEach((k, i) => {
+              const semi = semiOf(k);
+              const last = i === ks.length - 1;
+              inst.start({ note: rootMidi + semi, velocity: last ? 88 : 62 + Math.round(20 * i / ks.length), time: ls + i * sp, duration: last ? sp * 4 : sp * 1.1, detune: tune(semi) });
+            });
+          }
+
           rollIn = !boom && Math.random() < 0.3;
           if (rollIn) {
             // Roll over the last bar (or half the chord), crescendo into the next
@@ -3955,7 +3980,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Symphonic — sampled strings + double bass under the line */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Adds an orchestra under the line: a string section swells on chords built from the current scale, cellos drive a low pulse, a double bass holds the roots, and timpani and taiko drums hit the changes (a big boom on a new scale), all in a cathedral reverb. Uses real recorded samples, a one-time download of about 15 MB the first time you switch it on." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SYMPHONIC{orchLoading ? " · loading…" : ""}</span>
+              <span title="Adds an orchestra under the line: a string section swells on chords built from the current scale, cellos drive a low pulse, a double bass holds the roots, and timpani and taiko drums hit the changes (a big boom on a new scale), violin and flute weave fast runs through it, all in a cathedral reverb. Uses real recorded samples, a one-time download of about 20 MB the first time you switch it on." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SYMPHONIC{orchLoading ? " · loading…" : ""}</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[{ l: "off", v: false }, { l: "orchestra", v: true }].map(o => (
                   <button key={o.l} onClick={() => { setSymphonic(o.v); if (o.v) getOrchestra(getCtx()); }} style={{
