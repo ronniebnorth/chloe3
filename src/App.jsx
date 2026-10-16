@@ -179,6 +179,22 @@ function synthDrone(ac, freq, type) {
   };
 }
 
+
+// Master bus: every sound goes through a limiter so loud accents and big
+// chords can't clip. Chrome's compressor adds ~+1.7 dB make-up gain; the
+// trim cancels it, so anything below the threshold plays unchanged.
+function masterOut(ac) {
+  if (!ac.__master) {
+    const lim = ac.createDynamicsCompressor();
+    lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20;
+    lim.attack.value = 0.002; lim.release.value = 0.15;
+    const trim = ac.createGain(); trim.gain.value = 0.82;
+    lim.connect(trim); trim.connect(ac.destination);
+    ac.__master = lim;
+  }
+  return ac.__master;
+}
+
 function synthKick(ac, vol, an) {
   const osc = ac.createOscillator(), g = ac.createGain();
   const now = ac.currentTime;
@@ -187,7 +203,7 @@ function synthKick(ac, vol, an) {
   osc.frequency.exponentialRampToValueAtTime(40, now + 0.08);
   g.gain.setValueAtTime(0.8 * vol, now);
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-  osc.connect(g); g.connect(ac.destination); if (an) g.connect(an);
+  osc.connect(g); g.connect(masterOut(ac)); if (an) g.connect(an);
   osc.start(now); osc.stop(now + 0.25);
   setTimeout(() => { try { osc.disconnect(); g.disconnect(); } catch {} }, 800);
 }
@@ -201,7 +217,7 @@ function synthSnare(ac, vol, an) {
   const g = ac.createGain(); const now = ac.currentTime;
   g.gain.setValueAtTime(0.35 * vol, now);
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-  src.connect(filt); filt.connect(g); g.connect(ac.destination); if (an) g.connect(an);
+  src.connect(filt); filt.connect(g); g.connect(masterOut(ac)); if (an) g.connect(an);
   src.start(now); src.stop(now + 0.12);
   setTimeout(() => { try { src.disconnect(); filt.disconnect(); g.disconnect(); } catch {} }, 700);
 }
@@ -215,7 +231,7 @@ function synthHat(ac, vol, an) {
   const g = ac.createGain(); const now = ac.currentTime;
   g.gain.setValueAtTime(0.12 * vol, now);
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-  src.connect(filt); filt.connect(g); g.connect(ac.destination); if (an) g.connect(an);
+  src.connect(filt); filt.connect(g); g.connect(masterOut(ac)); if (an) g.connect(an);
   src.start(now); src.stop(now + 0.05);
   setTimeout(() => { try { src.disconnect(); filt.disconnect(); g.disconnect(); } catch {} }, 600);
 }
@@ -290,7 +306,7 @@ const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, sine: 1.
 function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend, analyserSend) {
   vel *= SOUND_GAIN[instrument || timbre] ?? 1;
   // reverbSend / delaySend / analyserSend: AudioNode or null
-  const dest = ac.destination;
+  const dest = masterOut(ac);
   const nodes = []; // track all created nodes for post-note cleanup
   const mkG = () => { const n = ac.createGain(); nodes.push(n); return n; };
   const mkO = (type) => { const n = ac.createOscillator(); n.type = type; nodes.push(n); return n; };
@@ -1443,7 +1459,7 @@ export default function Chloe() {
     convolver.buffer = makeImpulse(ac, 2.8, 3.0);
     const wetGain = ac.createGain();
     wetGain.gain.value = stRef.current.reverbAmt;
-    convolver.connect(wetGain); wetGain.connect(ac.destination);
+    convolver.connect(wetGain); wetGain.connect(masterOut(ac));
     reverbRef.current = { convolver, wetGain, ac };
     return reverbRef.current;
   }, []);
@@ -1464,7 +1480,7 @@ export default function Chloe() {
     delayNode.connect(feedbackGain);
     feedbackGain.connect(delayNode);
     delayNode.connect(wetGain);
-    wetGain.connect(ac.destination);
+    wetGain.connect(masterOut(ac));
     delayRef.current = { delayNode, feedbackGain, wetGain, ac };
     return delayRef.current;
   }, []);
@@ -1517,7 +1533,7 @@ export default function Chloe() {
     volGain.gain.linearRampToValueAtTime(droneVol, ac.currentTime + 0.08);
     droneGainRef.current = volGain;
     voice.node.connect(f); f.connect(volGain);
-    volGain.connect(ac.destination); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node);
+    volGain.connect(masterOut(ac)); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node);
     return () => {
       const now = ac.currentTime;
       volGain.gain.cancelScheduledValues(now);
