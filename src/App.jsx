@@ -1111,6 +1111,7 @@ export default function Chloe() {
         autoOff:    p.get("al") ?? "",
         blend:      p.get("bl") !== "0",
         tempoGlide: p.get("tg") !== "0",
+        soundBlend: p.get("sb") !== "0",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1159,6 +1160,7 @@ export default function Chloe() {
   const [blend,      setBlend]      = useState(_u.blend ?? true);
   // Tempo glide: BPM changes ease over ~4 s per doubling/halving instead of jumping
   const [tempoGlide, setTempoGlide] = useState(_u.tempoGlide ?? true);
+  const [soundBlend, setSoundBlend] = useState(_u.soundBlend ?? true);
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
@@ -1418,8 +1420,8 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1637,6 +1639,9 @@ export default function Chloe() {
     // space (equal ratios feel like equal steps), 4 s per octave of change,
     // 1-10 s, smoothstep-shaped. A new target mid-glide starts from where it is.
     const tg = { cur: null, from: 0, to: 0, t0: 0, dur: 0 };
+    // Sound crossfade: while blending, each note plays on both the old and new sound
+    const SB_DUR = 4000;
+    const sb = { from: null, to: null, t0: 0 };
     const playBpm = () => {
       const { bpm: target, tempoGlide: on } = stRef.current;
       const now = performance.now();
@@ -1692,7 +1697,17 @@ export default function Chloe() {
       const an = getOrCreateAnalyser(ac);
       const freq = ar * 2 ** ((60 + OFFS[ri] + semi - 69) / 12);
       const beatDur = (dur * 60 / b / 2) * stRef.current.sustainMult;
-      synthNote(ac, freq, vel * nv, inst, t, beatDur, rev.convolver, del.delayNode, an.node);
+      const snd = { inst, t };
+      const same = (a, b) => a && a.inst === b.inst && (a.inst || a.t === b.t);
+      if (!same(sb.to, snd)) {
+        sb.from = stRef.current.soundBlend && sb.to ? sb.to : null;
+        sb.to = snd; sb.t0 = Date.now();
+      }
+      const x = sb.from ? Math.min(1, (Date.now() - sb.t0) / SB_DUR) : 1;
+      if (x >= 1) sb.from = null;
+      // Equal-power crossfade so the level holds steady through the swap
+      if (sb.from) synthNote(ac, freq, vel * nv * Math.cos(x * Math.PI / 2), sb.from.inst, sb.from.t, beatDur, rev.convolver, del.delayNode, an.node);
+      synthNote(ac, freq, vel * nv * (sb.from ? Math.sin(x * Math.PI / 2) : 1), inst, t, beatDur, rev.convolver, del.delayNode, an.node);
       noteCountRef.current++;
       setPlaying(((semi % 12) + 12) % 12);  // grouped runs can dip below the root
     };
@@ -2534,12 +2549,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (grouping)    p.set("g",  grouping);
     if (!blend)      p.set("bl", "0");
     if (!tempoGlide) p.set("tg", "0");
+    if (!soundBlend) p.set("sb", "0");
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !autoLocks[k]);
     if (autoOff.length) p.set("al", autoOff.join(","));
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, blend, tempoGlide, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, blend, tempoGlide, soundBlend, autoLocks, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -3622,6 +3638,22 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     borderRadius: 3, padding: "3px 8px",
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
                     fontWeight: tempoGlide === o.v ? 600 : 400,
+                  }}>{o.l}</button>
+                ))}
+              </div>
+            </div>
+            {/* Sound change — switch instrument at once, or crossfade */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="How the sound moves when the instrument or wave changes (Auto or a click). Cut = switch at once. Blend = crossfade over about 4 seconds; each note plays on both sounds, the old one fading out as the new one fades in." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SOUND CHANGE</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {[{ l: "cut", v: false }, { l: "blend", v: true }].map(o => (
+                  <button key={o.l} onClick={() => setSoundBlend(o.v)} style={{
+                    background: soundBlend === o.v ? K.a : K.bg3,
+                    color: soundBlend === o.v ? "#000" : K.txt,
+                    border: `1px solid ${soundBlend === o.v ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 8px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: soundBlend === o.v ? 600 : 400,
                   }}>{o.l}</button>
                 ))}
               </div>
