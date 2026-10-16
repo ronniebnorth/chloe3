@@ -326,6 +326,19 @@ function makeHall(ac, rt60 = 6, pre = 0.05) {
   return buf;
 }
 
+// Dissonance of a pitch set: average clash over every pair of notes
+// (half step / major 7th 1, tritone 0.6, whole step / minor 7th 0.25).
+// Across Chloe's families: major 0.18, Phrygian Dom. 0.24, octatonic 0.26,
+// outside-scale median 0.30. Mapped 0.20 → 0 (calm) .. 0.33 → 1 (urgent).
+const CLASH = { 1: 1, 11: 1, 6: 0.6, 2: 0.25, 10: 0.25 };
+const tensionOf = (semis) => {
+  const pcs = [...new Set(semis.map(x => ((x % 12) + 12) % 12))];
+  let sum = 0, n = 0;
+  for (let i = 0; i < pcs.length; i++)
+    for (let j = i + 1; j < pcs.length; j++) { sum += CLASH[(pcs[j] - pcs[i] + 12) % 12] || 0; n++; }
+  return n ? Math.min(1, Math.max(0, (sum / n - 0.2) / 0.13)) : 0;
+};
+
 // Tunings, as ratios above the scale root for each semitone. Equal = 2^(n/12).
 // just: 5-limit (Zarlino's pure 5/4 thirds). pyth: Pythagorean, built only from
 // stacked 3/2 fifths, so 5ths are pure but 3rds come out sharp (81/64).
@@ -1818,13 +1831,22 @@ export default function Chloe() {
     // 4ths/5ths in scale steps with a pull home. Uses the notes the line is
     // playing (blend-aware) and the current tuning.
     let orchT = null, orchDeg = 0, lastBase = null, orchKey = null, rollIn = false;
+    // Energy 0 (calm) .. 1 (urgent), driven by how dissonant the sounding notes
+    // are, plus a push while a blend is morphing between scales. Rises fast,
+    // settles slowly; when it falls back after a peak the orchestra resolves home.
+    let energy = 0, peakE = 0;
+    const updateEnergy = (base) => {
+      const target = Math.min(1, tensionOf(base) * 0.9 + (mo.steps.length ? 0.4 : 0));
+      energy += (target - energy) * (target > energy ? 0.25 : 0.04);
+      peakE = Math.max(peakE, energy);
+    };
     const orchTick = () => {
       let hold = 4;
       try {
         const st = stRef.current;
         const b = tg.cur ?? st.bpm;
         const barSec = 240 / b;
-        hold = Math.max(1, Math.min(4, Math.round(5 / barSec))) * barSec;
+        hold = Math.max(1, Math.min(4, Math.round((5 - 2.5 * energy) / barSec))) * barSec;
         if (st.symphonic && st.sel && lastBase && lastBase.length >= 3) {
           const ac = getCtx();
           const o = getOrchestra(ac);
@@ -1833,6 +1855,9 @@ export default function Chloe() {
           let r = Math.random() * moves.reduce((a, m) => a + m[1], 0), next = orchDeg;
           for (const [d, w] of moves) { if ((r -= w) < 0) { next = d === 0 ? 0 : (orchDeg + d) % L; break; } }
           if (next === orchDeg) next = orchDeg === 0 ? 4 % L : 0;
+          // Tension has drained after a peak: resolve to the home chord
+          const resolve = peakE > 0.6 && energy < 0.35;
+          if (resolve) { next = 0; peakE = 0; }
           orchDeg = next;
           const semiOf = k => lastBase[((k % L) + L) % L] + 12 * Math.floor(k / L);  // k may go below 0 (downward runs)
           const rootMidi = 60 + OFFS[st.rootIdx];
@@ -1846,7 +1871,7 @@ export default function Chloe() {
           const peakAt = t0 + hold * (0.35 + Math.random() * 0.35);
           g.cancelScheduledValues(t0);
           g.setValueAtTime(Math.max(0.3, g.value), t0);
-          g.linearRampToValueAtTime(0.75 + Math.random() * 0.45, peakAt);
+          g.linearRampToValueAtTime(resolve ? 1.35 : 0.75 + Math.random() * 0.45, peakAt);
           g.linearRampToValueAtTime(0.32 + Math.random() * 0.1, t0 + hold);
           const BOW = 2.2, end = t0 + hold + 0.15;
           for (let tb = t0; tb < end - 0.3; tb += BOW) {
@@ -1865,12 +1890,13 @@ export default function Chloe() {
           // 8ths up to 120 BPM, quarters above; rests on about 1 chord in 5
           const beat = 60 / b;
           const R = semiOf(orchDeg), F = semiOf(orchDeg + 4), O = R + 12;
-          if (Math.random() < 0.8) {
+          // (tension doubles the pulse and it never rests)
+          if (energy > 0.3 || Math.random() < 0.8) {
             const pat = [R, R, F, R, O, R, F, R];
-            const step = b <= 120 ? beat / 2 : beat;
+            const step = (b <= 120 ? beat / 2 : beat) / (energy > 0.5 ? 2 : 1);
             for (let i = 0, tc = t0; tc < t0 + hold - 0.02; i++, tc += step) {
               const semi = pat[i % 8] - 24;
-              o.cello.start({ note: rootMidi + semi, velocity: i % 4 === 0 ? 80 : 58, time: tc, duration: step * 0.85, detune: tune(semi) });
+              o.cello.start({ note: rootMidi + semi, velocity: (i % 4 === 0 ? 80 : 58) + Math.round(12 * energy), time: tc, duration: step * 0.85, detune: tune(semi) });
             }
           }
 
@@ -1884,19 +1910,20 @@ export default function Chloe() {
           while (tn < 38) tn += 12;
           while (tn > 57) tn -= 12;
           const tTune = tune(tn - rootMidi);
-          if (boom) {
+          if (boom || resolve) {
             o.timpani.start({ note: tn, velocity: 120, time: t0, detune: tTune });
             o.taiko.start({ note: 40, velocity: 120, time: t0 });
             o.taiko.start({ note: 40, velocity: 100, time: t0 + beat * 1.5 });
-          } else if (rollIn || Math.random() < 0.55) {
+          } else if (rollIn || Math.random() < 0.55 + 0.35 * energy) {
             o.timpani.start({ note: tn, velocity: rollIn ? 112 : 92, time: t0, detune: tTune });
-            if (Math.random() < 0.3) o.taiko.start({ note: 40, velocity: 92, time: t0 });
+            if (Math.random() < 0.3 + 0.4 * energy) o.taiko.start({ note: 40, velocity: 92, time: t0 });
           }
           // Licks: on ~45% of chords a violin or flute plays a fast scale run
           // (5-9 notes) landing on a chord tone an octave or two above the
           // root, or a quick turn around one. Placed to lead into the next
           // chord or mid-chord. 16ths, kept between 60 and 120 ms a note.
-          if (Math.random() < 0.45) {
+          const licks = Math.random() < 0.45 + 0.45 * energy ? (energy > 0.6 ? 2 : 1) : 0;
+          for (let li = 0; li < licks; li++) {
             const inst = Math.random() < 0.6 ? o.violin : o.flute;
             const sp = Math.min(0.12, Math.max(0.06, beat / 4));
             const land = orchDeg + [0, 2, 4][Math.floor(Math.random() * 3)] + L * (1 + Math.floor(Math.random() * 2));
@@ -1914,7 +1941,7 @@ export default function Chloe() {
             });
           }
 
-          rollIn = !boom && Math.random() < 0.3;
+          rollIn = !boom && Math.random() < 0.3 + 0.4 * energy;
           if (rollIn) {
             // Roll over the last bar (or half the chord), crescendo into the next
             const len = Math.min(240 / b, hold / 2), rs = t0 + hold - len;
@@ -2056,6 +2083,7 @@ export default function Chloe() {
       if (!s) return;
       const baseNotes = blendedNotes(s.pattern, ri, bl);
       lastBase = baseNotes;
+      updateEnergy(baseNotes);
       const notes = [];
       for (let o = 0; o < aOct; o++) baseNotes.forEach(n => notes.push(n + o * 12));
       melPrevRef.current = Math.min(melPrevRef.current, notes.length - 1);
@@ -2171,9 +2199,12 @@ export default function Chloe() {
           }
         } else {
           const semi = pickMelNote(notes);
-          const durUnits = RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
-          const vel = 0.12 + Math.random() * 0.16;
-          if (Math.random() < 0.08) {
+          // With the orchestra on, tension breaks the line into fast notes:
+          // 16ths when urgent, 8ths when restless, the usual rhythms when calm
+          const urg = stRef.current.symphonic ? energy : 0;
+          const durUnits = urg > 0.55 ? 0.5 : urg > 0.35 ? 1 : RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
+          const vel = 0.12 + Math.random() * 0.16 + 0.06 * urg;
+          if (Math.random() < 0.08 * (1 - urg)) {
             setPlaying(null);
             melTimeout = setTimeout(melTick, eighth * durUnits);
           } else {
