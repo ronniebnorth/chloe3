@@ -2317,27 +2317,34 @@ export default function Chloe() {
     // Beat: look-ahead scheduler on the audio clock, one 16th per step at the
     // tempo actually playing (half-time above 160 BPM). Fill on the last beat of
     // every 4th bar, crash every 8 bars. Tension doubles the hats and adds kicks.
-    let beatT = null, beatNext = 0, beatStep = 0, beatBar = 0;
+    let beatT = null, beatNext = 0, beatStep = 0, beatBar = 0, beatStyleNow = null;
     const beatLoop = () => {
       try {
         const st = stRef.current;
-        if (st.beatStyle === "off") { beatNext = 0; }
+        if (st.beatStyle === "off") { beatNext = 0; beatStyleNow = "off"; }
         else {
           const ac = getCtx();
           const { kit, snareKit } = getKit(ac);
           if (beatNext < ac.currentTime) { beatNext = ac.currentTime + 0.05; beatStep = 0; beatBar = 0; }
+          // A new style starts on a fresh downbeat with a crash, right away
+          if (st.beatStyle !== beatStyleNow) {
+            if (beatStyleNow !== null) { beatNext = ac.currentTime + 0.03; beatStep = 0; beatBar = 0; }
+            beatStyleNow = st.beatStyle;
+          }
           while (beatNext < ac.currentTime + 0.12) {
             const b0 = tg.cur ?? st.bpm, bb = b0 > 160 ? b0 / 2 : b0;
             const P = BREAKS[st.beatStyle] || BREAKS.break, i = beatStep, t = beatNext;
             const fill = beatBar % 4 === 3 && i >= 12;
             const hit = (note, v, k2 = kit) => v && k2.start({ note, velocity: Math.min(127, Math.round(v)), time: t });
-            hit("kick", P.k[i] || (energy > 0.7 && (i === 8 || i === 14) ? 96 : 0));
+            // Tension thickens each style without turning it into another one:
+            // an extra kick on the last 16th, quiet ghost hats on the off-16ths
+            hit("kick", P.k[i] || (energy > 0.7 && i === 14 && st.beatStyle !== "heavy" ? 90 : 0));
             if (fill) { hit("snare-h", 50 + (i - 12) * 22); }
             else {
               if (P.s[i]) { hit("snare-m", P.s[i]); hit("snare-m", P.s[i] * 0.8, snareKit); }
               hit("snare-l", P.g[i]);
             }
-            const hv = P.h[i] || (energy > 0.5 && !P.o[i] ? 40 : 0);
+            const hv = P.h[i] || (energy > 0.5 && i % 2 && !P.o[i] ? 30 : 0);
             hit("hhclosed-short", hv);
             hit("hhopen", P.o[i]);
             if (i === 0 && beatBar % 8 === 0) hit("crash", 90);
