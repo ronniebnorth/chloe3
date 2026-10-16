@@ -344,10 +344,10 @@ const tunedRatio = (semi, tuning) => {
 // (measured K-weighted, eighth-note runs C3-C5, levelled to -28 LUFS).
 const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
 
-function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend, analyserSend) {
+function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend, analyserSend, out) {
   vel *= SOUND_GAIN[instrument || timbre] ?? 1;
   // reverbSend / delaySend / analyserSend: AudioNode or null
-  const dest = masterOut(ac);
+  const dest = out || masterOut(ac);
   const nodes = []; // track all created nodes for post-note cleanup
   const mkG = () => { const n = ac.createGain(); nodes.push(n); return n; };
   const mkO = (type) => { const n = ac.createOscillator(); n.type = type; nodes.push(n); return n; };
@@ -1545,7 +1545,13 @@ export default function Chloe() {
     const flute = Soundfont(ac, { instrument: "flute", destination: bus });
     setOrchLoading(true);
     Promise.all([strings.ready, bass.ready, cello.ready, timpani.ready, taiko.ready, violin.ready, flute.ready]).finally(() => setOrchLoading(false));
-    orchRef.current = { ac, bus, wet, swell, strings, bass, cello, timpani, taiko, violin, flute, all: [strings, bass, cello, timpani, taiko, violin, flute] };
+    // Lead bus: with the orchestra on, Chloe's own line is softened (low-pass,
+    // a little quieter) and sent into the same cathedral so it sits in the room
+    const lead = ac.createGain(); lead.gain.value = 0.8;
+    const leadLp = ac.createBiquadFilter(); leadLp.type = "lowpass"; leadLp.frequency.value = 1600; leadLp.Q.value = 0.5;
+    const leadSend = ac.createGain(); leadSend.gain.value = 0.5;
+    lead.connect(leadLp); leadLp.connect(masterOut(ac)); leadLp.connect(leadSend); leadSend.connect(hall);
+    orchRef.current = { ac, bus, wet, swell, lead, strings, bass, cello, timpani, taiko, violin, flute, all: [strings, bass, cello, timpani, taiko, violin, flute] };
     return orchRef.current;
   }, [getOrCreateReverb]);
 
@@ -1938,8 +1944,10 @@ export default function Chloe() {
       const x = sb.from ? Math.min(1, (Date.now() - sb.t0) / SB_DUR) : 1;
       if (x >= 1) sb.from = null;
       // Equal-power crossfade so the level holds steady through the swap
-      if (sb.from) synthNote(ac, freq, vel * nv * Math.cos(x * Math.PI / 2), sb.from.inst, sb.from.t, beatDur, rev.convolver, del.delayNode, an.node);
-      synthNote(ac, freq, vel * nv * (sb.from ? Math.sin(x * Math.PI / 2) : 1), inst, t, beatDur, rev.convolver, del.delayNode, an.node);
+      const out = stRef.current.symphonic && orchRef.current && orchRef.current.ac === ac ? orchRef.current.lead : undefined;
+      const revSend = out ? null : rev.convolver;   // the lead bus has its own cathedral send
+      if (sb.from) synthNote(ac, freq, vel * nv * Math.cos(x * Math.PI / 2), sb.from.inst, sb.from.t, beatDur, revSend, del.delayNode, an.node, out);
+      synthNote(ac, freq, vel * nv * (sb.from ? Math.sin(x * Math.PI / 2) : 1), inst, t, beatDur, revSend, del.delayNode, an.node, out);
       noteCountRef.current++;
       setPlaying(((semi % 12) + 12) % 12);  // grouped runs can dip below the root
     };
