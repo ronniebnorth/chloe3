@@ -563,7 +563,7 @@ const MIX_PATTERNS = [
   [5, 4, 5, 5, 4, 5, 4], [5, 4, 5, 5, 4, 4, 5],
 ];
 // Settings Auto may change; unticked ones in the ⚙ panel are left alone
-const AUTO_LOCKS_DEFAULT = { sound:true, rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
+const AUTO_LOCKS_DEFAULT = { sound:true, rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true, tuning:false };
 const isOutsideId = (id) => !!id && id.startsWith("x-");
 
 // Longest run of consecutive semitones (circular) — 3..8 for outside scales
@@ -1144,6 +1144,7 @@ export default function Chloe() {
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         melMode:    p.get("m") === "1",
         autoOff:    p.get("al") ?? "",
+        autoOn:     p.get("an") ?? "",
         blend:      p.get("bl") !== "0",
         tempoGlide: p.get("tg") !== "0",
         soundBlend: p.get("sb") !== "0",
@@ -1407,7 +1408,8 @@ export default function Chloe() {
   // Settings unticked in the Auto ⚙ panel travel in shared links as al=bpm,rootNote,...
   const [autoLocks, setAutoLocks] = useState(() => {
     const off = (_u.autoOff || "").split(",").filter(k => k in AUTO_LOCKS_DEFAULT);
-    return { ...AUTO_LOCKS_DEFAULT, ...Object.fromEntries(off.map(k => [k, false])) };
+    const on  = (_u.autoOn  || "").split(",").filter(k => k in AUTO_LOCKS_DEFAULT);
+    return { ...AUTO_LOCKS_DEFAULT, ...Object.fromEntries(off.map(k => [k, false])), ...Object.fromEntries(on.map(k => [k, true])) };
   });
   const autoLocksRef = useRef(AUTO_LOCKS_DEFAULT);
   useEffect(() => { autoLocksRef.current = autoLocks; }, [autoLocks]);
@@ -2323,6 +2325,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         const s = ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth"][Math.floor(Math.random() * 10)];
         if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); }
       }
+      // Tuning changes on ~30% of picks; equal stays the most common
+      if (_al.tuning && Math.random() < 0.3) setTuning(["equal", "equal", "just", "just", "pyth"][Math.floor(Math.random() * 5)]);
       if (_al.bpm)       setBpm(bpm);
       if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
       if (_al.delay)     setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
@@ -2588,8 +2592,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (!tempoGlide) p.set("tg", "0");
     if (!soundBlend) p.set("sb", "0");
     if (tuning !== "equal") p.set("tu", tuning);
-    const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !autoLocks[k]);
+    // Only differences from the defaults travel: al = unticked, an = ticked-but-off-by-default
+    const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => AUTO_LOCKS_DEFAULT[k] && !autoLocks[k]);
+    const autoOn  = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !AUTO_LOCKS_DEFAULT[k] && autoLocks[k]);
     if (autoOff.length) p.set("al", autoOff.join(","));
+    if (autoOn.length)  p.set("an", autoOn.join(","));
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
@@ -3962,6 +3969,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             {[
               { label: "PLAYBACK", items: [
                 { key: "sound",     label: "Instrument / Wave" },
+                { key: "tuning",    label: "Tuning" },
                 { key: "bpm",       label: "BPM" },
                 { key: "reverb",    label: "Reverb" },
                 { key: "delay",     label: "Delay" },
