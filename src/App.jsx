@@ -283,7 +283,12 @@ function makeImpulse(ac, duration, decay) {
   return buf;
 }
 
+// Per-sound gain so every instrument/wave plays at about the same loudness
+// (measured K-weighted, eighth-note runs C3-C5, levelled to -28 LUFS).
+const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
+
 function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend, analyserSend) {
+  vel *= SOUND_GAIN[instrument || timbre] ?? 1;
   // reverbSend / delaySend / analyserSend: AudioNode or null
   const dest = ac.destination;
   const nodes = []; // track all created nodes for post-note cleanup
