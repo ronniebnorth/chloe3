@@ -1557,7 +1557,19 @@ export default function Chloe() {
     const violin = Soundfont(ac, { instrument: "violin", destination: bus });
     const flute = Soundfont(ac, { instrument: "flute", destination: bus });
     setOrchLoading(true);
-    Promise.all([strings.ready, bass.ready, cello.ready, timpani.ready, taiko.ready, violin.ready, flute.ready]).finally(() => setOrchLoading(false));
+    Promise.all([strings.ready, bass.ready, cello.ready, timpani.ready, taiko.ready, violin.ready, flute.ready]).finally(() => {
+      setOrchLoading(false);
+      // March section (brass, tuba, orchestra hit) loads afterwards in the background
+      const o = orchRef.current;
+      if (!o || o.ac !== ac || o.brass) return;
+      const brass = Soundfont(ac, { instrument: "brass_section", destination: bus });
+      const tuba = Soundfont(ac, { instrument: "tuba", destination: bus });
+      const hit = Soundfont(ac, { instrument: "orchestra_hit", destination: drums });
+      Promise.all([brass.ready, tuba.ready, hit.ready]).then(() => {
+        Object.assign(o, { brass, tuba, hit });
+        o.all.push(brass, tuba, hit);
+      });
+    });
     // Lead bus: with the orchestra on, Chloe's own line is softened (low-pass,
     // a little quieter) and sent into the same cathedral so it sits in the room
     const lead = ac.createGain(); lead.gain.value = 0.8;
@@ -1834,7 +1846,46 @@ export default function Chloe() {
     // Energy 0 (calm) .. 1 (urgent), driven by how dissonant the sounding notes
     // are, plus a push while a blend is morphing between scales. Rises fast,
     // settles slowly; when it falls back after a peak the orchestra resolves home.
-    let energy = 0, peakE = 0;
+    let energy = 0, peakE = 0, lastMarch = -1e9;
+
+    // March: 2-4 bars of dark martial orchestra (in the spirit of a film-score
+    // villain march, not any actual tune). Low strings + tuba chug 8ths on the
+    // root, brass stabs the scale's home triad with a pickup into each bar,
+    // orchestra hits and drums on the downbeats, and a final crunch stab that
+    // adds the note a half step above the root when the scale has one.
+    const playMarch = (o, ac, st, b, semiOf, rootMidi, tune) => {
+      const beat = 60 / b, barSec = 4 * beat;
+      const bars = 2 + Math.floor(Math.random() * 3);
+      const t0 = ac.currentTime + 0.02, end = t0 + bars * barSec;
+      const R = semiOf(0), T3 = semiOf(2), F5 = semiOf(4);
+      const chord = [R - 12, T3 - 12, F5 - 12, R];
+      const crunch = lastBase.includes(1) ? [R - 12, 1 - 12, F5 - 12, 1] : chord;
+      const lowN = n => (rootMidi + n - 12 >= 28 ? n - 12 : n);
+      o.swell.gain.cancelScheduledValues(t0);
+      o.swell.gain.setValueAtTime(o.swell.gain.value, t0);
+      o.swell.gain.linearRampToValueAtTime(0.25, t0 + 0.3);           // strings step back
+      for (let tc = t0, i = 0; tc < end - 0.02; tc += beat / 2, i++) { // chug
+        const acc = i % 4 === 0 ? 100 : 72;
+        const sb = lowN(R - 24);
+        o.cello.start({ note: rootMidi + R - 24, velocity: acc, time: tc, duration: beat * 0.4, detune: tune(R - 24) });
+        o.tuba.start({ note: rootMidi + sb, velocity: acc - 8, time: tc, duration: beat * 0.42, detune: tune(sb) });
+      }
+      for (let bar = 0; bar < bars; bar++) {
+        const tb = t0 + bar * barSec, last = bar === bars - 1;
+        const stab = (notes, t, dur, vel) => notes.forEach(n => o.brass.start({ note: rootMidi + n, velocity: vel, time: t, duration: dur, detune: tune(n) }));
+        stab(chord, tb, beat * 1.4, 110);                                 // beat 1, long
+        stab(chord, tb + 2 * beat, beat * 0.5, 100);                      // beat 3, short
+        if (!last) stab(chord, tb + 3.5 * beat, beat * 0.4, 96);          // pickup into next bar
+        else stab(crunch, tb + 3 * beat, beat * 1.6, 120);                // final crunch
+        o.timpani.start({ note: Math.min(57, Math.max(38, rootMidi + R - 24)), velocity: 110, time: tb, detune: tune(R - 24) });
+        o.timpani.start({ note: Math.min(57, Math.max(38, rootMidi + R - 24)), velocity: 95, time: tb + 2 * beat, detune: tune(R - 24) });
+        o.taiko.start({ note: 40, velocity: 115, time: tb });
+      }
+      o.hit.start({ note: rootMidi + R - 12, velocity: 115, time: t0, detune: tune(R - 12) });
+      o.hit.start({ note: rootMidi + R - 12, velocity: 120, time: t0 + (bars - 1) * barSec + 3 * beat, detune: tune(R - 12) });
+      o.swell.gain.linearRampToValueAtTime(0.4, end);
+      return end - t0;
+    };
     const updateEnergy = (base) => {
       const target = Math.min(1, tensionOf(base) * 0.9 + (mo.steps.length ? 0.4 : 0));
       energy += (target - energy) * (target > energy ? 0.25 : 0.04);
@@ -1851,6 +1902,8 @@ export default function Chloe() {
           const ac = getCtx();
           const o = getOrchestra(ac);
           const L = lastBase.length;
+          const marchNow = o.brass && ac.currentTime - lastMarch > 45 &&
+            ((energy > 0.6 && Math.random() < 0.35) || Math.random() < 0.07);
           const moves = [[0, 1], [3, 3], [4, 3], [5, 1.5], [1, 1], [L - 1, 1]];
           let r = Math.random() * moves.reduce((a, m) => a + m[1], 0), next = orchDeg;
           for (const [d, w] of moves) { if ((r -= w) < 0) { next = d === 0 ? 0 : (orchDeg + d) % L; break; } }
@@ -1862,6 +1915,14 @@ export default function Chloe() {
           const semiOf = k => lastBase[((k % L) + L) % L] + 12 * Math.floor(k / L);  // k may go below 0 (downward runs)
           const rootMidi = 60 + OFFS[st.rootIdx];
           const tune = semi => 1200 * Math.log2(tunedRatio(semi, st.tuning) * st.aRef / 440) - 100 * semi;
+          if (marchNow) {
+            lastMarch = ac.currentTime;
+            orchDeg = 0;
+            orchKey = st.sel.pattern + "@" + st.rootIdx;
+            hold = playMarch(o, ac, st, b, semiOf, rootMidi, tune);
+            orchT = setTimeout(orchTick, hold * 1000);
+            return;
+          }
           const t0 = ac.currentTime + 0.02;
           // The string samples are 3.16 s and stop dead, so long chords are
           // re-bowed: overlapping bows every 2.2 s, each fading as the next swells
