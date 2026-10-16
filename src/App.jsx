@@ -300,11 +300,11 @@ function makeImpulse(ac, duration, decay) {
   return buf;
 }
 
-// Cathedral-style impulse for the orchestra: 40 ms pre-delay, a few early
+// Cathedral-style impulse for the orchestra: 50 ms pre-delay, a few early
 // reflections, then a tail falling 60 dB over `rt60` s that darkens as it
 // decays (one-pole low-pass closing over time). Unit energy per channel, so
 // the wet level is set by the gain after it.
-function makeHall(ac, rt60 = 4.5, pre = 0.04) {
+function makeHall(ac, rt60 = 6, pre = 0.05) {
   const sr = ac.sampleRate, len = Math.floor(sr * (pre + rt60 * 1.2));
   const buf = ac.createBuffer(2, len, sr);
   for (let c = 0; c < 2; c++) {
@@ -1525,13 +1525,14 @@ export default function Chloe() {
     if (orchRef.current && orchRef.current.ac === ac) return orchRef.current;
     // Dry signal low, most of the sound from its own cathedral reverb
     const bus = ac.createGain(); bus.gain.value = 0.5;
-    const dry = ac.createGain(); dry.gain.value = 0.35;
+    const dry = ac.createGain(); dry.gain.value = 0.3;
     const hall = ac.createConvolver(); hall.buffer = makeHall(ac);
-    const wet = ac.createGain(); wet.gain.value = 1.1 * stRef.current.reverbAmt;
+    const wet = ac.createGain(); wet.gain.value = 1.4 * stRef.current.reverbAmt;
     bus.connect(dry); dry.connect(masterOut(ac));
     bus.connect(hall); hall.connect(wet); wet.connect(masterOut(ac));
     const strings = Soundfont(ac, { instrument: "string_ensemble_1", destination: bus });
-    const bass = Soundfont(ac, { instrument: "contrabass", destination: bus });
+    // Bass has loop points (goldst.dev), so it sustains; the strings have none
+    const bass = Soundfont(ac, { instrument: "contrabass", destination: bus, loadLoopData: true });
     setOrchLoading(true);
     Promise.all([strings.ready, bass.ready]).finally(() => setOrchLoading(false));
     orchRef.current = { ac, bus, wet, strings, bass };
@@ -1548,7 +1549,7 @@ export default function Chloe() {
   // Keep reverb wet gain in sync with reverbAmt slider
   useEffect(() => {
     if (reverbRef.current) reverbRef.current.wetGain.gain.value = reverbAmt;
-    if (orchRef.current) orchRef.current.wet.gain.value = 1.1 * reverbAmt;
+    if (orchRef.current) orchRef.current.wet.gain.value = 1.4 * reverbAmt;
   }, [reverbAmt]);
 
   const getOrCreateDelay = useCallback((ac) => {
@@ -1821,12 +1822,18 @@ export default function Chloe() {
           const rootMidi = 60 + OFFS[st.rootIdx];
           const tune = semi => 1200 * Math.log2(tunedRatio(semi, st.tuning) * st.aRef / 440) - 100 * semi;
           const t0 = ac.currentTime + 0.02;
-          [0, 2, 4].forEach(k => {
-            const semi = semiOf(orchDeg + k) - 12;
-            o.strings.start({ note: rootMidi + semi, velocity: 70, time: t0, duration: hold + 0.15, detune: tune(semi) });
-          });
+          // The string samples are 3.16 s and stop dead, so long chords are
+          // re-bowed: overlapping bows every 2.2 s, each fading as the next swells
+          const BOW = 2.2, end = t0 + hold + 0.15;
+          for (let tb = t0; tb < end - 0.3; tb += BOW) {
+            const dur = Math.min(2.6, end - tb);
+            [0, 2, 4].forEach(k => {
+              const semi = semiOf(orchDeg + k) - 12;
+              o.strings.start({ note: rootMidi + semi, velocity: tb === t0 ? 70 : 62, time: tb, duration: dur, ampRelease: 0.5, detune: tune(semi) });
+            });
+          }
           const bassSemi = semiOf(orchDeg) - 24;
-          o.bass.start({ note: rootMidi + bassSemi, velocity: 85, time: t0, duration: hold * 0.95, detune: tune(bassSemi) });
+          o.bass.start({ note: rootMidi + bassSemi, velocity: 85, time: t0, duration: hold * 0.95, loop: true, detune: tune(bassSemi) });
         }
       } catch (e) { console.error("orchestra:", e); }
       orchT = setTimeout(orchTick, hold * 1000);
