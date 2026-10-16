@@ -528,7 +528,7 @@ const MIX_PATTERNS = [
   [5, 4, 5, 5, 4, 5, 4], [5, 4, 5, 5, 4, 4, 5],
 ];
 // Settings Auto may change; unticked ones in the ⚙ panel are left alone
-const AUTO_LOCKS_DEFAULT = { rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
+const AUTO_LOCKS_DEFAULT = { sound:true, rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true };
 const isOutsideId = (id) => !!id && id.startsWith("x-");
 
 // Longest run of consecutive semitones (circular) — 3..8 for outside scales
@@ -2266,6 +2266,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // Off ~27% of the time; 5s, 6s and bar-filling mixes favoured
       if (_al.grouping)  setGrouping([0, 0, 0, 3, 5, 5, 6, 6, 7, "mix", "mix"][Math.floor(Math.random() * 11)]);
       if (_al.chordVoice) setChordVoice(chordVoice);
+      // Sound changes on ~40% of picks so it doesn't jump every time; instruments favoured over raw waves
+      if (_al.sound && Math.random() < 0.4) {
+        const s = ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth"][Math.floor(Math.random() * 10)];
+        if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); }
+      }
       if (_al.bpm)       setBpm(bpm);
       if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
       if (_al.delay)     setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
@@ -3870,6 +3875,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </p>
             {[
               { label: "PLAYBACK", items: [
+                { key: "sound",     label: "Instrument / Wave" },
                 { key: "bpm",       label: "BPM" },
                 { key: "reverb",    label: "Reverb" },
                 { key: "delay",     label: "Delay" },
