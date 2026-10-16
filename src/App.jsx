@@ -300,6 +300,32 @@ function makeImpulse(ac, duration, decay) {
   return buf;
 }
 
+// Cathedral-style impulse for the orchestra: 40 ms pre-delay, a few early
+// reflections, then a tail falling 60 dB over `rt60` s that darkens as it
+// decays (one-pole low-pass closing over time). Unit energy per channel, so
+// the wet level is set by the gain after it.
+function makeHall(ac, rt60 = 4.5, pre = 0.04) {
+  const sr = ac.sampleRate, len = Math.floor(sr * (pre + rt60 * 1.2));
+  const buf = ac.createBuffer(2, len, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    let lp = 0;
+    for (let i = Math.floor(pre * sr); i < len; i++) {
+      const t = i / sr - pre;
+      const a = 0.1 + 0.85 * Math.min(1, t / rt60);   // damping closes over time
+      lp += (1 - a) * ((Math.random() * 2 - 1) - lp);
+      d[i] = lp * 10 ** (-3 * t / rt60);
+    }
+    for (let k = 0; k < 6; k++) {                        // early reflections
+      const i = Math.floor((pre + 0.008 + Math.random() * 0.07) * sr);
+      d[i] += (Math.random() < 0.5 ? -1 : 1) * (0.6 - k * 0.08);
+    }
+    let e = 0; for (let i = 0; i < len; i++) e += d[i] * d[i];
+    const g = 1 / Math.sqrt(e); for (let i = 0; i < len; i++) d[i] *= g;
+  }
+  return buf;
+}
+
 // Tunings, as ratios above the scale root for each semitone. Equal = 2^(n/12).
 // just: 5-limit (Zarlino's pure 5/4 thirds). pyth: Pythagorean, built only from
 // stacked 3/2 fifths, so 5ths are pure but 3rds come out sharp (81/64).
@@ -1497,13 +1523,18 @@ export default function Chloe() {
   // loaded once on first use. Its bus feeds the master limiter and the reverb.
   const getOrchestra = useCallback((ac) => {
     if (orchRef.current && orchRef.current.ac === ac) return orchRef.current;
+    // Dry signal low, most of the sound from its own cathedral reverb
     const bus = ac.createGain(); bus.gain.value = 0.5;
-    bus.connect(masterOut(ac)); bus.connect(getOrCreateReverb(ac).convolver);
+    const dry = ac.createGain(); dry.gain.value = 0.35;
+    const hall = ac.createConvolver(); hall.buffer = makeHall(ac);
+    const wet = ac.createGain(); wet.gain.value = 1.1 * stRef.current.reverbAmt;
+    bus.connect(dry); dry.connect(masterOut(ac));
+    bus.connect(hall); hall.connect(wet); wet.connect(masterOut(ac));
     const strings = Soundfont(ac, { instrument: "string_ensemble_1", destination: bus });
     const bass = Soundfont(ac, { instrument: "contrabass", destination: bus });
     setOrchLoading(true);
     Promise.all([strings.ready, bass.ready]).finally(() => setOrchLoading(false));
-    orchRef.current = { ac, bus, strings, bass };
+    orchRef.current = { ac, bus, wet, strings, bass };
     return orchRef.current;
   }, [getOrCreateReverb]);
 
@@ -1517,6 +1548,7 @@ export default function Chloe() {
   // Keep reverb wet gain in sync with reverbAmt slider
   useEffect(() => {
     if (reverbRef.current) reverbRef.current.wetGain.gain.value = reverbAmt;
+    if (orchRef.current) orchRef.current.wet.gain.value = 1.1 * reverbAmt;
   }, [reverbAmt]);
 
   const getOrCreateDelay = useCallback((ac) => {
