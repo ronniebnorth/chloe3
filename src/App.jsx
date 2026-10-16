@@ -1142,6 +1142,7 @@ export default function Chloe() {
         selId:      p.get("s") ?? null,   // "hep-6.1" style
         aRef:       parseInt(p.get("a") ?? "440"),
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
+        droneOn:    p.get("dr") === "1",
         melMode:    p.get("m") === "1",
         autoOff:    p.get("al") ?? "",
         autoOn:     p.get("an") ?? "",
@@ -1177,7 +1178,7 @@ export default function Chloe() {
     pendingSelTimeRef.current = Date.now();
   }, []);
   const [aRef,       setARef]       = useState(_u.aRef       ?? 440);
-  const [droneOn,    setDroneOn]    = useState(false);
+  const [droneOn,    setDroneOn]    = useState(_u.droneOn ?? false);
   const [droneOct,   setDroneOct]   = useState(_u.droneOct   ?? -24);
   const [arpOn,      setArpOn]      = useState(false);
   const [arpDir,     setArpDir]     = useState("asc"); // "asc" | "desc" | "rand"
@@ -2586,6 +2587,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sel)         p.set("s",  sel.id);
     if (aRef !== 440) p.set("a", aRef);
     if (droneOct)    p.set("do", droneOct);
+    if (droneOn)     p.set("dr", "1");
     if (melMode)     p.set("m",  "1");
     if (grouping)    p.set("g",  grouping);
     if (!blend)      p.set("bl", "0");
@@ -2600,7 +2602,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoLocks, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
