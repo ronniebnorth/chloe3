@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Soundfont } from "smplr";
+import { Soundfont, DrumMachine } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
 
 /* ═══════════════════════════════════════════════════════
@@ -337,6 +337,20 @@ const tensionOf = (semis) => {
   for (let i = 0; i < pcs.length; i++)
     for (let j = i + 1; j < pcs.length; j++) { sum += CLASH[(pcs[j] - pcs[i] + 12) % 12] || 0; n++; }
   return n ? Math.min(1, Math.max(0, (sum / n - 0.2) / 0.13)) : 0;
+};
+
+// Breakbeat patterns for the sampled LinnDrum (LM-2) kit: 16 steps per bar,
+// step → velocity. k kick, s snare, g ghost snare, h closed hat, o open hat.
+const BREAKS = {
+  // Big-beat break: kick on 1 and the "and" of 3, ghosted snares between
+  break: { k: { 0: 120, 10: 110 }, s: { 4: 115, 12: 118 }, g: { 7: 34, 9: 30, 15: 40 },
+           h: { 0: 72, 2: 48, 4: 66, 6: 48, 8: 72, 10: 48, 12: 66 }, o: { 14: 70 } },
+  // Driving: busier kick, 16th hats
+  drive: { k: { 0: 120, 3: 88, 8: 115, 10: 98 }, s: { 4: 118, 12: 118 }, g: { 14: 36 },
+           h: Object.fromEntries([...Array(16).keys()].map(i => [i, i % 2 ? 44 : 74])), o: {} },
+  // Heavy half-time: one big snare on beat 3
+  heavy: { k: { 0: 127, 6: 100, 10: 110 }, s: { 8: 127 }, g: { 13: 32 },
+           h: { 0: 64, 2: 44, 4: 60, 6: 44, 8: 64, 10: 44, 12: 60, 14: 44 }, o: {} },
 };
 
 // Tunings, as ratios above the scale root for each semitone. Equal = 2^(n/12).
@@ -1192,6 +1206,7 @@ export default function Chloe() {
         tuning:     ["just", "pyth"].includes(p.get("tu")) ? p.get("tu") : "equal",
         autoTempo:  p.get("at") === "drift" ? "drift" : "bursts",
         symphonic:  p.get("sy") === "1",
+        beatStyle:  ["break", "drive", "heavy"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1248,6 +1263,9 @@ export default function Chloe() {
   const [symphonic, setSymphonic] = useState(_u.symphonic ?? false);
   const [orchLoading, setOrchLoading] = useState(false);
   const orchRef = useRef(null);
+  // Beat: off | break | drive | heavy (sampled LinnDrum through a punch compressor)
+  const [beatStyle, setBeatStyle] = useState(_u.beatStyle ?? "off");
+  const kitRef = useRef(null);
   const tempoSnapRef = useRef(false); // next BPM change jumps instead of gliding
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
@@ -1509,8 +1527,8 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -1579,6 +1597,26 @@ export default function Chloe() {
     orchRef.current = { ac, bus, wet, swell, lead, strings, bass, cello, timpani, taiko, violin, flute, all: [strings, bass, cello, timpani, taiko, violin, flute] };
     return orchRef.current;
   }, [getOrCreateReverb]);
+
+  // Drum kit: LinnDrum samples → compressor (punch) → limiter, snare also into
+  // the orchestra's cathedral when it exists, otherwise the main reverb
+  const getKit = useCallback((ac) => {
+    if (kitRef.current && kitRef.current.ac === ac) return kitRef.current;
+    const inGain = ac.createGain(); inGain.gain.value = 0.9;
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -20; comp.ratio.value = 4; comp.knee.value = 6;
+    comp.attack.value = 0.006; comp.release.value = 0.12;
+    const vol = ac.createGain(); vol.gain.value = stRef.current.beatVol ?? 1;
+    inGain.connect(comp); comp.connect(vol); vol.connect(masterOut(ac));
+    const roomSend = ac.createGain(); roomSend.gain.value = 0.35;
+    roomSend.connect(getOrCreateReverb(ac).convolver);
+    const kit = DrumMachine(ac, { instrument: "LM-2", destination: inGain });
+    const snareKit = DrumMachine(ac, { instrument: "LM-2", destination: roomSend });
+    kitRef.current = { ac, kit, snareKit, vol, roomSend };
+    return kitRef.current;
+  }, [getOrCreateReverb]);
+  useEffect(() => { if (kitRef.current) kitRef.current.vol.gain.value = beatVol; }, [beatVol]);
+  useEffect(() => { if (beatStyle !== "off" && ctxRef.current) getKit(ctxRef.current); }, [beatStyle, getKit]);
 
   // Start the download as soon as Symphonic is switched on
   // and let the strings fade out at once when it's switched off
@@ -2276,10 +2314,47 @@ export default function Chloe() {
       }
     };
 
+    // Beat: look-ahead scheduler on the audio clock, one 16th per step at the
+    // tempo actually playing (half-time above 160 BPM). Fill on the last beat of
+    // every 4th bar, crash every 8 bars. Tension doubles the hats and adds kicks.
+    let beatT = null, beatNext = 0, beatStep = 0, beatBar = 0;
+    const beatLoop = () => {
+      try {
+        const st = stRef.current;
+        if (st.beatStyle === "off") { beatNext = 0; }
+        else {
+          const ac = getCtx();
+          const { kit, snareKit } = getKit(ac);
+          if (beatNext < ac.currentTime) { beatNext = ac.currentTime + 0.05; beatStep = 0; beatBar = 0; }
+          while (beatNext < ac.currentTime + 0.12) {
+            const b0 = tg.cur ?? st.bpm, bb = b0 > 160 ? b0 / 2 : b0;
+            const P = BREAKS[st.beatStyle] || BREAKS.break, i = beatStep, t = beatNext;
+            const fill = beatBar % 4 === 3 && i >= 12;
+            const hit = (note, v, k2 = kit) => v && k2.start({ note, velocity: Math.min(127, Math.round(v)), time: t });
+            hit("kick", P.k[i] || (energy > 0.7 && (i === 8 || i === 14) ? 96 : 0));
+            if (fill) { hit("snare-h", 50 + (i - 12) * 22); }
+            else {
+              if (P.s[i]) { hit("snare-m", P.s[i]); hit("snare-m", P.s[i] * 0.8, snareKit); }
+              hit("snare-l", P.g[i]);
+            }
+            const hv = P.h[i] || (energy > 0.5 && !P.o[i] ? 40 : 0);
+            hit("hhclosed-short", hv);
+            hit("hhopen", P.o[i]);
+            if (i === 0 && beatBar % 8 === 0) hit("crash", 90);
+            beatNext += 60 / bb / 4;
+            beatStep = (beatStep + 1) % 16;
+            if (beatStep === 0) beatBar++;
+          }
+        }
+      } catch (e) { console.error("beat:", e); }
+      beatT = setTimeout(beatLoop, 25);
+    };
+
     melTick();
     orchT = setTimeout(orchTick, 50);
+    beatT = setTimeout(beatLoop, 0);
     return () => {
-      clearTimeout(melTimeout); clearInterval(arpRef.current); clearTimeout(orchT);
+      clearTimeout(melTimeout); clearInterval(arpRef.current); clearTimeout(orchT); clearTimeout(beatT);
       if (orchRef.current) orchRef.current.all.forEach(i => i.stop());
     };
   // melTick/playNote read all playback state live from stRef — only arpOn is needed
@@ -2935,6 +3010,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (tuning !== "equal") p.set("tu", tuning);
     if (autoTempo !== "bursts") p.set("at", autoTempo);
     if (symphonic) p.set("sy", "1");
+    if (beatStyle !== "off") p.set("bt", beatStyle);
     // Only differences from the defaults travel: al = unticked, an = ticked-but-off-by-default
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => AUTO_LOCKS_DEFAULT[k] && !autoLocks[k]);
     const autoOn  = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !AUTO_LOCKS_DEFAULT[k] && autoLocks[k]);
@@ -2943,7 +3019,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, autoLocks, sidebarW]);
 
   const copyURL = useCallback(() => {
     const url = buildURL();
@@ -4091,6 +4167,22 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     fontSize: 9, cursor: "pointer", fontFamily: "inherit",
                     fontWeight: symphonic === o.v ? 600 : 400,
                   }}>{o.l}</button>
+                ))}
+              </div>
+            </div>
+            {/* Beat — sampled breakbeat under everything */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fill every 4th bar, crash every 8. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {["off", "break", "drive", "heavy"].map(v => (
+                  <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
+                    background: beatStyle === v ? K.a : K.bg3,
+                    color: beatStyle === v ? "#000" : K.txt,
+                    border: `1px solid ${beatStyle === v ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 8px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: beatStyle === v ? 600 : 400,
+                  }}>{v}</button>
                 ))}
               </div>
             </div>
