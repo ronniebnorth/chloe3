@@ -1196,7 +1196,7 @@ export default function Chloe() {
   // to the new notes one voice-leading step at a time instead of cutting.
   // morphSemis is the in-between note set (relative to the root) for the wheel.
   const [blend,      setBlend]      = useState(_u.blend ?? true);
-  // Tempo glide: BPM changes ease over ~4 s per doubling/halving instead of jumping
+  // Tempo glide: BPM changes ease over ~6 s per doubling/halving (2 s minimum) instead of jumping
   const [tempoGlide, setTempoGlide] = useState(_u.tempoGlide ?? true);
   const [soundBlend, setSoundBlend] = useState(_u.soundBlend ?? true);
   const [tuning, setTuning] = useState(_u.tuning ?? "equal");
@@ -1676,8 +1676,8 @@ export default function Chloe() {
     // set being moved toward, the planned steps, and notes left until the next
     const mo = { cur: null, key: "", steps: [], every: 8, wait: 0 };
     // Tempo glide: the BPM actually played eases from `from` to `to` in log
-    // space (equal ratios feel like equal steps), 4 s per octave of change,
-    // 1-10 s, smoothstep-shaped. A new target mid-glide starts from where it is.
+    // space (equal ratios feel like equal steps), 6 s per octave of change,
+    // 2-12 s, smoothstep-shaped. A new target mid-glide starts from where it is.
     const tg = { cur: null, from: 0, to: 0, t0: 0, dur: 0 };
     // Sound crossfade: while blending, each note plays on both the old and new sound
     const SB_DUR = 4000;
@@ -1688,7 +1688,7 @@ export default function Chloe() {
       if (!on || tg.cur === null) { tg.cur = tg.from = tg.to = target; tg.dur = 0; return target; }
       if (target !== tg.to) {
         tg.from = tg.cur; tg.to = target; tg.t0 = now;
-        tg.dur = 1000 * Math.max(1, Math.min(10, 4 * Math.abs(Math.log2(target / tg.from))));
+        tg.dur = 1000 * Math.max(2, Math.min(12, 6 * Math.abs(Math.log2(target / tg.from))));
       }
       const x = tg.dur ? Math.min(1, (now - tg.t0) / tg.dur) : 1;
       const e = x * x * (3 - 2 * x);
@@ -2273,6 +2273,15 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     const DIRS    = ["asc", "desc", "rand"];
     const VOICES  = ["off", "off", "off", "power", "sus2", "triad"];
 
+    // Tempo drifts: each pick moves at most ~±20% from the current BPM, pulled
+    // a quarter of the way back toward the tempo Auto started at (in log space)
+    const homeBpm = Math.min(240, Math.max(60, stRef.current.bpm));
+    const driftBpm = (cur) => {
+      const step = Math.log2(cur) + 0.27 * (Math.random() * 2 - 1);
+      const next = 2 ** (step + 0.25 * (Math.log2(homeBpm) - step));
+      return Math.round(Math.min(240, Math.max(60, next)));
+    };
+
     const pickNext = () => {
       if (cancelled) return;
       if (loopOnRef.current) { timeout = setTimeout(pickNext, 1000); return; }
@@ -2309,7 +2318,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const rhythm     = RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
       const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
       const chordVoice = VOICES[Math.floor(Math.random() * VOICES.length)];
-      const bpm        = Math.round(65 + Math.random() * 85);
+      const bpm        = driftBpm(stRef.current.bpm);
 
       const ac = getCtx();
       if (ac.state === "suspended") ac.resume();
@@ -3675,7 +3684,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Tempo change — jump, or glide between BPMs */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="How the tempo moves when the BPM changes (Auto, Claude or the slider). Cut = jump at once. Glide = ease to the new tempo, about 4 seconds per doubling or halving, so it never drops from fast straight to very slow." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TEMPO CHANGE</span>
+              <span title="How the tempo moves when the BPM changes (Auto, Claude or the slider). Cut = jump at once. Glide = ease to the new tempo, about 6 seconds per doubling or halving and never under 2 seconds, so it never drops from fast straight to very slow. Auto also drifts the tempo by small steps (about ±20% at a time) around the tempo it started at." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TEMPO CHANGE</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[{ l: "cut", v: false }, { l: "glide", v: true }].map(o => (
                   <button key={o.l} onClick={() => setTempoGlide(o.v)} style={{
