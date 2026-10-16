@@ -1535,9 +1535,14 @@ export default function Chloe() {
     const strings = Soundfont(ac, { instrument: "string_ensemble_1", destination: swell });
     // Bass has loop points (goldst.dev), so it sustains; the strings have none
     const bass = Soundfont(ac, { instrument: "contrabass", destination: bus, loadLoopData: true });
+    // Low strings ostinato + orchestra drums
+    const cello = Soundfont(ac, { instrument: "cello", destination: bus });
+    const drums = ac.createGain(); drums.gain.value = 0.8; drums.connect(bus);
+    const timpani = Soundfont(ac, { instrument: "timpani", destination: drums });
+    const taiko = Soundfont(ac, { instrument: "taiko_drum", destination: drums });
     setOrchLoading(true);
-    Promise.all([strings.ready, bass.ready]).finally(() => setOrchLoading(false));
-    orchRef.current = { ac, bus, wet, swell, strings, bass };
+    Promise.all([strings.ready, bass.ready, cello.ready, timpani.ready, taiko.ready]).finally(() => setOrchLoading(false));
+    orchRef.current = { ac, bus, wet, swell, strings, bass, cello, timpani, taiko, all: [strings, bass, cello, timpani, taiko] };
     return orchRef.current;
   }, [getOrCreateReverb]);
 
@@ -1545,7 +1550,7 @@ export default function Chloe() {
   // and let the strings fade out at once when it's switched off
   useEffect(() => {
     if (symphonic && ctxRef.current) getOrchestra(ctxRef.current);
-    if (!symphonic && orchRef.current) { orchRef.current.strings.stop(); orchRef.current.bass.stop(); }
+    if (!symphonic && orchRef.current) orchRef.current.all.forEach(i => i.stop());
   }, [symphonic, getOrchestra]);
 
   // Keep reverb wet gain in sync with reverbAmt slider
@@ -1803,7 +1808,7 @@ export default function Chloe() {
     // stacked from the scale and the double bass plays its root. Chords move by
     // 4ths/5ths in scale steps with a pull home. Uses the notes the line is
     // playing (blend-aware) and the current tuning.
-    let orchT = null, orchDeg = 0, lastBase = null;
+    let orchT = null, orchDeg = 0, lastBase = null, orchKey = null, rollIn = false;
     const orchTick = () => {
       let hold = 4;
       try {
@@ -1843,7 +1848,48 @@ export default function Chloe() {
             });
           }
           const bassSemi = semiOf(orchDeg) - 24;
-          o.bass.start({ note: rootMidi + bassSemi, velocity: 85, time: t0, duration: hold * 0.95, loop: true, detune: tune(bassSemi) });
+          // Double bass an octave deeper wherever it stays above its low E (28)
+          const bassNote = rootMidi + bassSemi - 12 >= 28 ? rootMidi + bassSemi - 12 : rootMidi + bassSemi;
+          o.bass.start({ note: bassNote, velocity: 85, time: t0, duration: hold * 0.95, loop: true, detune: tune(bassSemi) });
+
+          // Cellos: driving low ostinato on the chord (root, fifth, octave) in
+          // 8ths up to 120 BPM, quarters above; rests on about 1 chord in 5
+          const beat = 60 / b;
+          const R = semiOf(orchDeg), F = semiOf(orchDeg + 4), O = R + 12;
+          if (Math.random() < 0.8) {
+            const pat = [R, R, F, R, O, R, F, R];
+            const step = b <= 120 ? beat / 2 : beat;
+            for (let i = 0, tc = t0; tc < t0 + hold - 0.02; i++, tc += step) {
+              const semi = pat[i % 8] - 24;
+              o.cello.start({ note: rootMidi + semi, velocity: i % 4 === 0 ? 80 : 58, time: tc, duration: step * 0.85, detune: tune(semi) });
+            }
+          }
+
+          // Drums: timpani tuned to the chord root (kept in D2-A3), taiko for weight.
+          // A new scale or key = a big boom; otherwise downbeat hits, and
+          // sometimes a timpani roll into the next chord.
+          const key = st.sel.pattern + "@" + st.rootIdx;
+          const boom = orchKey !== null && key !== orchKey;
+          orchKey = key;
+          let tn = rootMidi + R - 24;
+          while (tn < 38) tn += 12;
+          while (tn > 57) tn -= 12;
+          const tTune = tune(tn - rootMidi);
+          if (boom) {
+            o.timpani.start({ note: tn, velocity: 120, time: t0, detune: tTune });
+            o.taiko.start({ note: 40, velocity: 120, time: t0 });
+            o.taiko.start({ note: 40, velocity: 100, time: t0 + beat * 1.5 });
+          } else if (rollIn || Math.random() < 0.55) {
+            o.timpani.start({ note: tn, velocity: rollIn ? 112 : 92, time: t0, detune: tTune });
+            if (Math.random() < 0.3) o.taiko.start({ note: 40, velocity: 92, time: t0 });
+          }
+          rollIn = !boom && Math.random() < 0.3;
+          if (rollIn) {
+            // Roll over the last bar (or half the chord), crescendo into the next
+            const len = Math.min(240 / b, hold / 2), rs = t0 + hold - len;
+            for (let tr = rs; tr < t0 + hold - 0.03; tr += 0.07)
+              o.timpani.start({ note: tn, velocity: Math.round(35 + 65 * (tr - rs) / len), time: tr, detune: tTune });
+          }
         }
       } catch (e) { console.error("orchestra:", e); }
       orchT = setTimeout(orchTick, hold * 1000);
@@ -2109,7 +2155,7 @@ export default function Chloe() {
     orchT = setTimeout(orchTick, 50);
     return () => {
       clearTimeout(melTimeout); clearInterval(arpRef.current); clearTimeout(orchT);
-      if (orchRef.current) { orchRef.current.strings.stop(); orchRef.current.bass.stop(); }
+      if (orchRef.current) orchRef.current.all.forEach(i => i.stop());
     };
   // melTick/playNote read all playback state live from stRef — only arpOn is needed
   // as a dep (for the guard). sel changes are handled via pendingSelRef for smooth transitions.
@@ -3909,9 +3955,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Symphonic — sampled strings + double bass under the line */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Adds an orchestra under the line: a string section holds chords built from the current scale and a double bass plays their roots, changing about every 5 seconds. Uses real recorded samples, a one-time download of about 6 MB the first time you switch it on." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SYMPHONIC{orchLoading ? " · loading…" : ""}</span>
+              <span title="Adds an orchestra under the line: a string section swells on chords built from the current scale, cellos drive a low pulse, a double bass holds the roots, and timpani and taiko drums hit the changes (a big boom on a new scale), all in a cathedral reverb. Uses real recorded samples, a one-time download of about 15 MB the first time you switch it on." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SYMPHONIC{orchLoading ? " · loading…" : ""}</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
-                {[{ l: "off", v: false }, { l: "strings + bass", v: true }].map(o => (
+                {[{ l: "off", v: false }, { l: "orchestra", v: true }].map(o => (
                   <button key={o.l} onClick={() => { setSymphonic(o.v); if (o.v) getOrchestra(getCtx()); }} style={{
                     background: symphonic === o.v ? K.a : K.bg3,
                     color: symphonic === o.v ? "#000" : K.txt,
