@@ -617,7 +617,7 @@ const MIX_PATTERNS = [
   [5, 4, 5, 5, 4, 5, 4], [5, 4, 5, 5, 4, 4, 5],
 ];
 // Settings Auto may change; unticked ones in the ⚙ panel are left alone
-const AUTO_LOCKS_DEFAULT = { sound:true, rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true, tuning:false };
+const AUTO_LOCKS_DEFAULT = { sound:true, rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true, tuning:false, beat:true };
 const isOutsideId = (id) => !!id && id.startsWith("x-");
 
 // Longest run of consecutive semitones (circular) — 3..8 for outside scales
@@ -1266,6 +1266,8 @@ export default function Chloe() {
   // Beat: off | break | drive | heavy (sampled LinnDrum through a punch compressor)
   const [beatStyle, setBeatStyle] = useState(_u.beatStyle ?? "off");
   const kitRef = useRef(null);
+  const energyRef = useRef(0);        // orchestra tension energy, shared with Auto
+  const autoOnRef = useRef(false);
   const tempoSnapRef = useRef(false); // next BPM change jumps instead of gliding
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
@@ -1292,6 +1294,7 @@ export default function Chloe() {
   const [showDemoLog, setShowDemoLog] = useState(false);
   const [logCopied,   setLogCopied]   = useState(false);
   const [autoOn,      setAutoOn]      = useState(false);
+  useEffect(() => { autoOnRef.current = autoOn; }, [autoOn]);
   const [loopOn,      setLoopOn]      = useState(false);
   const loopOnRef = useRef(false);
   useEffect(() => { loopOnRef.current = loopOn; }, [loopOn]);
@@ -1927,6 +1930,7 @@ export default function Chloe() {
     const updateEnergy = (base) => {
       const target = Math.min(1, tensionOf(base) * 0.9 + (mo.steps.length ? 0.4 : 0));
       energy += (target - energy) * (target > energy ? 0.25 : 0.04);
+      energyRef.current = energy;
       peakE = Math.max(peakE, energy);
     };
     const orchTick = () => {
@@ -1955,6 +1959,8 @@ export default function Chloe() {
           const tune = semi => 1200 * Math.log2(tunedRatio(semi, st.tuning) * st.aRef / 440) - 100 * semi;
           if (marchNow) {
             lastMarch = ac.currentTime;
+            // Auto with the beat ticked: the march brings in the heavy beat
+            if (autoOnRef.current && autoLocksRef.current.beat && st.beatStyle !== "off" && st.beatStyle !== "heavy") setBeatStyle("heavy");
             orchDeg = 0;
             orchKey = st.sel.pattern + "@" + st.rootIdx;
             hold = playMarch(o, ac, st, b, semiOf, rootMidi, tune);
@@ -2745,6 +2751,15 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); }
       }
       // Tuning changes on ~30% of picks; equal stays the most common
+      // Beat style changes on ~30% of picks, only when a beat is on (never
+      // switches it on or off); drive likelier when tense, break when calm
+      if (_al.beat && stRef.current.beatStyle !== "off" && Math.random() < 0.3) {
+        const e = energyRef.current;
+        const w = { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 };
+        let r = Math.random() * (w.break + w.drive + w.heavy), pickB = "heavy";
+        for (const k of ["break", "drive"]) { if ((r -= w[k]) < 0) { pickB = k; break; } }
+        if (pickB !== stRef.current.beatStyle) setBeatStyle(pickB);
+      }
       if (_al.tuning && Math.random() < 0.3) setTuning(["equal", "equal", "just", "just", "pyth"][Math.floor(Math.random() * 5)]);
       if (_al.bpm && stRef.current.autoTempo === "drift") setBpm(bpm);
       if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
@@ -4444,6 +4459,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               { label: "PLAYBACK", items: [
                 { key: "sound",     label: "Instrument / Wave" },
                 { key: "tuning",    label: "Tuning" },
+                { key: "beat",      label: "Beat Style" },
                 { key: "bpm",       label: "BPM" },
                 { key: "reverb",    label: "Reverb" },
                 { key: "delay",     label: "Delay" },
