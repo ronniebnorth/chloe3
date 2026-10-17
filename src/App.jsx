@@ -782,7 +782,10 @@ function eegBrainTarget(eeg, config) {
 const ARC_BASELINE_MS = 60000;
 const ARC_LOG_MS      = 5000;
 const ARC_COLOR       = "#5fd08a";
-const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const mmss = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000)), p = n => String(n).padStart(2, "0");
+  return s >= 3600 ? `${Math.floor(s / 3600)}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}` : `${Math.floor(s / 60)}:${p(s % 60)}`;
+};
 const ARC_CSV_COLS = ["t_s", "phase", "lead_target", "brain_target", "scale_id", "scale_name", "scale_brightness",
                       "dominant", "alpha_pct", "theta_pct", "beta_pct", "gamma_pct", "relaxation_index", "hemi_balance"];
 const sessionCSV = (sess) => [
@@ -822,9 +825,21 @@ const JOURNEYS = {
     pts: [{ at: 0, b: 0.55, t: 0.85, rv: 0.8, su: 1.3, e: 0, tn: 0 }, { at: 0.6, b: 0.45, t: 1.35, rv: 0.5, su: 0.7, e: 0.8, tn: 1 },
           { at: 0.8, b: 0.5, t: 1, rv: 0.7, su: 1, e: 0.3, tn: 0.4 }, { at: 1, b: 0.6, t: 0.8, rv: 0.85, su: 1.3, e: 0, tn: 0 }] },
 };
+// Endless: no destination. Overlapping slow waves (17, 6.3 and 11 minutes, so
+// the pattern never lines up the same way twice) keep it wandering, dark-leaning,
+// slow and consonant; built for sleep. Never arrives, so never ends or fades.
+JOURNEYS.endless = { label: "endless", home: 1453, endless: true,
+  tip: "Never-ending: a slow, calm wander with no destination, leaning dark, slow and consonant, deep reverb and long notes. No tempo surprises and no march. Built for sleep or long listening.",
+  at: (ms) => {
+    const m = ms / 60000, w = (p, ph = 0) => Math.sin(2 * Math.PI * m / p + ph);
+    return { b: 0.40 + 0.08 * w(17) + 0.04 * w(6.3, 1.3), t: 0.62 + 0.06 * w(11, 0.7), rv: 0.88 + 0.06 * w(13, 2.1),
+             su: 1.6 + 0.3 * w(9, 0.4), e: 0, tn: 0 };
+  } };
+const ENDLESS_WINDOW = 40 * 60000;   // how much of Endless a card or the stage draws
 const JOURNEY_MINS  = [5, 15, 30, 60];
 const JOURNEY_COLOR = "#e8b04a";
 const journeyAt = (j, f) => {
+  if (j.endless) return j.at(f * ENDLESS_WINDOW);
   const p = j.pts;
   let i = 0;
   while (i < p.length - 2 && f > p[i + 1].at) i++;
@@ -1645,14 +1660,15 @@ export default function Chloe() {
     const tick = () => {
       if (journeyRef.current !== J || J.ending) return;
       const el = Date.now() - J.startMs;
-      const f = Math.min(1, el / (J.mins * 60000));
-      J.vals = journeyAt(j, f);
+      // Endless never arrives; f is just where it is in the drawn window
+      const f = j.endless ? (el % ENDLESS_WINDOW) / ENDLESS_WINDOW : Math.min(1, el / (J.mins * 60000));
+      J.vals = j.endless ? j.at(el) : journeyAt(j, f);
       setLeadTarget(J.vals.b);
-      if (f >= 1 && !J.arrived) {
+      if (!j.endless && f >= 1 && !J.arrived) {
         J.arrived = true;
         if (recordingRef.current) endJourney(J, j);
       }
-      setJourneyNow({ el, f, arrived: J.arrived, ending: J.ending });
+      setJourneyNow({ el, f, arrived: J.arrived, ending: J.ending, endless: !!j.endless });
     };
     tick();
     const id = setInterval(tick, 1000);
@@ -2209,7 +2225,7 @@ export default function Chloe() {
           const ac = getCtx();
           const o = getOrchestra(ac);
           const L = lastBase.length;
-          const marchNow = o.brass && ac.currentTime - lastMarch > 45 &&
+          const marchNow = o.brass && ac.currentTime - lastMarch > 45 && !JOURNEYS[journeyRef.current?.id]?.endless &&
             ((energy > 0.6 && Math.random() < 0.35) || Math.random() < 0.07);
           const moves = [[0, 1], [3, 3], [4, 3], [5, 1.5], [1, 1], [L - 1, 1]];
           let r = Math.random() * moves.reduce((a, m) => a + m[1], 0), next = orchDeg;
@@ -3051,7 +3067,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     const doBurst = () => {
       if (cancelled) return;
       const st = stRef.current;
-      if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm) { scheduleBurst(); return; }
+      if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm || JOURNEYS[journeyRef.current?.id]?.endless) { scheduleBurst(); return; }
       const pool = smoothRef.current >= 0.5 ? BURSTS.filter(x => !x.snap) : BURSTS;
       let r = Math.random() * pool.reduce((a, x) => a + x.w, 0), b = pool[0];
       for (const x of pool) { if ((r -= x.w) < 0) { b = x; break; } }
@@ -3563,11 +3579,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       dusk: "Bright to dark. For winding down.",
       descent: "Down into the dark, and back up into the light.",
       storm: "Calm, a gathering storm, calm again.",
+      endless: "Never ends. A slow, calm wander, for sleep.",
     };
     const play = () => {
       wake();
       if (journey === "off") setJourney(J);
-      if (!smooth) setSmooth(0.7);
+      if (J === "endless") setSmooth(Math.max(smooth, 0.9));   // sleep: hide every seam
+      else if (!smooth) setSmooth(0.7);
       setDemoOn(false); setAutoOn(true);
     };
     const f = journeyNow?.f ?? 0;
@@ -3602,13 +3620,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           <div style={{ position: "absolute", top: 14, left: 16, right: 16, display: "flex", justifyContent: "space-between", fontSize: 11, color: K.txt, textShadow: "0 1px 4px #000" }}>
             <span>{playingNow && sel ? (selName || sel.id) : ""}</span>
             <span style={{ color: JOURNEY_COLOR, fontVariantNumeric: "tabular-nums" }}>
-              {journeyNow ? (journeyNow.ending ? "ending…" : journeyNow.arrived ? "arrived" : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : ""}
+              {journeyNow ? (journeyNow.endless ? `${mmss(journeyNow.el)} · endless` : journeyNow.ending ? "ending…" : journeyNow.arrived ? "arrived" : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : ""}
             </span>
           </div>
         </div>
 
         {/* Journeys */}
-        <div style={{ width: "100%", maxWidth: 720, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 18 }}>
+        <div style={{ width: "100%", maxWidth: 720, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(124px, 1fr))", gap: 10, marginTop: 18 }}>
           {Object.keys(JOURNEYS).map(id => {
             const on = J === id, c = curve(id, 140, 40, 3);
             return (
@@ -3630,7 +3648,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
         {/* Length + extras */}
         <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 18 }}>
-          {JOURNEY_MINS.map(m => <button key={m} onClick={() => setJourneyMins(m)} style={chip(journeyMins === m)}>{m} min</button>)}
+          {J === "endless" ? <span style={{ color: K.t2, fontSize: 11 }}>∞ plays until you stop it</span>
+            : JOURNEY_MINS.map(m => <button key={m} onClick={() => setJourneyMins(m)} style={chip(journeyMins === m)}>{m} min</button>)}
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSymphonic(v => !v); if (!symphonic) getOrchestra(getCtx()); }} style={chip(symphonic)}>orchestra</button>
           <button onClick={() => { const v = beatStyle === "off" ? "downtempo" : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
@@ -3976,7 +3995,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 <span style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, flexShrink: 0 }}>BRIGHT</span>
                 {jOn && (
                   <span title={JOURNEYS[journey]?.tip} style={{ color: JOURNEY_COLOR, fontSize: 9, flexShrink: 0, fontVariantNumeric: "tabular-nums", cursor: "help" }}>
-                    {journey} {journeyNow.ending ? "· ending" : journeyNow.arrived ? "· arrived" : `${Math.round(journeyNow.f * 100)}%`}
+                    {journey} {journeyNow.endless ? `· ${mmss(journeyNow.el)}` : journeyNow.ending ? "· ending" : journeyNow.arrived ? "· arrived" : `${Math.round(journeyNow.f * 100)}%`}
                   </span>
                 )}
                 {/* Bar */}
@@ -4734,7 +4753,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 ))}
               </div>
             </div>
-            {journey !== "off" && (
+            {journey !== "off" && journey !== "endless" && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                 <span title="How long the journey takes. Changing it mid-journey keeps the clock running, so it may jump ahead or back along the shape." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>LENGTH</span>
                 <span style={{ color: JOURNEY_COLOR, fontSize: 9, fontVariantNumeric: "tabular-nums" }}>
@@ -4754,7 +4773,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 </div>
               </div>
             )}
-            {journeyNow && (
+            {journeyNow && !journeyNow.endless && (
               <div style={{ height: 2, background: K.bg3, borderRadius: 1, margin: "-4px 0 8px" }}>
                 <div style={{ height: 2, width: `${journeyNow.f * 100}%`, background: JOURNEY_COLOR, borderRadius: 1, transition: "width 1s linear" }} />
               </div>
@@ -5094,7 +5113,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     }}>{v}</button>
                 ))}
               </div>
-              {journey !== "off" && (
+              {journey !== "off" && journey !== "endless" && (
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                   <span style={{ color: K.t2, fontSize: 8, letterSpacing: 2, marginRight: 4 }}>LENGTH</span>
                   {JOURNEY_MINS.map(m => (
