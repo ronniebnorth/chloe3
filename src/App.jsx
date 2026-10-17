@@ -2016,7 +2016,8 @@ export default function Chloe() {
       delayRef.current = null;
       analyserRef.current = null;
       noteCountRef.current = 0;
-      setTimeout(() => { try { old.close(); } catch {} }, 3000);
+      // Let the old context ring out (reverb, delay, held bass notes) before closing it
+      setTimeout(() => { try { old.close(); } catch {} }, 15000);
       swapAtRef.current = Date.now();
       setRecycleGen(g => g + 1); // triggers drone to restart on fresh context
     }, 120000); // every 2 minutes
@@ -2050,17 +2051,17 @@ export default function Chloe() {
     droneVoiceRef.current = voice;
     droneFreqRef.current = dFreq;
     const volGain = ac.createGain();
-    // Smooth (under Auto/Claude): the drone fades in and out over up to 6 s,
-    // except across a context swap, where the old one stops in a few seconds
-    const swapped = Date.now() - swapAtRef.current < 2000;
+    // Smooth (under Auto/Claude): the drone fades in and out over up to 6 s.
+    // Across a context swap the old and new drones crossfade over 3 s.
+    const swapped = Date.now() - swapAtRef.current < 2000, SWAP_FADE = 3;
     const smoothFade = () => autoOnRef.current || demoOnRef.current ? 6 * smoothRef.current : 0;
     volGain.gain.setValueAtTime(0, ac.currentTime);
-    volGain.gain.linearRampToValueAtTime(droneVol, ac.currentTime + 0.08 + (swapped ? 0 : smoothFade()));
+    volGain.gain.linearRampToValueAtTime(droneVol, ac.currentTime + (swapped ? SWAP_FADE : 0.08 + smoothFade()));
     droneGainRef.current = volGain;
     voice.node.connect(f); f.connect(volGain);
     volGain.connect(masterOut(ac)); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node);
     return () => {
-      const now = ac.currentTime, out = 0.08 + (ctxRef.current === ac ? smoothFade() : 0);
+      const now = ac.currentTime, out = ctxRef.current === ac ? 0.08 + smoothFade() : SWAP_FADE;
       volGain.gain.cancelScheduledValues(now);
       volGain.gain.setValueAtTime(volGain.gain.value, now);
       volGain.gain.linearRampToValueAtTime(0, now + out);
