@@ -450,9 +450,17 @@ const WORLD = {
     cabasa: { 0: 34, 1: 22, 2: 30, 3: 22, 4: 34, 5: 22, 6: 30, 7: 22, 8: 34, 9: 22, 10: 30, 11: 22, 12: 34, 13: 22, 14: 30, 15: 24 },
     tambourine: { 4: 36, 12: 40 },
   },
+  // Brushes, as near as the kit gets: a soft shaker swirl rising and falling
+  // through each beat for the sweep, a quiet cross-stick tap (plus a breath
+  // of snare in the room) on 2 and 4, a feathered kick. For sleep.
+  brushes: {
+    cabasa: Object.fromEntries([...Array(16).keys()].map(i => [i, [30, 20, 25, 18][i % 4]])),
+    "stick-l": { 4: 38, 12: 40 }, "snare-l": { 4: 18, 12: 20 },
+    hhclosed: { 4: 20, 12: 22 }, kick: { 0: 52, 10: 38 },
+  },
 };
 const WORLD_FILL = ["conga-h", "conga-h", "conga-m", "conga-l"];   // last beat of every 4th bar
-const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion" };
+const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes" };
 
 // Linear fills for fusion: one drum per 16th. Short = the last beat of every
 // 4th bar; long = the last two beats of every 8th, phrased in 3s across the beat.
@@ -833,7 +841,11 @@ JOURNEYS.endless = { label: "endless", home: 1453, endless: true,
   at: (ms) => {
     const m = ms / 60000, w = (p, ph = 0) => Math.sin(2 * Math.PI * m / p + ph);
     return { b: 0.40 + 0.08 * w(17) + 0.04 * w(6.3, 1.3), t: 0.62 + 0.06 * w(11, 0.7), rv: 0.88 + 0.06 * w(13, 2.1),
-             su: 1.6 + 0.3 * w(9, 0.4), e: 0, tn: 0 };
+             su: 1.6 + 0.3 * w(9, 0.4), e: 0, tn: 0,
+             // Lots of slow delay: wet ~50%, long echoes trailing out (feedback 0.55)
+             dl: 0.5 + 0.1 * w(7.7, 0.3), fb: 0.55,
+             // Percussion comes in now and then: on for a few minutes about a third of the time
+             perc: w(23, 0.9) + 0.5 * w(8.7, 2.0) > 0.45 };
   } };
 const ENDLESS_WINDOW = 40 * 60000;   // how much of Endless a card or the stage draws
 const JOURNEY_MINS  = [5, 15, 30, 60];
@@ -1370,7 +1382,7 @@ export default function Chloe() {
         smooth:     Math.min(100, Math.max(0, parseInt(p.get("sm") ?? "0") || 0)) / 100,
         journeyMins: JOURNEY_MINS.includes(parseInt(p.get("jm"))) ? parseInt(p.get("jm")) : 15,
         symphonic:  p.get("sy") === "1",
-        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand"].includes(p.get("bt")) ? p.get("bt") : "off",
+        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1913,7 +1925,7 @@ export default function Chloe() {
     const delayNode = ac.createDelay(2.0);
     delayNode.delayTime.value = stRef.current.delayTime ?? 0.375;
     const feedbackGain = ac.createGain();
-    feedbackGain.gain.value = 0.4;
+    feedbackGain.gain.value = journeyRef.current?.vals?.fb ?? 0.4;
     const wetGain = ac.createGain();
     wetGain.gain.value = stRef.current.delayAmt;
     delayNode.connect(feedbackGain);
@@ -2653,22 +2665,26 @@ export default function Chloe() {
       const P = WORLD[style], t = t0 + (i % 2 ? 0.17 * stepDur : 0);
       const hit = (note, v, k2 = kit) => v > 0 && k2.start({ note, velocity: Math.max(1, Math.min(127, Math.round(v + (Math.random() - 0.5) * 12))), time: t + (Math.random() - 0.5) * 0.01 });
       const calm = energy < 0.25, tense = energy > 0.6;
-      if (bar % 4 === 3 && i >= 12) { hit(WORLD_FILL[i - 12], 58 + (i - 12) * 10); if (style === "hand" && i === 12) hit("tom-ll", 84); return; }
+      if (style === "brushes") {
+        if (bar % 8 === 7 && i === 12) hit("tom-l", 34);
+        if (bar % 8 === 7 && i === 14) hit("tom-ll", 30);
+      } else if (bar % 4 === 3 && i >= 12) { hit(WORLD_FILL[i - 12], 58 + (i - 12) * 10); if (style === "hand" && i === 12) hit("tom-ll", 84); return; }
       for (const [note, steps] of Object.entries(P)) {
         let v = steps[i] || 0;
         if (!v) continue;
         if (calm && (note === "cabasa" && i % 2 || note === "conga-h")) continue;
         hit(note, v);
-        if (note === "snare-m") hit("snare-m", v * 0.9, snareKit);
+        if (note === "snare-m" || note === "snare-l") hit(note, v * 0.9, snareKit);
         if (note === "conga-m" && v > 65) hit("conga-m", v * 0.5, snareKit);
       }
+      if (style === "brushes") return;
       if (tense && i === 14) hit(style === "hand" ? "tom-l" : "kick", 76);
       if (i === 0 && bar % 16 === 0 && !noBoom) { hit("kick-alt", 110); hit("tom-ll", 90); }
     };
     const beatLoop = () => {
       try {
         const st = stRef.current, sm = smoothRef.current, F = 1 + 7 * sm;
-        const resting = beatRestRef.current && Date.now() < beatRestRef.current;
+        const resting = (beatRestRef.current && Date.now() < beatRestRef.current) || journeyRef.current?.vals?.perc === false;
         const want = st.beatStyle === "off" || resting ? "off" : st.beatStyle;
         const playing = beatStyleNow !== null && beatStyleNow !== "off";
         const ac = playing || want !== "off" ? getCtx() : null;
@@ -3195,8 +3211,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       } else if (_al.bpm && stRef.current.autoTempo === "drift" && maybe()) later(() => setBpm(bpm));
       if (_al.reverb && J?.vals) { const rv = parseFloat(Math.min(1, Math.max(0, J.vals.rv + (Math.random() - 0.5) * 0.08)).toFixed(2)); later(() => setReverbAmt(rv)); }
       else if (_al.reverb && maybe()) { const rv = parseFloat((0.3 + Math.random() * 0.65).toFixed(2)); later(() => setReverbAmt(rv)); }
-      if (_al.delay && maybe())     { const d = parseFloat((Math.random() * 0.5).toFixed(2)); later(() => setDelayAmt(d)); }
-      if (_al.delayTime && maybe()) { const d = parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)); later(() => setDelayTime(d)); }
+      if (_al.delay && J?.vals?.dl !== undefined) { const d = parseFloat(J.vals.dl.toFixed(2)); later(() => setDelayAmt(d)); }
+      else if (_al.delay && maybe()) { const d = parseFloat((0.1 + Math.random() * 0.5).toFixed(2)); later(() => setDelayAmt(d)); }
+      // Endless holds one slow echo (a delay time change mid-echo clicks or bends)
+      if (_al.delayTime && J?.vals?.dl !== undefined) { if (stRef.current.delayTime !== 0.75) later(() => setDelayTime(0.75)); }
+      else if (_al.delayTime && maybe()) { const d = parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)); later(() => setDelayTime(d)); }
+      // Delay feedback: the journey's (Endless: long trails), otherwise the usual 0.4
+      if (delayRef.current) { const fb = J?.vals?.fb ?? 0.4; later(() => glideParam(delayRef.current?.feedbackGain.gain, fb)); }
       if (_al.sustain && J?.vals) { const su = parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)); later(() => setSustainMult(su)); }
       else if (_al.sustain && maybe()) { const su = [0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]; later(() => setSustainMult(su)); }
       if (_al.droneOn && maybe())   { const on = Math.random() > 0.35; later(() => setDroneOn(on)); }
@@ -3652,14 +3673,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             : JOURNEY_MINS.map(m => <button key={m} onClick={() => setJourneyMins(m)} style={chip(journeyMins === m)}>{m} min</button>)}
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSymphonic(v => !v); if (!symphonic) getOrchestra(getCtx()); }} style={chip(symphonic)}>orchestra</button>
-          <button onClick={() => { const v = beatStyle === "off" ? "downtempo" : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
+          <button onClick={() => { const v = beatStyle === "off" ? (J === "endless" ? "brushes" : "downtempo") : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
           <button onClick={() => { wake(); setDroneOn(v => !v); }} style={chip(droneOn)}>drone</button>
         </div>
 
         {/* Drum feel, while drums are on */}
         {beatStyle !== "off" && (
           <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
-            {[["downtempo", "downtempo"], ["hand", "hand drums"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
+            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
               <button key={v} onClick={() => setBeatStyle(v)} style={{ ...chip(beatStyle === v), fontSize: 10, padding: "4px 11px" }}>{l}</button>
             ))}
           </div>
@@ -4844,9 +4865,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand"].map(v => (
+                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
                     background: beatStyle === v ? K.a : K.bg3,
                     color: beatStyle === v ? "#000" : K.txt,
