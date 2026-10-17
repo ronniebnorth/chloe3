@@ -192,8 +192,66 @@ function masterOut(ac) {
     const trim = ac.createGain(); trim.gain.value = 0.82;
     lim.connect(trim); trim.connect(ac.destination);
     ac.__master = lim;
+    ac.__masterTap = trim;      // the recorder listens here: exactly what you hear
   }
   return ac.__master;
+}
+
+// Recorder: an AudioWorklet copies the master output (stereo, float) to the
+// page in ~4096-frame chunks; on stop they are written out as a 24-bit WAV.
+const REC_WORKLET = `
+class ChloeRec extends AudioWorkletProcessor {
+  constructor() { super(); this.L = []; this.R = []; this.n = 0; }
+  process(inputs) {
+    const ch = inputs[0];
+    if (ch && ch.length) {
+      this.L.push(ch[0].slice()); this.R.push((ch[1] || ch[0]).slice()); this.n += ch[0].length;
+      if (this.n >= 4096) { this.port.postMessage([this.L, this.R]); this.L = []; this.R = []; this.n = 0; }
+    }
+    return true;
+  }
+}
+registerProcessor("chloe-rec", ChloeRec);`;
+
+async function startRecorder(ac) {
+  if (!ac.__recLoaded) {
+    const url = URL.createObjectURL(new Blob([REC_WORKLET], { type: "application/javascript" }));
+    await ac.audioWorklet.addModule(url);
+    ac.__recLoaded = true;
+  }
+  masterOut(ac);
+  const node = new AudioWorkletNode(ac, "chloe-rec", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: "explicit" });
+  const L = [], R = [];
+  node.port.onmessage = (e) => { L.push(...e.data[0]); R.push(...e.data[1]); };
+  const mute = ac.createGain(); mute.gain.value = 0;   // keeps the node pulled by the graph
+  ac.__masterTap.connect(node); node.connect(mute); mute.connect(ac.destination);
+  return {
+    stop() {
+      ac.__masterTap.disconnect(node); node.disconnect(); mute.disconnect();
+      node.port.onmessage = null;
+      return encodeWav24(L, R, ac.sampleRate);
+    },
+  };
+}
+
+function encodeWav24(Lc, Rc, sr) {
+  const frames = Lc.reduce((a, c) => a + c.length, 0);
+  const data = frames * 6, buf = new ArrayBuffer(44 + data), v = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + data, true); str(8, "WAVE");
+  str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 6, true); v.setUint16(32, 6, true); v.setUint16(34, 24, true);
+  str(36, "data"); v.setUint32(40, data, true);
+  let o = 44;
+  const put = (x) => {
+    const s = Math.max(-1, Math.min(1, x)), n = Math.round(s < 0 ? s * 0x800000 : s * 0x7fffff);
+    v.setUint8(o, n & 255); v.setUint8(o + 1, (n >> 8) & 255); v.setUint8(o + 2, (n >> 16) & 255); o += 3;
+  };
+  for (let c = 0; c < Lc.length; c++) {
+    const l = Lc[c], r = Rc[c];
+    for (let i = 0; i < l.length; i++) { put(l[i]); put(r[i]); }
+  }
+  return new Blob([buf], { type: "audio/wav" });
 }
 
 function synthKick(ac, vol, an) {
@@ -1266,6 +1324,9 @@ export default function Chloe() {
   // Beat: off | break | drive | heavy (sampled LinnDrum through a punch compressor)
   const [beatStyle, setBeatStyle] = useState(_u.beatStyle ?? "off");
   const kitRef = useRef(null);
+  // Recorder state: null, or { rec, t0 } while recording
+  const [recording, setRecording] = useState(null);
+  const [recSecs, setRecSecs] = useState(0);
   const energyRef = useRef(0);        // orchestra tension energy, shared with Auto
   const autoOnRef = useRef(false);
   const tempoSnapRef = useRef(false); // next BPM change jumps instead of gliding
@@ -3043,6 +3104,35 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
   }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, autoLocks, sidebarW]);
 
+  // Record button: start tapping the master output; stop → download the WAV
+  const toggleRec = useCallback(async () => {
+    if (recording) {
+      const blob = recording.rec.stop();
+      setRecording(null);
+      const d = new Date(), p2 = n => String(n).padStart(2, "0");
+      const name = sel ? (KNOWN[sel.pattern] || customNames[sel.pattern] || sel.id) : "chloe";
+      const safe = String(name).replace(/[^A-Za-z0-9♯♭#-]+/g, "-").replace(/^-|-$/g, "");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `chloe-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}-${safe}.wav`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      return;
+    }
+    try {
+      const ac = getCtx();
+      if (ac.state === "suspended") await ac.resume();
+      const rec = await startRecorder(ac);
+      setRecSecs(0);
+      setRecording({ rec, t0: Date.now() });
+    } catch (e) { console.error("recorder:", e); }
+  }, [recording, sel, customNames, getCtx]);
+  useEffect(() => {
+    if (!recording) return;
+    const iv = setInterval(() => setRecSecs(Math.floor((Date.now() - recording.t0) / 1000)), 250);
+    return () => clearInterval(iv);
+  }, [recording]);
+
   const copyURL = useCallback(() => {
     const url = buildURL();
     // Update browser URL without reload
@@ -3157,6 +3247,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
           flexShrink: 0, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5,
         }}><span style={{color:"#e03030", fontSize:16, lineHeight:1}}>♥</span> tip</a>
+        <button onClick={toggleRec} title="Record exactly what you hear to a 24-bit stereo WAV. Click again to stop and download." style={{
+          background: recording ? "#c0392b" : K.bg3,
+          color: recording ? "#fff" : K.txt,
+          border: `1px solid ${recording ? "#c0392b" : K.br}`,
+          borderRadius: 3, padding: "5px 12px",
+          fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
+          transition: "all .2s", flexShrink: 0, fontVariantNumeric: "tabular-nums",
+        }}>{recording ? `⏹ ${Math.floor(recSecs / 60)}:${String(recSecs % 60).padStart(2, "0")}` : "⏺ rec"}</button>
         <button onClick={copyURL} style={{
           background: urlCopied ? K.a : K.bg3,
           color: urlCopied ? "#000" : K.txt,
