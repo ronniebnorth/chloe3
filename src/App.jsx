@@ -1413,7 +1413,16 @@ export default function Chloe() {
   const [urlCopied,  setUrlCopied]  = useState(false);
   const [showHelp,    setShowHelp]    = useState(false);
   // Listen: a simple front door (pick a journey, press play); Studio: the full app
-  const [view, setView] = useState(() => new URLSearchParams(window.location.search).get("v") === "listen" ? "listen" : "studio");
+  // Which door opens: ?v= wins; a shared settings link opens Studio; otherwise
+  // the last view used, Listen for first-time visitors
+  const [view, setView] = useState(() => {
+    const p = new URLSearchParams(window.location.search), v = p.get("v");
+    if (v === "listen" || v === "studio") return v;
+    if ([...p.keys()].length) return "studio";
+    try { return localStorage.getItem("chloe-view") === "studio" ? "studio" : "listen"; } catch { return "listen"; }
+  });
+  // Only a click on LISTEN / STUDIO is remembered, not a link that opened one
+  const goView = (v) => { setView(v); try { localStorage.setItem("chloe-view", v); } catch {} };
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("chloe-welcomed"));
   const [demoOn,      setDemoOn]      = useState(false);
   useEffect(() => { demoOnRef.current = demoOn; }, [demoOn]);
@@ -3459,7 +3468,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             <div style={{ color: K.title, fontSize: 22, letterSpacing: 8, fontWeight: 600 }}>CHLOE</div>
             <div style={{ color: K.t2, fontSize: 11, marginTop: 4 }}>generative music that takes you somewhere</div>
           </div>
-          <button onClick={() => setView("studio")} title="The full Chloe: every scale, every setting" style={{ ...chip(false), borderRadius: 4, fontSize: 10, letterSpacing: 2, whiteSpace: "nowrap", flexShrink: 0 }}>STUDIO →</button>
+          <button onClick={() => goView("studio")} title="The full Chloe: every scale, every setting" style={{ ...chip(false), borderRadius: 4, fontSize: 10, letterSpacing: 2, whiteSpace: "nowrap", flexShrink: 0 }}>STUDIO →</button>
         </div>
 
         {/* Stage: the light show, with the journey's path and where you are on it */}
@@ -3598,7 +3607,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
           transition: "all .2s", flexShrink: 0, fontVariantNumeric: "tabular-nums",
         }}>{recording ? `⏹ ${Math.floor(recSecs / 60)}:${String(recSecs % 60).padStart(2, "0")}` : "⏺ rec"}</button>
-        <button onClick={() => setView("listen")} title="Listen: pick a journey and press play" style={{
+        <button onClick={() => goView("listen")} title="Listen: pick a journey and press play" style={{
           background: K.bg3, color: K.txt, border: `1px solid ${K.br}`, borderRadius: 3,
           padding: "4px 10px", fontSize: 9, letterSpacing: 2, cursor: "pointer", fontFamily: "inherit",
         }}>LISTEN</button>
