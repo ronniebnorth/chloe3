@@ -460,6 +460,39 @@ const WORLD = {
   },
 };
 const WORLD_FILL = ["conga-h", "conga-h", "conga-m", "conga-l"];   // last beat of every 4th bar
+
+// Rainstick, synthesized (the LM-2 kit has none): pebbles falling past pins =
+// thousands of tiny pings (a 1.5-5 kHz sine dying in 2-6 ms), dense at first then
+// thinning out, each panned at random, softened by a one-pole low-pass ~3.5 kHz.
+// A few takes per context so no two falls sound alike.
+function makeRainstick(ac, dur) {
+  const sr = ac.sampleRate, n = Math.floor(sr * dur), buf = ac.createBuffer(2, n, sr);
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  const peakRate = 380 + Math.random() * 160;   // pings per second at the densest
+  for (let t = 0; t < dur;) {
+    const dens = peakRate * (1 - Math.exp(-t / 0.18)) * Math.exp(-t / (dur * 0.42)) + 6;
+    t += -Math.log(1 - Math.random()) / dens;
+    if (t >= dur) break;
+    const f = 1500 + Math.random() * 3500, tau = 0.002 + Math.random() * 0.004;
+    const a = Math.pow(Math.random(), 2) * (0.5 + 0.5 * Math.exp(-t / dur)), pan = Math.random();
+    const s0 = Math.floor(t * sr), len = Math.min(n - s0, Math.floor(tau * 5 * sr));
+    const w = 2 * Math.PI * f / sr, d = Math.exp(-1 / (tau * sr));
+    for (let k = 0, e = a; k < len; k++, e *= d) {
+      const v = e * Math.sin(w * k);
+      L[s0 + k] += v * (1 - pan); R[s0 + k] += v * pan;
+    }
+  }
+  const c = Math.exp(-2 * Math.PI * 3500 / sr);
+  let peak = 0;
+  for (const ch of [L, R]) {
+    let y = 0;
+    for (let k = 0; k < n; k++) { y = (1 - c) * ch[k] + c * y; ch[k] = y; peak = Math.max(peak, Math.abs(y)); }
+  }
+  const fadeN = Math.floor(0.4 * sr);   // no click at the tail
+  for (const ch of [L, R]) for (let k = 0; k < n; k++) ch[k] *= (k > n - fadeN ? (n - k) / fadeN : 1) / (peak || 1);
+  return buf;
+}
+
 const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes" };
 
 // Linear fills for fusion: one drum per 16th. Short = the last beat of every
@@ -2662,6 +2695,16 @@ export default function Chloe() {
     // rests) fade over 1-8 s. beatStyleNow is the style actually playing.
     let beatT = null, beatNext = 0, beatStep = 0, beatBar = 0, beatStyleNow = null;
     let beatFadeTo = null, beatFadeEnd = 0, beatFadeAc = null, beatAc = null, beatNoCrash = false;
+    // A rainstick fall through the kit's volume, distance and fade
+    const rainstick = (k, ac, t, level) => {
+      if (!k.rain) k.rain = [2.6, 3.6, 4.8].map(d => makeRainstick(ac, d));
+      const src = ac.createBufferSource(), g = ac.createGain();
+      src.buffer = k.rain[Math.floor(Math.random() * k.rain.length)];
+      src.playbackRate.value = 0.85 + Math.random() * 0.3;
+      g.gain.value = level;
+      src.connect(g); g.connect(k.vol); src.start(t);
+    };
+    window.__chloeRain = () => { const ac = getCtx(); rainstick(getKit(ac), ac, ac.currentTime + 0.05, 0.32); };
     const rampBeat = (k, ac, v, sec) => {
       for (const g of [k.fade, k.fadeRoom]) {
         const p = g.gain;
@@ -2767,6 +2810,9 @@ export default function Chloe() {
             if (WORLD[beatStyleNow]) {
               const lb = b0 > 120 ? b0 / 2 : b0, sd = 60 / lb / 4;   // laid back: half-time above 120
               worldStep(kit, snareKit, beatStyleNow, beatStep, beatBar, beatNext, sd, beatNoCrash);
+              // Now and then a rainstick falls across the bar (about one in every 16 bars)
+              if (beatStep === 0 && beatBar % 8 === 4 && Math.random() < 0.5)
+                rainstick(K0, ac, beatNext, beatStyleNow === "brushes" ? 0.26 : 0.32);
               if (beatStep === 0 && beatBar > 0) beatNoCrash = false;
               beatNext += sd;
               beatStep = (beatStep + 1) % 16;
