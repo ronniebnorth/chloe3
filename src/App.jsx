@@ -877,14 +877,14 @@ const ARP_RHYTHM_PATS = {
 
 const DARK_K = {
   bg:  "#060a0e", bg2: "#0a1219", bg3: "#0e1822",
-  br:  "#2a3e52", t1:  "#aabec8", t2:  "#8fadc0",
+  br:  "#35485b", t1:  "#aec1cb", t2:  "#95b1c3",
   a:   "#e8922a", ag:  "rgba(232,146,42,0.07)",
-  txt: "#c8e4f0", lbl: "#a0c8dc", title: "#d8eaf2",
-  demoB: "#0a1a0a", demoBr: "#1a3a1a", demoT: "#a0c8a0", demoT2: "#7ab87a", demoT3: "#7aaa7a", demoT4: "#5f8f5f",
+  txt: "#cbe5f1", lbl: "#a5cbde", title: "#daebf3",
+  demoB: "#0a1a0a", demoBr: "#1a3a1a", demoT: "#a5cba5", demoT2: "#81bc81", demoT3: "#81ae81", demoT4: "#679567",
   demoEL: "#0f2a0f", demoE1: "#0d220d",
-  wh: "#0a1219", whBr: "#36506a", whTxt: "#7fa5ba",
-  keyW: "#c8dde4", keyWBr: "#8ab0bc", keyB: "#0e161b",
-  modB: "#0d1520", modBr: "#2a3f54", modT: "#d8eaf2", modST: "#8aaabb",
+  wh: "#0a1219", whBr: "#405971", whTxt: "#85aabd",
+  keyW: "#c8dde4", keyWBr: "#90b4bf", keyB: "#0e161b",
+  modB: "#0d1520", modBr: "#35495d", modT: "#daebf3", modST: "#90aebe",
 };
 
 const LIGHT_K = {
