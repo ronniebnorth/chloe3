@@ -876,6 +876,7 @@ const HELP_SECTIONS = [
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
   { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from all named scales, varying root note, rhythm, arpeggio direction, chord voicing, BPM, reverb, delay level, and delay time every 12–16 seconds. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
   { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm. LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
+  { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
   { title: "EEG MODE", body: "When a FlowTime headband is connected via the EEG proxy (localhost:8520), a coloured dot appears in the Demo controls showing your dominant brainwave band (excluding delta, which is always high at forehead sites and not meaningful). In Demo mode with EEG active, a brightness-matching algorithm runs before each Claude call: a high theta/alpha ratio pushes the target darker (deep meditation, drowsiness); a high beta/alpha ratio pushes it brighter (focus, engagement); alpha dominance pulls 50% toward neutral (0.5 = Dorian). The system then finds the scale in the catalogue whose normalized brightness is closest to the target — scales of any size (pentatonic, heptatonic, etc.) are equally reachable at any brightness level. A scale only changes if the target shifts by more than 5% from the current scale's brightness. Claude receives the pre-selected scale and its normalized brightness, and focuses on choosing BPM, voicing, and effects to complement it. The brightness bar lets you override the EEG target manually with the slider, lock the current zone, or explore random scales at similar brightness. If a heart rate sensor is also active, the live BPM appears in the playback controls — Claude can read and track it each cycle when you ask it to sync BPM to your pulse." },
   { title: "LOOP & SAVE", body: "While Demo or Auto is running, a Loop button appears. Click it to freeze playback on the current scale — Claude or Auto keeps repeating it instead of moving on. While looping, a Save button appears. Clicking Save captures a full snapshot: scale, root, BPM, rhythm, arpeggio direction, chord voicing, instrument, reverb, delay, and drone settings. Saved moments persist in your browser and appear in a collapsible panel. Click the play button on any saved moment to instantly restore all its settings and start playback. Delete a moment with the × button." },
@@ -1313,6 +1314,7 @@ export default function Chloe() {
         tuning:     ["just", "pyth"].includes(p.get("tu")) ? p.get("tu") : "equal",
         autoTempo:  p.get("at") === "drift" ? "drift" : "bursts",
         journey:    Object.hasOwn(JOURNEYS, p.get("jo") ?? "") ? p.get("jo") : "off",
+        smooth:     Math.min(100, Math.max(0, parseInt(p.get("sm") ?? "0") || 0)) / 100,
         journeyMins: JOURNEY_MINS.includes(parseInt(p.get("jm"))) ? parseInt(p.get("jm")) : 15,
         symphonic:  p.get("sy") === "1",
         beatStyle:  ["break", "drive", "heavy"].includes(p.get("bt")) ? p.get("bt") : "off",
@@ -1373,6 +1375,20 @@ export default function Chloe() {
   const [journeyMins, setJourneyMins] = useState(_u.journeyMins ?? 15);
   const [journeyNow,  setJourneyNow]  = useState(null); // { el, f, arrived, ending } for the display
   const journeyRef = useRef(null);  // { id, mins, startMs, homeBpm, vals, arrived, ending }
+  // Smooth (0-1): hides where Auto's changes happen. Staggers them across the
+  // gap between picks, changes fewer settings per pick, glides levels, slows
+  // the sound crossfade and scale morph, fades drone and beat in and out
+  const [smooth, setSmooth] = useState(_u.smooth ?? 0);
+  const smoothRef = useRef(smooth);
+  useEffect(() => { smoothRef.current = smooth; }, [smooth]);
+  // Glide an AudioParam while Auto/Claude runs with Smooth up (3 time constants ≈ 0.3-8 s), else set it
+  const glideParam = (param, v) => {
+    const sm = smoothRef.current, ac = param && ctxRef.current;
+    if (!param) return;
+    if (!sm || !ac || !(autoOnRef.current || demoOnRef.current)) { param.value = v; return; }
+    param.cancelScheduledValues(ac.currentTime);
+    param.setTargetAtTime(v, ac.currentTime, 0.1 + 2.5 * sm);
+  };
   // Symphonic: sampled strings + double bass play the scale's chords under the line
   const [symphonic, setSymphonic] = useState(_u.symphonic ?? false);
   const [orchLoading, setOrchLoading] = useState(false);
@@ -1380,6 +1396,7 @@ export default function Chloe() {
   // Beat: off | break | drive | heavy (sampled LinnDrum through a punch compressor)
   const [beatStyle, setBeatStyle] = useState(_u.beatStyle ?? "off");
   const kitRef = useRef(null);
+  const beatRestRef = useRef(0);   // Smooth: Date.now() until which Auto rests the beat (0 = playing)
   // Recorder state: null, or { rec, t0 } while recording
   const [recording, setRecording] = useState(null);
   const [recSecs, setRecSecs] = useState(0);
@@ -1397,6 +1414,7 @@ export default function Chloe() {
   const [showHelp,    setShowHelp]    = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("chloe-welcomed"));
   const [demoOn,      setDemoOn]      = useState(false);
+  useEffect(() => { demoOnRef.current = demoOn; }, [demoOn]);
   const [demoKey,     setDemoKey]     = useState(() => localStorage.getItem("chloe-demo-key") || "");
   const [demoComment, setDemoComment] = useState("");
   const [demoRequest, setDemoRequest] = useState("");
@@ -1414,6 +1432,7 @@ export default function Chloe() {
   const [showDemoLog, setShowDemoLog] = useState(false);
   const [logCopied,   setLogCopied]   = useState(false);
   const [autoOn,      setAutoOn]      = useState(false);
+  const demoOnRef = useRef(false);
   useEffect(() => { autoOnRef.current = autoOn; }, [autoOn]);
   const [loopOn,      setLoopOn]      = useState(false);
   const loopOnRef = useRef(false);
@@ -1431,6 +1450,7 @@ export default function Chloe() {
   const beatStepRef  = useRef(0);
   const beatTimeout  = useRef(null);
   const droneGainRef   = useRef(null);
+  const swapAtRef      = useRef(0);   // when the periodic recycler last swapped the context
   const droneFilterRef = useRef(null);
   const droneVoiceRef  = useRef(null);
   const droneFreqRef   = useRef(0);
@@ -1795,12 +1815,14 @@ export default function Chloe() {
     comp.threshold.value = -20; comp.ratio.value = 4; comp.knee.value = 6;
     comp.attack.value = 0.006; comp.release.value = 0.12;
     const vol = ac.createGain(); vol.gain.value = stRef.current.beatVol ?? 1;
-    inGain.connect(comp); comp.connect(vol); vol.connect(masterOut(ac));
+    // fade / fadeRoom: the beat's fade in and out (Smooth), dry and reverb send together
+    const fade = ac.createGain(), fadeRoom = ac.createGain();
+    inGain.connect(comp); comp.connect(vol); vol.connect(fade); fade.connect(masterOut(ac));
     const roomSend = ac.createGain(); roomSend.gain.value = 0.35;
-    roomSend.connect(getOrCreateReverb(ac).convolver);
+    roomSend.connect(fadeRoom); fadeRoom.connect(getOrCreateReverb(ac).convolver);
     const kit = DrumMachine(ac, { instrument: "LM-2", destination: inGain });
     const snareKit = DrumMachine(ac, { instrument: "LM-2", destination: roomSend });
-    kitRef.current = { ac, kit, snareKit, vol, roomSend };
+    kitRef.current = { ac, kit, snareKit, vol, roomSend, fade, fadeRoom };
     return kitRef.current;
   }, [getOrCreateReverb]);
   useEffect(() => { if (kitRef.current) kitRef.current.vol.gain.value = beatVol; }, [beatVol]);
@@ -1815,7 +1837,7 @@ export default function Chloe() {
 
   // Keep reverb wet gain in sync with reverbAmt slider
   useEffect(() => {
-    if (reverbRef.current) reverbRef.current.wetGain.gain.value = reverbAmt;
+    if (reverbRef.current) glideParam(reverbRef.current.wetGain.gain, reverbAmt);
     if (orchRef.current) orchRef.current.wet.gain.value = 1.4 * reverbAmt;
   }, [reverbAmt]);
 
@@ -1848,6 +1870,7 @@ export default function Chloe() {
       analyserRef.current = null;
       noteCountRef.current = 0;
       setTimeout(() => { try { old.close(); } catch {} }, 3000);
+      swapAtRef.current = Date.now();
       setRecycleGen(g => g + 1); // triggers drone to restart on fresh context
     }, 120000); // every 2 minutes
     return () => clearInterval(id);
@@ -1855,7 +1878,7 @@ export default function Chloe() {
 
   // Keep delay wet gain in sync with delayAmt slider
   useEffect(() => {
-    if (delayRef.current) delayRef.current.wetGain.gain.value = delayAmt;
+    if (delayRef.current) glideParam(delayRef.current.wetGain.gain, delayAmt);
   }, [delayAmt]);
 
   // Keep delay time in sync with delayTime slider
@@ -1880,23 +1903,27 @@ export default function Chloe() {
     droneVoiceRef.current = voice;
     droneFreqRef.current = dFreq;
     const volGain = ac.createGain();
+    // Smooth (under Auto/Claude): the drone fades in and out over up to 6 s,
+    // except across a context swap, where the old one stops in a few seconds
+    const swapped = Date.now() - swapAtRef.current < 2000;
+    const smoothFade = () => autoOnRef.current || demoOnRef.current ? 6 * smoothRef.current : 0;
     volGain.gain.setValueAtTime(0, ac.currentTime);
-    volGain.gain.linearRampToValueAtTime(droneVol, ac.currentTime + 0.08);
+    volGain.gain.linearRampToValueAtTime(droneVol, ac.currentTime + 0.08 + (swapped ? 0 : smoothFade()));
     droneGainRef.current = volGain;
     voice.node.connect(f); f.connect(volGain);
     volGain.connect(masterOut(ac)); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node);
     return () => {
-      const now = ac.currentTime;
+      const now = ac.currentTime, out = 0.08 + (ctxRef.current === ac ? smoothFade() : 0);
       volGain.gain.cancelScheduledValues(now);
       volGain.gain.setValueAtTime(volGain.gain.value, now);
-      volGain.gain.linearRampToValueAtTime(0, now + 0.08);
+      volGain.gain.linearRampToValueAtTime(0, now + out);
       droneGainRef.current = null; droneFilterRef.current = null;
       droneVoiceRef.current = null; droneFreqRef.current = 0;
       setTimeout(() => {
         try { voice.stop(); } catch {}
         try { f.disconnect(); } catch {}
         try { volGain.disconnect(); } catch {}
-      }, 100);
+      }, out * 1000 + 20);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [droneOn, droneWave, aRef, recycleGen, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
@@ -1911,7 +1938,7 @@ export default function Chloe() {
     if (oldFreq <= 0 || newFreq === oldFreq) return;
     const ratio = newFreq / oldFreq;
     const now = ac.currentTime;
-    const glideTime = 0.3; // 300ms glide
+    const glideTime = 0.3 + 2.7 * smoothRef.current; // 300 ms, up to 3 s with Smooth
     for (const osc of voice.oscs) {
       const curFreq = osc.frequency.value;
       osc.frequency.cancelScheduledValues(now);
@@ -1923,7 +1950,7 @@ export default function Chloe() {
 
   // Keep drone volume in sync with droneVol slider
   useEffect(() => {
-    if (droneGainRef.current) droneGainRef.current.gain.value = droneVol;
+    if (droneGainRef.current) glideParam(droneGainRef.current.gain, droneVol);
   }, [droneVol]);
 
   // Keep drone tone in sync with droneTone slider
@@ -2012,7 +2039,7 @@ export default function Chloe() {
     // 2-12 s, smoothstep-shaped. A new target mid-glide starts from where it is.
     const tg = { cur: null, from: 0, to: 0, t0: 0, dur: 0 };
     // Sound crossfade: while blending, each note plays on both the old and new sound
-    const SB_DUR = 4000;
+    const sbDur = () => 4000 + 8000 * smoothRef.current;   // 4 s, up to 12 s with Smooth
     const sb = { from: null, to: null, t0: 0 };
     const playBpm = () => {
       const { bpm: target, tempoGlide: on } = stRef.current;
@@ -2259,7 +2286,7 @@ export default function Chloe() {
         sb.from = stRef.current.soundBlend && sb.to ? sb.to : null;
         sb.to = snd; sb.t0 = Date.now();
       }
-      const x = sb.from ? Math.min(1, (Date.now() - sb.t0) / SB_DUR) : 1;
+      const x = sb.from ? Math.min(1, (Date.now() - sb.t0) / sbDur()) : 1;
       if (x >= 1) sb.from = null;
       // Equal-power crossfade so the level holds steady through the swap
       const out = stRef.current.symphonic && orchRef.current && orchRef.current.ac === ac ? orchRef.current.lead : undefined;
@@ -2327,7 +2354,7 @@ export default function Chloe() {
         inn.forEach(i => steps.push({ o: null, i, d: 6 }));
         out.forEach(o => steps.push({ o, i: null, d: 6 }));
         mo.steps = steps;
-        mo.every = steps.length > 3 ? 6 : 8;
+        mo.every = Math.round((steps.length > 3 ? 6 : 8) * (1 + smoothRef.current));   // Smooth: up to twice as slow
         mo.wait = 0;                             // first move right away
       }
       if (mo.steps.length && --mo.wait <= 0) {
@@ -2508,29 +2535,65 @@ export default function Chloe() {
 
     // Beat: look-ahead scheduler on the audio clock, one 16th per step at the
     // tempo actually playing (half-time above 160 BPM). Fill on the last beat of
-    // every 4th bar, crash every 8 bars. Tension doubles the hats and adds kicks.
+    // every 4th bar, crash every 16 bars. Tension doubles the hats and adds kicks.
+    // With Smooth up, the beat fades instead of cutting: a style change fades
+    // out, switches and fades back in on the same grid; on/off (and Auto's
+    // rests) fade over 1-8 s. beatStyleNow is the style actually playing.
     let beatT = null, beatNext = 0, beatStep = 0, beatBar = 0, beatStyleNow = null;
+    let beatFadeTo = null, beatFadeEnd = 0, beatFadeAc = null, beatAc = null, beatNoCrash = false;
+    const rampBeat = (k, ac, v, sec) => {
+      for (const g of [k.fade, k.fadeRoom]) {
+        const p = g.gain;
+        p.cancelScheduledValues(ac.currentTime); p.setValueAtTime(p.value, ac.currentTime);
+        p.linearRampToValueAtTime(v, ac.currentTime + Math.max(0.01, sec));
+      }
+    };
     const beatLoop = () => {
       try {
-        const st = stRef.current;
-        if (st.beatStyle === "off") { beatNext = 0; beatStyleNow = "off"; }
+        const st = stRef.current, sm = smoothRef.current, F = 1 + 7 * sm;
+        const resting = beatRestRef.current && Date.now() < beatRestRef.current;
+        const want = st.beatStyle === "off" || resting ? "off" : st.beatStyle;
+        const playing = beatStyleNow !== null && beatStyleNow !== "off";
+        const ac = playing || want !== "off" ? getCtx() : null;
+        if (beatFadeTo !== null && want === beatStyleNow) {
+          // Changed back mid-fade: bring it up again
+          beatFadeTo = null; rampBeat(getKit(ac), ac, 1, F / 2);
+        } else if (want !== beatStyleNow) {
+          if (!sm || !playing) {
+            if (want !== "off") {
+              const k = getKit(ac);
+              // A new style starts on a fresh downbeat with a crash, right away
+              if (playing) { beatNext = ac.currentTime + 0.03; beatStep = 0; beatBar = 0; beatNoCrash = false; }
+              if (!playing && sm) { rampBeat(k, ac, 0, 0.01); rampBeat(k, ac, 1, F); } else rampBeat(k, ac, 1, 0.01);
+            }
+            beatStyleNow = want; beatFadeTo = null;
+          } else if (beatFadeTo === null) {
+            beatFadeTo = want; beatFadeAc = ac;
+            beatFadeEnd = ac.currentTime + (want === "off" ? F : F / 2);
+            rampBeat(getKit(ac), ac, 0, beatFadeEnd - ac.currentTime);
+          } else if (ac !== beatFadeAc || ac.currentTime >= beatFadeEnd) {
+            beatStyleNow = want; beatFadeTo = null;
+            if (want !== "off") rampBeat(getKit(ac), ac, 1, F / 2);
+          }
+        }
+        if (beatStyleNow === "off" || beatStyleNow === null) { beatNext = 0; }
         else {
-          const ac = getCtx();
           const { kit, snareKit } = getKit(ac);
-          if (beatNext < ac.currentTime) { beatNext = ac.currentTime + 0.05; beatStep = 0; beatBar = 0; }
-          // A new style starts on a fresh downbeat with a crash, right away
-          if (st.beatStyle !== beatStyleNow) {
-            if (beatStyleNow !== null) { beatNext = ac.currentTime + 0.03; beatStep = 0; beatBar = 0; }
-            beatStyleNow = st.beatStyle;
+          // A fresh context (the periodic swap) restarts its clock near 0: carry on
+          // from where the pattern is instead of waiting for the old clock time
+          if (ac !== beatAc) { if (beatAc) beatNext = ac.currentTime + 0.05; beatAc = ac; }
+          if (beatNext < ac.currentTime) {
+            beatNext = ac.currentTime + 0.05; beatStep = 0; beatBar = 0;
+            beatNoCrash = sm > 0;   // fading in: no crash on the way in
           }
           while (beatNext < ac.currentTime + 0.12) {
             const b0 = tg.cur ?? st.bpm, bb = b0 > 160 ? b0 / 2 : b0;
-            const P = BREAKS[st.beatStyle] || BREAKS.break, i = beatStep, t = beatNext;
+            const P = BREAKS[beatStyleNow] || BREAKS.break, i = beatStep, t = beatNext;
             const fill = beatBar % 4 === 3 && i >= 12;
             const hit = (note, v, k2 = kit) => v && k2.start({ note, velocity: Math.min(127, Math.round(v)), time: t });
             // Tension thickens each style without turning it into another one:
             // an extra kick on the last 16th, quiet ghost hats on the off-16ths
-            hit("kick", P.k[i] || (energy > 0.7 && i === 14 && st.beatStyle !== "heavy" ? 90 : 0));
+            hit("kick", P.k[i] || (energy > 0.7 && i === 14 && beatStyleNow !== "heavy" ? 90 : 0));
             if (fill) { hit("snare-h", 50 + (i - 12) * 22); }
             else {
               if (P.s[i]) { hit("snare-m", P.s[i]); hit("snare-m", P.s[i] * 0.8, snareKit); }
@@ -2539,7 +2602,8 @@ export default function Chloe() {
             const hv = P.h[i] || (energy > 0.5 && i % 2 && !P.o[i] ? 30 : 0);
             hit("hhclosed-short", hv);
             hit("hhopen", P.o[i]);
-            if (i === 0 && beatBar % 8 === 0) hit("crash", 90);
+            if (i === 0 && beatBar % 16 === 0 && !beatNoCrash) hit("crash", 90);
+            if (i === 0 && beatBar > 0) beatNoCrash = false;
             beatNext += 60 / bb / 4;
             beatStep = (beatStep + 1) % 16;
             if (beatStep === 0) beatBar++;
@@ -2940,27 +3004,41 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
       pick(entry.fam, entry.modeIdx, entry.fam.modes[entry.modeIdx]);
       const _al = autoLocksRef.current;
-      if (_al.rhythm)    setRhythm(rhythm);
-      if (_al.arpDir)    setArpDir(arpDir);
+      const gap = monasticModeRef.current ? 180000 : 12000 + Math.random() * 4000;
+      // Smooth: each setting changes on fewer picks (down to 40%) and at its own
+      // moment somewhere in the gap before the next pick, never all at once
+      const sm = smoothRef.current;
+      const maybe = () => Math.random() < 1 - 0.6 * sm;
+      const later = (fn) => {
+        if (!sm) { fn(); return; }
+        laterTs.push(setTimeout(() => { if (!cancelled) fn(); }, Math.random() * sm * gap * 0.9));
+      };
+      if (_al.rhythm && maybe())     later(() => setRhythm(rhythm));
+      if (_al.arpDir && maybe())     later(() => setArpDir(arpDir));
       // Off ~27% of the time; 5s, 6s and bar-filling mixes favoured
-      if (_al.grouping)  setGrouping([0, 0, 0, 3, 5, 5, 6, 6, 7, "mix", "mix"][Math.floor(Math.random() * 11)]);
-      if (_al.chordVoice) setChordVoice(chordVoice);
+      if (_al.grouping && maybe())   { const g = [0, 0, 0, 3, 5, 5, 6, 6, 7, "mix", "mix"][Math.floor(Math.random() * 11)]; later(() => setGrouping(g)); }
+      if (_al.chordVoice && maybe()) later(() => setChordVoice(chordVoice));
       // Sound changes on ~40% of picks so it doesn't jump every time; instruments favoured over raw waves
-      if (_al.sound && Math.random() < 0.4) {
+      if (_al.sound && Math.random() < 0.4 && maybe()) {
         const s = ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth"][Math.floor(Math.random() * 10)];
-        if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); }
+        later(() => { if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); } });
       }
       // Tuning changes on ~30% of picks; equal stays the most common
       // Beat style changes on ~30% of picks, only when a beat is on (never
       // switches it on or off); drive likelier when tense, break when calm
-      if (_al.beat && stRef.current.beatStyle !== "off" && Math.random() < 0.3) {
+      if (_al.beat && stRef.current.beatStyle !== "off" && Math.random() < 0.3 && maybe()) {
         const e = energyRef.current;
         const w = { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 };
         let r = Math.random() * (w.break + w.drive + w.heavy), pickB = "heavy";
         for (const k of ["break", "drive"]) { if ((r -= w[k]) < 0) { pickB = k; break; } }
-        if (pickB !== stRef.current.beatStyle) setBeatStyle(pickB);
+        if (pickB !== stRef.current.beatStyle) later(() => setBeatStyle(pickB));
       }
-      if (_al.tuning && Math.random() < 0.3) setTuning(["equal", "equal", "just", "just", "pyth"][Math.floor(Math.random() * 5)]);
+      // Smooth: the beat sometimes rests for 1-3 picks, fading out and back in
+      if (_al.beat && sm && stRef.current.beatStyle !== "off") {
+        if (beatRestRef.current) { if (Date.now() > beatRestRef.current) beatRestRef.current = 0; }
+        else if (Math.random() < 0.25 * sm) { const until = Date.now() + gap * (1 + Math.floor(Math.random() * 3)); later(() => { beatRestRef.current = until; }); }
+      } else beatRestRef.current = 0;
+      if (_al.tuning && Math.random() < 0.3 && maybe()) { const tu = ["equal", "equal", "just", "just", "pyth"][Math.floor(Math.random() * 5)]; later(() => setTuning(tu)); }
       // A journey sets tempo, reverb and sustain from its shape (a little wobble
       // around it) instead of picking them at random
       const J = journeyRef.current;
@@ -2968,18 +3046,18 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         const jb = J.homeBpm * J.vals.t;
         const to = Math.round(Math.min(240, Math.max(40, stRef.current.autoTempo === "drift" ? jb * (0.95 + Math.random() * 0.1) : jb)));
         bpm = to;
-        if (burstHome !== null) burstHome = to; else setBpm(to);
-      } else if (_al.bpm && stRef.current.autoTempo === "drift") setBpm(bpm);
-      if (_al.reverb && J?.vals) setReverbAmt(parseFloat(Math.min(1, Math.max(0, J.vals.rv + (Math.random() - 0.5) * 0.08)).toFixed(2)));
-      else if (_al.reverb) setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
-      if (_al.delay)     setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
-      if (_al.delayTime) setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
-      if (_al.sustain && J?.vals) setSustainMult(parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)));
-      else if (_al.sustain) setSustainMult([0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]);
-      if (_al.droneOn)   setDroneOn(Math.random() > 0.35);
-      if (_al.droneWave) setDroneWave(["sine","organ","pad","strings","tanpura"][Math.floor(Math.random() * 5)]);
-      if (_al.droneOct)  setDroneOct([-12, -24, -36][Math.floor(Math.random() * 3)]);
-      if (_al.droneVol)  setDroneVol(parseFloat((0.3 + Math.random() * 0.7).toFixed(2)));
+        later(() => { if (burstHome !== null) burstHome = to; else setBpm(to); });
+      } else if (_al.bpm && stRef.current.autoTempo === "drift" && maybe()) later(() => setBpm(bpm));
+      if (_al.reverb && J?.vals) { const rv = parseFloat(Math.min(1, Math.max(0, J.vals.rv + (Math.random() - 0.5) * 0.08)).toFixed(2)); later(() => setReverbAmt(rv)); }
+      else if (_al.reverb && maybe()) { const rv = parseFloat((0.3 + Math.random() * 0.65).toFixed(2)); later(() => setReverbAmt(rv)); }
+      if (_al.delay && maybe())     { const d = parseFloat((Math.random() * 0.5).toFixed(2)); later(() => setDelayAmt(d)); }
+      if (_al.delayTime && maybe()) { const d = parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)); later(() => setDelayTime(d)); }
+      if (_al.sustain && J?.vals) { const su = parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)); later(() => setSustainMult(su)); }
+      else if (_al.sustain && maybe()) { const su = [0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]; later(() => setSustainMult(su)); }
+      if (_al.droneOn && maybe())   { const on = Math.random() > 0.35; later(() => setDroneOn(on)); }
+      if (_al.droneWave && maybe()) { const w = ["sine","organ","pad","strings","tanpura"][Math.floor(Math.random() * 5)]; later(() => setDroneWave(w)); }
+      if (_al.droneOct && maybe())  { const o = [-12, -24, -36][Math.floor(Math.random() * 3)]; later(() => setDroneOct(o)); }
+      if (_al.droneVol && maybe())  { const v = parseFloat((0.3 + Math.random() * 0.7).toFixed(2)); later(() => setDroneVol(v)); }
       setArpOn(true);
 
       const scaleName = KNOWN[entry.fam.modes[entry.modeIdx]] || customNamesRef.current[entry.fam.modes[entry.modeIdx]] || `${entry.fam.id}.${entry.modeIdx}`;
@@ -3016,12 +3094,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         ts: Date.now(),
       }, ...prev].slice(0, 200));
 
-      timeout = setTimeout(pickNext, monasticModeRef.current ? 180000 : 12000 + Math.random() * 4000);
+      timeout = setTimeout(pickNext, gap);
     };
 
+    const laterTs = [];
     pickNext();
     return () => {
-      cancelled = true; clearTimeout(timeout); clearTimeout(burstT);
+      cancelled = true; clearTimeout(timeout); clearTimeout(burstT); laterTs.forEach(clearTimeout); beatRestRef.current = 0;
       if (burstHome !== null) { tempoSnapRef.current = false; setBpm(burstHome); }
     };
   }, [autoOn]); // reads live state via stRef; getCtx/pick/set* are stable
@@ -3244,6 +3323,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (symphonic) p.set("sy", "1");
     if (beatStyle !== "off") p.set("bt", beatStyle);
     if (journey !== "off") { p.set("jo", journey); if (journeyMins !== 15) p.set("jm", journeyMins); }
+    if (smooth) p.set("sm", Math.round(smooth * 100));
     // Only differences from the defaults travel: al = unticked, an = ticked-but-off-by-default
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => AUTO_LOCKS_DEFAULT[k] && !autoLocks[k]);
     const autoOn  = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !AUTO_LOCKS_DEFAULT[k] && autoLocks[k]);
@@ -3252,7 +3332,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, journey, journeyMins, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, journey, journeyMins, smooth, autoLocks, sidebarW]);
 
   // Record button: start tapping the master output; stop → download the WAV
   const toggleRec = useCallback(async () => {
@@ -4493,7 +4573,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fill every 4th bar, crash every 8. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {["off", "break", "drive", "heavy"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
@@ -4749,6 +4829,39 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   style={{ background: "none", border: `1px solid ${K.br}`, color: K.t2, borderRadius: 3, padding: "2px 7px", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>all off</button>
                 <button onClick={() => setShowAutoLocks(false)}
                   style={{ background: "none", border: "none", color: K.t2, fontSize: 16, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <div title="Give Auto a destination: dawn = dark to bright, dusk = bright to dark, descent = down into the dark and back up, storm = calm, storm, calm. Starts when Auto starts (or right away if it's running)." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, marginBottom: 6, cursor: "help" }}>JOURNEY</div>
+              <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 6 }}>
+                {["off", ...Object.keys(JOURNEYS)].map(v => (
+                  <button key={v} title={JOURNEYS[v]?.tip} onClick={() => setJourney(v)} style={{
+                      background: journey === v ? K.a : K.bg3, color: journey === v ? "#000" : K.txt,
+                      border: `1px solid ${journey === v ? K.a : K.br}`, borderRadius: 3, padding: "3px 6px",
+                      fontSize: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: journey === v ? 600 : 400,
+                    }}>{v}</button>
+                ))}
+              </div>
+              {journey !== "off" && (
+                <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                  <span style={{ color: K.t2, fontSize: 8, letterSpacing: 2, marginRight: 4 }}>LENGTH</span>
+                  {JOURNEY_MINS.map(m => (
+                    <button key={m} onClick={() => setJourneyMins(m)} style={{
+                      background: journeyMins === m ? K.a : K.bg3, color: journeyMins === m ? "#000" : K.txt,
+                      border: `1px solid ${journeyMins === m ? K.a : K.br}`, borderRadius: 3, padding: "3px 6px",
+                      fontSize: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: journeyMins === m ? 600 : 400,
+                    }}>{m}m</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span title="How hard it is to hear where Auto's changes happen. 0 = everything changes together on each pick, as before. Higher: each setting changes at its own moment between picks, fewer change per pick, reverb/delay/drone levels glide, the sound crossfade stretches to 12 s, scales morph note by note at half speed, the drone fades in and out, and the beat fades (sometimes resting for a while and fading back in) instead of cutting." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>SMOOTH</span>
+                <input type="range" min={0} max={100} step={5} value={Math.round(smooth * 100)}
+                  onChange={e => setSmooth(+e.target.value / 100)}
+                  style={{ flex: 1, accentColor: K.a, cursor: "pointer" }} />
+                <span style={{ color: K.txt, fontSize: 9, minWidth: 28, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Math.round(smooth * 100)}%</span>
               </div>
             </div>
             <p style={{ color: K.t2, fontSize: 9, margin: "0 0 14px", lineHeight: 1.5 }}>
