@@ -2063,8 +2063,9 @@ export default function Chloe() {
     // set being moved toward, the planned steps, and notes left until the next
     const mo = { cur: null, key: "", steps: [], every: 8, wait: 0 };
     // Tempo glide: the BPM actually played eases from `from` to `to` in log
-    // space (equal ratios feel like equal steps), 6 s per octave of change,
-    // 2-12 s, smoothstep-shaped. A new target mid-glide starts from where it is.
+    // space (equal ratios feel like equal steps), 12 s per octave of change,
+    // 4-30 s (up to twice that with Smooth), smoothstep-shaped. A new target
+    // mid-glide starts from where it is.
     const tg = { cur: null, from: 0, to: 0, t0: 0, dur: 0 };
     // Sound crossfade: while blending, each note plays on both the old and new sound
     const sbDur = () => 4000 + 8000 * smoothRef.current;   // 4 s, up to 12 s with Smooth
@@ -2080,7 +2081,7 @@ export default function Chloe() {
       }
       if (target !== tg.to) {
         tg.from = tg.cur; tg.to = target; tg.t0 = now;
-        tg.dur = 1000 * Math.max(2, Math.min(12, 6 * Math.abs(Math.log2(target / tg.from))));
+        tg.dur = 1000 * (1 + smoothRef.current) * Math.max(4, Math.min(30, 12 * Math.abs(Math.log2(target / tg.from))));
       }
       const x = tg.dur ? Math.min(1, (now - tg.t0) / tg.dur) : 1;
       const e = x * x * (3 - 2 * x);
@@ -2974,34 +2975,37 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     const DIRS    = ["asc", "desc", "rand"];
     const VOICES  = ["off", "off", "off", "power", "sus2", "triad"];
 
-    // Tempo drifts: each pick moves at most ~±20% from the current BPM, pulled
+    // Tempo drifts: each pick moves at most ~±10% from the current BPM, pulled
     // a quarter of the way back toward the tempo Auto started at (in log space)
     const homeBpm = Math.min(240, Math.max(60, stRef.current.bpm));
     const driftBpm = (cur) => {
-      const step = Math.log2(cur) + 0.27 * (Math.random() * 2 - 1);
+      const step = Math.log2(cur) + 0.14 * (Math.random() * 2 - 1);
       const next = 2 ** (step + 0.25 * (Math.log2(homeBpm) - step));
       return Math.round(Math.min(240, Math.max(60, next)));
     };
 
     // Bursts: tempo holds at home; every 20-60 s a 2-4 bar surprise, then back.
     // Double/half time snap in and out; push/pull glide.
+    // Every 45-120 s (longer with Smooth), 4-8 bars. With Smooth at half or more,
+    // no double/half-time snaps, only the gentle push and pull.
     const BURSTS = [
-      { f: 2,   snap: true,  w: 35 },  // double time
-      { f: 1.2, snap: false, w: 30 },  // push
-      { f: 0.8, snap: false, w: 20 },  // pull back
-      { f: 0.5, snap: true,  w: 15 },  // half time
+      { f: 2,    snap: true,  w: 30 },  // double time
+      { f: 1.15, snap: false, w: 35 },  // push
+      { f: 0.87, snap: false, w: 25 },  // pull back
+      { f: 0.5,  snap: true,  w: 10 },  // half time
     ];
     let burstT = null, burstHome = null;
-    const scheduleBurst = () => { burstT = setTimeout(doBurst, 20000 + Math.random() * 40000); };
+    const scheduleBurst = () => { burstT = setTimeout(doBurst, (45000 + Math.random() * 75000) * (1 + smoothRef.current)); };
     const doBurst = () => {
       if (cancelled) return;
       const st = stRef.current;
       if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm) { scheduleBurst(); return; }
-      let r = Math.random() * 100, b = BURSTS[0];
-      for (const x of BURSTS) { if ((r -= x.w) < 0) { b = x; break; } }
+      const pool = smoothRef.current >= 0.5 ? BURSTS.filter(x => !x.snap) : BURSTS;
+      let r = Math.random() * pool.reduce((a, x) => a + x.w, 0), b = pool[0];
+      for (const x of pool) { if ((r -= x.w) < 0) { b = x; break; } }
       burstHome = st.bpm;
       const to = Math.round(Math.min(480, Math.max(40, burstHome * b.f)));
-      const bars = 2 + Math.floor(Math.random() * 3);
+      const bars = 4 + Math.floor(Math.random() * 5);
       tempoSnapRef.current = b.snap;
       setBpm(to);
       burstT = setTimeout(() => {
@@ -3094,10 +3098,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // switches it on or off); drive likelier when tense, break when calm
       if (_al.beat && stRef.current.beatStyle !== "off" && Math.random() < 0.3 && maybe()) {
         const e = energyRef.current;
-        // fusion likelier when the line is playing in groups (its accents follow them)
-        const w = { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6, fusion: stRef.current.grouping ? 1.2 : 0.6 };
-        let r = Math.random() * (w.break + w.drive + w.heavy + w.fusion), pickB = "heavy";
-        for (const k of ["break", "drive", "fusion"]) { if ((r -= w[k]) < 0) { pickB = k; break; } }
+        // Fusion is only played when you pick it, never chosen by Auto
+        const w = { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 };
+        let r = Math.random() * (w.break + w.drive + w.heavy), pickB = "heavy";
+        for (const k of ["break", "drive"]) { if ((r -= w[k]) < 0) { pickB = k; break; } }
         if (pickB !== stRef.current.beatStyle) later(() => setBeatStyle(pickB));
       }
       // Smooth: the beat sometimes rests for 1-3 picks, fading out and back in
@@ -4630,7 +4634,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Tempo change — jump, or glide between BPMs */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="How the tempo moves when the BPM changes (Auto, Claude or the slider). Cut = jump at once. Glide = ease to the new tempo, about 6 seconds per doubling or halving and never under 2 seconds, so it never drops from fast straight to very slow. Auto also drifts the tempo by small steps (about ±20% at a time) around the tempo it started at." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TEMPO CHANGE</span>
+              <span title="How the tempo moves when the BPM changes (Auto, Claude or the slider). Cut = jump at once. Glide = ease to the new tempo, about 12 seconds per doubling or halving (4 to 30 seconds, up to twice as long with Smooth), so it never drops from fast straight to very slow." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TEMPO CHANGE</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[{ l: "cut", v: false }, { l: "glide", v: true }].map(o => (
                   <button key={o.l} onClick={() => setTempoGlide(o.v)} style={{
@@ -4690,7 +4694,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             )}
             {/* Auto tempo — wander, or hold steady with short surprise bursts */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="How Auto moves the tempo. Drift = wander in small steps (about ±20%) around the BPM you started at. Bursts = hold your BPM steady, and every 20-60 seconds throw in a 2-4 bar surprise: double time, a push up, a pull back or half time, then return. Untick BPM in Auto's ⚙ to stop all tempo changes." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>AUTO TEMPO</span>
+              <span title="How Auto moves the tempo. Drift = wander in small steps (about ±10%) around the BPM you started at. Bursts = hold your BPM steady, and every 45-120 seconds (longer with Smooth) throw in a 4-8 bar surprise: double time, a push up, a pull back or half time, then return. With Smooth at 50% or more, only the gentle push and pull. Untick BPM in Auto's ⚙ to stop all tempo changes." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>AUTO TEMPO</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {["drift", "bursts"].map(v => (
                   <button key={v} onClick={() => setAutoTempo(v)} style={{
