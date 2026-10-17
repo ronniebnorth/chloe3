@@ -1731,6 +1731,20 @@ export default function Chloe() {
     return () => clearInterval(id);
   }, []);
   const analyserRef  = useRef(null);
+  // Sleep tone (Endless): the line goes through a low-pass before its reverb
+  // and delay sends, so the notes, echoes and tail are all soft
+  const darkRef = useRef(null);
+  const getDark = (ac) => {
+    if (darkRef.current && darkRef.current.ac === ac) return darkRef.current;
+    const input = ac.createGain();
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1100; lp.Q.value = 0.5;
+    input.connect(lp); lp.connect(masterOut(ac));
+    lp.connect(getOrCreateReverb(ac).convolver);
+    const toDelay = ac.createGain(); toDelay.gain.value = 1;
+    lp.connect(toDelay); toDelay.connect(getOrCreateDelay(ac).delayNode);
+    darkRef.current = { ac, input };
+    return darkRef.current;
+  };
   const getOrCreateAnalyser = useCallback((ac) => {
     if (analyserRef.current && analyserRef.current.ac === ac) return analyserRef.current;
     const node = ac.createAnalyser();
@@ -1812,8 +1826,8 @@ export default function Chloe() {
   const melPrevRef  = useRef(0);
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
-  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol]);
+  const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol, droneWave });
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -2379,7 +2393,11 @@ export default function Chloe() {
       const rev = getOrCreateReverb(ac);
       const del = getOrCreateDelay(ac);
       const an = getOrCreateAnalyser(ac);
-      const freq = ar * 2 ** ((60 + OFFS[ri] - 69) / 12) * tunedRatio(semi, tu);
+      // Endless keeps the line low: an octave down, folded to stay under G4
+      const sleep = !!JOURNEYS[journeyRef.current?.id]?.endless;
+      let sv = semi;
+      if (sleep) { sv -= 12; while (sv > 7) sv -= 12; }
+      const freq = ar * 2 ** ((60 + OFFS[ri] + (sv - semi) - 69) / 12) * tunedRatio(semi, tu);
       const beatDur = (dur * 60 / b / 2) * stRef.current.sustainMult;
       const snd = { inst, t };
       const same = (a, b) => a && a.inst === b.inst && (a.inst || a.t === b.t);
@@ -2390,10 +2408,12 @@ export default function Chloe() {
       const x = sb.from ? Math.min(1, (Date.now() - sb.t0) / sbDur()) : 1;
       if (x >= 1) sb.from = null;
       // Equal-power crossfade so the level holds steady through the swap
-      const out = stRef.current.symphonic && orchRef.current && orchRef.current.ac === ac ? orchRef.current.lead : undefined;
-      const revSend = out ? null : rev.convolver;   // the lead bus has its own cathedral send
-      if (sb.from) synthNote(ac, freq, vel * nv * Math.cos(x * Math.PI / 2), sb.from.inst, sb.from.t, beatDur, revSend, del.delayNode, an.node, out);
-      synthNote(ac, freq, vel * nv * (sb.from ? Math.sin(x * Math.PI / 2) : 1), inst, t, beatDur, revSend, del.delayNode, an.node, out);
+      const out = sleep ? getDark(ac).input
+        : stRef.current.symphonic && orchRef.current && orchRef.current.ac === ac ? orchRef.current.lead : undefined;
+      const revSend = out ? null : rev.convolver;   // the lead / dark bus has its own reverb send
+      const delSend = sleep ? null : del.delayNode;  // ...and the dark bus its own delay send
+      if (sb.from) synthNote(ac, freq, vel * nv * Math.cos(x * Math.PI / 2), sb.from.inst, sb.from.t, beatDur, revSend, delSend, an.node, out);
+      synthNote(ac, freq, vel * nv * (sb.from ? Math.sin(x * Math.PI / 2) : 1), inst, t, beatDur, revSend, delSend, an.node, out);
       noteCountRef.current++;
       setPlaying(((semi % 12) + 12) % 12);  // grouped runs can dip below the root
     };
@@ -3181,6 +3201,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
       pick(entry.fam, entry.modeIdx, entry.fam.modes[entry.modeIdx]);
       const _al = autoLocksRef.current;
+      const J0 = journeyRef.current;
       const gap = monasticModeRef.current ? 180000 : 12000 + Math.random() * 4000;
       // Smooth: each setting changes on fewer picks (down to 40%) and at its own
       // moment somewhere in the gap before the next pick, never all at once
@@ -3196,8 +3217,16 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.grouping && maybe())   { const g = [0, 0, 0, 3, 5, 5, 6, 6, 7, "mix", "mix"][Math.floor(Math.random() * 11)]; later(() => setGrouping(g)); }
       if (_al.chordVoice && maybe()) later(() => setChordVoice(chordVoice));
       // Sound changes on ~40% of picks so it doesn't jump every time; instruments favoured over raw waves
-      if (_al.sound && Math.random() < 0.4 && maybe()) {
-        const s = ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth"][Math.floor(Math.random() * 10)];
+      // Endless: soft sounds only, and a harsh one playing now is swapped out right away
+      const sleepJ = !!J0?.vals && JOURNEYS[J0.id]?.endless;
+      const SOFT = ["space", "space", "sine", "piano", "triangle"];
+      const curSnd = stRef.current.instrument || stRef.current.timbre;
+      if (_al.sound && sleepJ && !SOFT.includes(curSnd)) {
+        const s = SOFT[Math.floor(Math.random() * SOFT.length)];
+        if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); }
+      } else if (_al.sound && Math.random() < 0.4 && maybe()) {
+        const s = sleepJ ? SOFT[Math.floor(Math.random() * SOFT.length)]
+          : ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth"][Math.floor(Math.random() * 10)];
         later(() => { if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); } });
       }
       // Tuning changes on ~30% of picks; equal stays the most common
@@ -3244,7 +3273,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.sustain && J?.vals) { const su = parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)); later(() => setSustainMult(su)); }
       else if (_al.sustain && maybe()) { const su = [0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]; later(() => setSustainMult(su)); }
       if (_al.droneOn && maybe())   { const on = Math.random() > 0.35; later(() => setDroneOn(on)); }
-      if (_al.droneWave && maybe()) { const w = ["sine","organ","pad","strings","tanpura"][Math.floor(Math.random() * 5)]; later(() => setDroneWave(w)); }
+      if (_al.droneWave && sleepJ && !["sine", "pad"].includes(stRef.current.droneWave)) later(() => setDroneWave("pad"));
+      else if (_al.droneWave && maybe()) { const w = (sleepJ ? ["sine", "pad"] : ["sine","organ","pad","strings","tanpura"])[Math.floor(Math.random() * (sleepJ ? 2 : 5))]; later(() => setDroneWave(w)); }
       if (_al.droneOct && maybe())  { const o = [-12, -24, -36][Math.floor(Math.random() * 3)]; later(() => setDroneOct(o)); }
       if (_al.droneVol && maybe())  { const v = parseFloat((0.3 + Math.random() * 0.7).toFixed(2)); later(() => setDroneVol(v)); }
       setArpOn(true);
@@ -3628,7 +3658,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     const play = () => {
       wake();
       if (journey === "off") setJourney(J);
-      if (J === "endless") setSmooth(Math.max(smooth, 0.9));   // sleep: hide every seam
+      if (J === "endless") {
+        setSmooth(Math.max(smooth, 0.9));   // sleep: hide every seam
+        if (!["sine", "pad"].includes(droneWave)) setDroneWave("pad");   // no tanpura buzz
+      }
       else if (!smooth) setSmooth(0.7);
       setDemoOn(false); setAutoOn(true);
     };
