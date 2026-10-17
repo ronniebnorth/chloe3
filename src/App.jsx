@@ -213,23 +213,37 @@ class ChloeRec extends AudioWorkletProcessor {
 }
 registerProcessor("chloe-rec", ChloeRec);`;
 
+// The recorder lives in its own AudioContext, because Chloe swaps its playback
+// context every couple of minutes. Each playback context's master output is
+// bridged in through a MediaStream (attach), so takes run across the swaps and
+// the overlap of old and new context records just as it sounds.
 async function startRecorder(ac) {
-  if (!ac.__recLoaded) {
-    const url = URL.createObjectURL(new Blob([REC_WORKLET], { type: "application/javascript" }));
-    await ac.audioWorklet.addModule(url);
-    ac.__recLoaded = true;
-  }
-  masterOut(ac);
-  const node = new AudioWorkletNode(ac, "chloe-rec", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: "explicit" });
+  const rc = new AudioContext({ sampleRate: ac.sampleRate });
+  const url = URL.createObjectURL(new Blob([REC_WORKLET], { type: "application/javascript" }));
+  await rc.audioWorklet.addModule(url);
+  if (rc.state === "suspended") await rc.resume();
+  const node = new AudioWorkletNode(rc, "chloe-rec", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: "explicit" });
   const L = [], R = [];
   node.port.onmessage = (e) => { L.push(...e.data[0]); R.push(...e.data[1]); };
-  const mute = ac.createGain(); mute.gain.value = 0;   // keeps the node pulled by the graph
-  ac.__masterTap.connect(node); node.connect(mute); mute.connect(ac.destination);
+  const mute = rc.createGain(); mute.gain.value = 0;   // keeps the node pulled by the graph
+  node.connect(mute); mute.connect(rc.destination);
+  const taps = [];
+  const attach = (pac) => {
+    masterOut(pac);
+    const dest = pac.createMediaStreamDestination();
+    pac.__masterTap.connect(dest);
+    const src = rc.createMediaStreamSource(dest.stream);
+    src.connect(node);
+    taps.push({ pac, dest, src });
+  };
+  attach(ac);
   return {
+    attach,
     stop() {
-      ac.__masterTap.disconnect(node); node.disconnect(); mute.disconnect();
+      taps.forEach(t => { try { t.pac.__masterTap.disconnect(t.dest); } catch {} t.src.disconnect(); });
       node.port.onmessage = null;
-      return encodeWav24(L, R, ac.sampleRate);
+      rc.close();
+      return encodeWav24(L, R, rc.sampleRate);
     },
   };
 }
@@ -752,6 +766,40 @@ const sessionSummary = (sess) => {
   return { start: mean(first), end: mean(last), mins: end / 60 };
 };
 
+/* ── Journeys ──
+   A shape over a chosen length that steers Auto: brightness target (b),
+   tempo as a multiple of the BPM it started at (t), reverb (rv), sustain (su),
+   orchestra energy added on top of tension (e) and, for Storm, a tension
+   target for scale picks (tn). Waypoints at fraction `at`, eased between.
+   On arrival: while recording, land on `home`, fade out and save the WAV;
+   otherwise hold the last waypoint and keep playing. */
+const JOURNEYS = {
+  dawn: { label: "dawn", home: 2773, tip: "Dark to bright: Locrian-dark scales open up to Lydian-bright, the tempo lifts a little, the reverb dries out.",
+    pts: [{ at: 0, b: 0.30, t: 0.8, rv: 0.85, su: 1.4 }, { at: 1, b: 0.70, t: 1.1, rv: 0.45, su: 0.9 }] },
+  dusk: { label: "dusk", home: 1453, tip: "Bright to dark: from open, bright scales down into dark ones, slowing, longer notes, deeper reverb. Good for winding down.",
+    pts: [{ at: 0, b: 0.70, t: 1.1, rv: 0.45, su: 0.9 }, { at: 1, b: 0.30, t: 0.65, rv: 0.9, su: 1.6 }] },
+  descent: { label: "descent", home: 2741, tip: "Descent & return: bright down into the dark, slowest at the halfway point, then back up into the light.",
+    pts: [{ at: 0, b: 0.65, t: 1, rv: 0.55, su: 1 }, { at: 0.5, b: 0.30, t: 0.75, rv: 0.9, su: 1.5 }, { at: 1, b: 0.70, t: 1.1, rv: 0.5, su: 0.9 }] },
+  storm: { label: "storm", home: 2741, tip: "Calm, storm, calm: tension and tempo build to a peak about 60% of the way in (clashing scales, faster, the orchestra at full energy if it's on), then it clears.",
+    pts: [{ at: 0, b: 0.55, t: 0.85, rv: 0.8, su: 1.3, e: 0, tn: 0 }, { at: 0.6, b: 0.45, t: 1.35, rv: 0.5, su: 0.7, e: 0.8, tn: 1 },
+          { at: 0.8, b: 0.5, t: 1, rv: 0.7, su: 1, e: 0.3, tn: 0.4 }, { at: 1, b: 0.6, t: 0.8, rv: 0.85, su: 1.3, e: 0, tn: 0 }] },
+};
+const JOURNEY_MINS  = [5, 15, 30, 60];
+const JOURNEY_COLOR = "#e8b04a";
+const journeyAt = (j, f) => {
+  const p = j.pts;
+  let i = 0;
+  while (i < p.length - 2 && f > p[i + 1].at) i++;
+  const a = p[i], b = p[i + 1];
+  const x = Math.min(1, Math.max(0, (f - a.at) / (b.at - a.at)));
+  const s = (1 - Math.cos(Math.PI * x)) / 2;   // ease in and out of each waypoint
+  const out = {};
+  for (const k of ["b", "t", "rv", "su", "e", "tn"]) if (a[k] !== undefined) out[k] = a[k] + (b[k] - a[k]) * s;
+  return out;
+};
+const patSemis = (p) => [...Array(12).keys()].filter(i => (p >> i) & 1);
+const popcount = (x) => { let n = 0; while (x) { n += x & 1; x >>= 1; } return n; };
+
 // Arpeggio rhythm patterns: arrays of step durations in eighth-note units.
 // Single notes use each value directly; chords use value × 2.
 const ARP_RHYTHM_PATS = {
@@ -827,6 +875,7 @@ const HELP_SECTIONS = [
   { title: "SOUND", body: "All instruments are synthesised in the browser using Web Audio. piano = detuned triangle oscillators with harmonic decay. guitar = Karplus-Strong style noise burst. xylo = marimba-ratio harmonic partials. space = detuned sines with LFO vibrato. VOL sets note volume. REV adds convolution reverb. DEL sets delay wet level. D.T sets delay time in seconds (try 0.125, 0.25, 0.375, 0.5 for rhythmic values). A= sets concert pitch (432–440 Hz). BPM sets tempo." },
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
   { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from all named scales, varying root note, rhythm, arpeggio direction, chord voicing, BPM, reverb, delay level, and delay time every 12–16 seconds. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
+  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm. LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
   { title: "EEG MODE", body: "When a FlowTime headband is connected via the EEG proxy (localhost:8520), a coloured dot appears in the Demo controls showing your dominant brainwave band (excluding delta, which is always high at forehead sites and not meaningful). In Demo mode with EEG active, a brightness-matching algorithm runs before each Claude call: a high theta/alpha ratio pushes the target darker (deep meditation, drowsiness); a high beta/alpha ratio pushes it brighter (focus, engagement); alpha dominance pulls 50% toward neutral (0.5 = Dorian). The system then finds the scale in the catalogue whose normalized brightness is closest to the target — scales of any size (pentatonic, heptatonic, etc.) are equally reachable at any brightness level. A scale only changes if the target shifts by more than 5% from the current scale's brightness. Claude receives the pre-selected scale and its normalized brightness, and focuses on choosing BPM, voicing, and effects to complement it. The brightness bar lets you override the EEG target manually with the slider, lock the current zone, or explore random scales at similar brightness. If a heart rate sensor is also active, the live BPM appears in the playback controls — Claude can read and track it each cycle when you ask it to sync BPM to your pulse." },
   { title: "LOOP & SAVE", body: "While Demo or Auto is running, a Loop button appears. Click it to freeze playback on the current scale — Claude or Auto keeps repeating it instead of moving on. While looping, a Save button appears. Clicking Save captures a full snapshot: scale, root, BPM, rhythm, arpeggio direction, chord voicing, instrument, reverb, delay, and drone settings. Saved moments persist in your browser and appear in a collapsible panel. Click the play button on any saved moment to instantly restore all its settings and start playback. Delete a moment with the × button." },
@@ -1263,6 +1312,8 @@ export default function Chloe() {
         soundBlend: p.get("sb") !== "0",
         tuning:     ["just", "pyth"].includes(p.get("tu")) ? p.get("tu") : "equal",
         autoTempo:  p.get("at") === "drift" ? "drift" : "bursts",
+        journey:    Object.hasOwn(JOURNEYS, p.get("jo") ?? "") ? p.get("jo") : "off",
+        journeyMins: JOURNEY_MINS.includes(parseInt(p.get("jm"))) ? parseInt(p.get("jm")) : 15,
         symphonic:  p.get("sy") === "1",
         beatStyle:  ["break", "drive", "heavy"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
@@ -1317,6 +1368,11 @@ export default function Chloe() {
   const [tuning, setTuning] = useState(_u.tuning ?? "equal");
   // Auto tempo: drift = wander in small steps; bursts = hold steady, with short surprises
   const [autoTempo, setAutoTempo] = useState(_u.autoTempo ?? "bursts");
+  // Journey — see JOURNEYS above. journeyRef holds the live run while Auto plays one
+  const [journey,     setJourney]     = useState(_u.journey ?? "off");
+  const [journeyMins, setJourneyMins] = useState(_u.journeyMins ?? 15);
+  const [journeyNow,  setJourneyNow]  = useState(null); // { el, f, arrived, ending } for the display
+  const journeyRef = useRef(null);  // { id, mins, startMs, homeBpm, vals, arrived, ending }
   // Symphonic: sampled strings + double bass play the scale's chords under the line
   const [symphonic, setSymphonic] = useState(_u.symphonic ?? false);
   const [orchLoading, setOrchLoading] = useState(false);
@@ -1327,6 +1383,9 @@ export default function Chloe() {
   // Recorder state: null, or { rec, t0 } while recording
   const [recording, setRecording] = useState(null);
   const [recSecs, setRecSecs] = useState(0);
+  const recordingRef = useRef(null);
+  useEffect(() => { recordingRef.current = recording; }, [recording]);
+  const toggleRecRef = useRef(null);
   const energyRef = useRef(0);        // orchestra tension energy, shared with Auto
   const autoOnRef = useRef(false);
   const tempoSnapRef = useRef(false); // next BPM change jumps instead of gliding
@@ -1460,7 +1519,7 @@ export default function Chloe() {
           const f = Math.min(1, (el - ARC_BASELINE_MS) / (a.mins * 60000));
           lead = a.from + (a.to - a.from) * f;
           phase = f < 1 ? "lead" : "hold";
-          setLeadTarget(lead);
+          if (!journeyRef.current) setLeadTarget(lead);   // a running journey steers instead
         }
       } else if (el >= a.mins * 60000) phase = "mirror-over";
       if (el - a.lastLog >= ARC_LOG_MS || !a.rows.length) {
@@ -1492,6 +1551,69 @@ export default function Chloe() {
     }, 1000);
     return () => clearInterval(id);
   }, [arc]);
+
+  // Journey clock: while Auto plays a journey, update its values and the
+  // brightness target once a second; on arrival either hold or (recording) end
+  useEffect(() => {
+    if (!autoOn || journey === "off") {
+      if (journeyRef.current) { journeyRef.current = null; setJourneyNow(null); if (!arcRef.current) setLeadTarget(null); }
+      // Stopped by hand during the ending fade: cancel it and bring the level back
+      if (endTimersRef.current.length) {
+        endTimersRef.current.forEach(clearTimeout); endTimersRef.current = [];
+        const ac = getCtx(), g = ac.__masterTap?.gain;
+        if (g) { g.cancelScheduledValues(ac.currentTime); g.setValueAtTime(0.82, ac.currentTime); }
+      }
+      return;
+    }
+    const j = JOURNEYS[journey];
+    // Changing only the length keeps the clock running; a new journey starts over
+    if (!journeyRef.current || journeyRef.current.id !== journey)
+      journeyRef.current = { id: journey, startMs: Date.now(), homeBpm: stRef.current.bpm, arrived: false, ending: false };
+    const J = journeyRef.current;
+    J.mins = journeyMins;
+    const tick = () => {
+      if (journeyRef.current !== J || J.ending) return;
+      const el = Date.now() - J.startMs;
+      const f = Math.min(1, el / (J.mins * 60000));
+      J.vals = journeyAt(j, f);
+      setLeadTarget(J.vals.b);
+      if (f >= 1 && !J.arrived) {
+        J.arrived = true;
+        if (recordingRef.current) endJourney(J, j);
+      }
+      setJourneyNow({ el, f, arrived: J.arrived, ending: J.ending });
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOn, journey, journeyMins]);
+
+  // Recorded journeys end the piece: settle on the home scale for a couple of
+  // bars, fade the master out over 10 s, save the WAV, stop, restore the level
+  const endTimersRef = useRef([]);
+  const endJourney = (J, j) => {
+    const timers = endTimersRef.current;
+    J.ending = true;
+    const fam = FAMILIES.find(fm => !fm.outside && fm.modes.includes(j.home));
+    if (fam) pick(fam, fam.modes.indexOf(j.home), j.home);
+    setLeadTarget(normalizedBrightness(j.home));
+    setLoopOn(true);   // Auto stops picking
+    const ac = getCtx(), g = ac.__masterTap?.gain;
+    const settle = Math.max(4, 480 / stRef.current.bpm);
+    timers.push(setTimeout(() => {
+      if (g) { g.cancelScheduledValues(ac.currentTime); g.setValueAtTime(g.value, ac.currentTime); g.linearRampToValueAtTime(0, ac.currentTime + 10); }
+      timers.push(setTimeout(() => {
+        endTimersRef.current = [];
+        if (recordingRef.current) toggleRecRef.current?.();
+        journeyRef.current = null; setJourneyNow(null);
+        setAutoOn(false); setArpOn(false); setLoopOn(false); setDroneOn(false);
+        overrideTargetRef.current = null; setOverrideTarget(null);
+        if (g) setTimeout(() => { g.cancelScheduledValues(ac.currentTime); g.setValueAtTime(0, ac.currentTime); g.linearRampToValueAtTime(0.82, ac.currentTime + 0.5); }, 1500);
+      }, 10500));
+    }, settle * 1000));
+    setJourneyNow(p => p && { ...p, ending: true });
+  };
 
   // Stopping Auto / Claude ends the session and saves its log
   useEffect(() => { if (!autoOn && !demoOn && arcRef.current) stopArc(); }, [autoOn, demoOn]);
@@ -1597,8 +1719,10 @@ export default function Chloe() {
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
   const getCtx = useCallback(() => {
-    if (!ctxRef.current || ctxRef.current.state === "closed")
+    if (!ctxRef.current || ctxRef.current.state === "closed") {
       ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      recordingRef.current?.rec.attach(ctxRef.current);   // a take runs on across the swap
+    }
     if (ctxRef.current.state === "suspended") ctxRef.current.resume();
     return ctxRef.current;
   }, []);
@@ -1715,7 +1839,8 @@ export default function Chloe() {
   // disconnect() until the context is closed. Recycle every 2 minutes to prevent accumulation.
   useEffect(() => {
     const id = setInterval(() => {
-      if (!ctxRef.current) return;
+      // Not during a journey's ending fade: the fresh context would start at full level
+      if (!ctxRef.current || endTimersRef.current.length) return;
       const old = ctxRef.current;
       ctxRef.current = null;
       reverbRef.current = null;
@@ -1989,7 +2114,7 @@ export default function Chloe() {
       return end - t0;
     };
     const updateEnergy = (base) => {
-      const target = Math.min(1, tensionOf(base) * 0.9 + (mo.steps.length ? 0.4 : 0));
+      const target = Math.min(1, tensionOf(base) * 0.9 + (mo.steps.length ? 0.4 : 0) + (journeyRef.current?.vals?.e ?? 0));
       energy += (target - energy) * (target > energy ? 0.25 : 0.04);
       energyRef.current = energy;
       peakE = Math.max(peakE, energy);
@@ -2771,6 +2896,20 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (outsideOpts.length && Math.random() < OUTSIDE_CHANCE)
         entry = pickOutside(outsideOpts);
 
+      // Journey: walk toward its brightness target one note at a time (a one-note
+      // change, or a note added / dropped), Storm also pulled toward its tension.
+      // Far from the target (the start) it jumps straight there instead.
+      const jv = journeyRef.current?.vals;
+      if (!entry && jv && cur && !isOutsideId(cur.id) && Math.abs(normalizedBrightness(cur.pattern) - jv.b) <= 0.12) {
+        const scored = catalogue.filter(e => e.pat !== cur.pattern).map(e => {
+          const d = popcount(e.pat ^ cur.pattern);
+          let sc = Math.abs(normalizedBrightness(e.pat) - jv.b) + 0.03 * d + Math.random() * 0.02;
+          if (jv.tn !== undefined) sc += 0.4 * Math.abs(tensionOf(patSemis(e.pat)) - jv.tn);
+          return { e, sc };
+        }).sort((x, y) => x.sc - y.sc);
+        if (scored.length) entry = scored[Math.floor(Math.random() * Math.min(3, scored.length))].e;
+      }
+
       // Brightness-aware selection — priority: slider / lock / arc override > EEG > random
       const override = overrideTargetRef.current;
       const brainTarget = eegBrainTarget(eegDataRef.current, BRIGHTNESS_CONFIG);
@@ -2794,7 +2933,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const rhythm     = RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
       const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
       const chordVoice = VOICES[Math.floor(Math.random() * VOICES.length)];
-      const bpm        = driftBpm(stRef.current.bpm);
+      let bpm          = driftBpm(stRef.current.bpm);
 
       const ac = getCtx();
       if (ac.state === "suspended") ac.resume();
@@ -2822,11 +2961,21 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         if (pickB !== stRef.current.beatStyle) setBeatStyle(pickB);
       }
       if (_al.tuning && Math.random() < 0.3) setTuning(["equal", "equal", "just", "just", "pyth"][Math.floor(Math.random() * 5)]);
-      if (_al.bpm && stRef.current.autoTempo === "drift") setBpm(bpm);
-      if (_al.reverb)    setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
+      // A journey sets tempo, reverb and sustain from its shape (a little wobble
+      // around it) instead of picking them at random
+      const J = journeyRef.current;
+      if (_al.bpm && J?.vals) {
+        const jb = J.homeBpm * J.vals.t;
+        const to = Math.round(Math.min(240, Math.max(40, stRef.current.autoTempo === "drift" ? jb * (0.95 + Math.random() * 0.1) : jb)));
+        bpm = to;
+        if (burstHome !== null) burstHome = to; else setBpm(to);
+      } else if (_al.bpm && stRef.current.autoTempo === "drift") setBpm(bpm);
+      if (_al.reverb && J?.vals) setReverbAmt(parseFloat(Math.min(1, Math.max(0, J.vals.rv + (Math.random() - 0.5) * 0.08)).toFixed(2)));
+      else if (_al.reverb) setReverbAmt(parseFloat((0.3 + Math.random() * 0.65).toFixed(2)));
       if (_al.delay)     setDelayAmt(parseFloat((Math.random() * 0.5).toFixed(2)));
       if (_al.delayTime) setDelayTime(parseFloat([0.125, 0.25, 0.375, 0.5, 0.75][Math.floor(Math.random() * 5)].toFixed(3)));
-      if (_al.sustain) setSustainMult([0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]);
+      if (_al.sustain && J?.vals) setSustainMult(parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)));
+      else if (_al.sustain) setSustainMult([0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]);
       if (_al.droneOn)   setDroneOn(Math.random() > 0.35);
       if (_al.droneWave) setDroneWave(["sine","organ","pad","strings","tanpura"][Math.floor(Math.random() * 5)]);
       if (_al.droneOct)  setDroneOct([-12, -24, -36][Math.floor(Math.random() * 3)]);
@@ -3094,6 +3243,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (autoTempo !== "bursts") p.set("at", autoTempo);
     if (symphonic) p.set("sy", "1");
     if (beatStyle !== "off") p.set("bt", beatStyle);
+    if (journey !== "off") { p.set("jo", journey); if (journeyMins !== 15) p.set("jm", journeyMins); }
     // Only differences from the defaults travel: al = unticked, an = ticked-but-off-by-default
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => AUTO_LOCKS_DEFAULT[k] && !autoLocks[k]);
     const autoOn  = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => !AUTO_LOCKS_DEFAULT[k] && autoLocks[k]);
@@ -3102,7 +3252,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, journey, journeyMins, autoLocks, sidebarW]);
 
   // Record button: start tapping the master output; stop → download the WAV
   const toggleRec = useCallback(async () => {
@@ -3127,6 +3277,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       setRecording({ rec, t0: Date.now() });
     } catch (e) { console.error("recorder:", e); }
   }, [recording, sel, customNames, getCtx]);
+  toggleRecRef.current = toggleRec;
   useEffect(() => {
     if (!recording) return;
     const iv = setInterval(() => setRecSecs(Math.floor((Date.now() - recording.t0) / 1000)), 250);
@@ -3481,7 +3632,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             const displayTarget = overrideTarget !== null ? overrideTarget : claudeOverride !== null ? claudeOverride : eegTarget;
             const isOverride = overrideTarget !== null;
             const arcLead = arc?.mode === "lead" && arc.from !== null;
-            const dotColor = arcLead ? ARC_COLOR : brightnessLocked ? "#f0a030" : isOverride ? "#6060e8" : claudeOverride !== null ? "#e87020" : eegStreaming ? "#3ee8d0" : K.a;
+            const jOn = journeyNow !== null;
+            const dotColor = jOn ? JOURNEY_COLOR : arcLead ? ARC_COLOR : brightnessLocked ? "#f0a030" : isOverride ? "#6060e8" : claudeOverride !== null ? "#e87020" : eegStreaming ? "#3ee8d0" : K.a;
             const sliderVal = overrideTarget !== null ? Math.round(overrideTarget * 100)
               : claudeOverride !== null ? Math.round(claudeOverride * 100)
               : eegTarget !== null ? Math.round(eegTarget * 100) : 50;
@@ -3490,6 +3642,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             return (
               <div style={{ borderTop: `1px solid ${K.demoBr}`, padding: "5px 18px", display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, flexShrink: 0 }}>BRIGHT</span>
+                {jOn && (
+                  <span title={JOURNEYS[journey]?.tip} style={{ color: JOURNEY_COLOR, fontSize: 9, flexShrink: 0, fontVariantNumeric: "tabular-nums", cursor: "help" }}>
+                    {journey} {journeyNow.ending ? "· ending" : journeyNow.arrived ? "· arrived" : `${Math.round(journeyNow.f * 100)}%`}
+                  </span>
+                )}
                 {/* Bar */}
                 <div style={{ position: "relative", flex: 1, height: 18, minWidth: 80 }}>
                   {/* Track */}
@@ -3504,7 +3661,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   {/* Target arrow */}
                   {displayTarget !== null && (
                     <div style={{ position: "absolute", bottom: 0, left: `${displayTarget * 100}%`,
-                      color: arcLead ? ARC_COLOR : isOverride ? "#6060e8" : "#3ee8d0", fontSize: 6, transform: "translateX(-50%)", lineHeight: 1 }}>▲</div>
+                      color: jOn ? JOURNEY_COLOR : arcLead ? ARC_COLOR : isOverride ? "#6060e8" : "#3ee8d0", fontSize: 6, transform: "translateX(-50%)", lineHeight: 1 }}>▲</div>
                   )}
                 </div>
                 {/* Value */}
@@ -4226,6 +4383,50 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 ))}
               </div>
             </div>
+            {/* Journey — a shape over time that steers Auto (brightness, tempo, reverb, tension) */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: journey === "off" ? 8 : 4 }}>
+              <span title="Pick a journey and Auto travels it over the length you choose: Dawn = dark to bright, Dusk = bright to dark, Descent = bright, down into the dark and back up, Storm = calm, a building storm, calm again. Scales move one note at a time so the change is gradual, and the tempo, reverb and note length follow the shape. Choosing one starts Auto. When it arrives it keeps playing at the destination; if you're recording, it settles on a home scale, fades out and saves the WAV, a finished piece." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>JOURNEY</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                {["off", ...Object.keys(JOURNEYS)].map(v => (
+                  <button key={v} title={JOURNEYS[v]?.tip} onClick={() => {
+                    setJourney(v);
+                    if (v !== "off" && !autoOn) { wake(); setDemoOn(false); setAutoOn(true); }
+                  }} style={{
+                    background: journey === v ? K.a : K.bg3,
+                    color: journey === v ? "#000" : K.txt,
+                    border: `1px solid ${journey === v ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 6px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: journey === v ? 600 : 400,
+                  }}>{v}</button>
+                ))}
+              </div>
+            </div>
+            {journey !== "off" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <span title="How long the journey takes. Changing it mid-journey keeps the clock running, so it may jump ahead or back along the shape." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>LENGTH</span>
+                <span style={{ color: JOURNEY_COLOR, fontSize: 9, fontVariantNumeric: "tabular-nums" }}>
+                  {journeyNow ? (journeyNow.ending ? "ending…" : journeyNow.arrived ? "arrived · holding" : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : autoOn ? "" : "starts with Auto"}
+                </span>
+                <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                  {JOURNEY_MINS.map(m => (
+                    <button key={m} onClick={() => setJourneyMins(m)} style={{
+                    background: journeyMins === m ? K.a : K.bg3,
+                    color: journeyMins === m ? "#000" : K.txt,
+                    border: `1px solid ${journeyMins === m ? K.a : K.br}`,
+                    borderRadius: 3, padding: "3px 7px",
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: journeyMins === m ? 600 : 400,
+                  }}>{m}m</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {journeyNow && (
+              <div style={{ height: 2, background: K.bg3, borderRadius: 1, margin: "-4px 0 8px" }}>
+                <div style={{ height: 2, width: `${journeyNow.f * 100}%`, background: JOURNEY_COLOR, borderRadius: 1, transition: "width 1s linear" }} />
+              </div>
+            )}
             {/* Auto tempo — wander, or hold steady with short surprise bursts */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
               <span title="How Auto moves the tempo. Drift = wander in small steps (about ±20%) around the BPM you started at. Bursts = hold your BPM steady, and every 20-60 seconds throw in a 2-4 bar surprise: double time, a push up, a pull back or half time, then return. Untick BPM in Auto's ⚙ to stop all tempo changes." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>AUTO TEMPO</span>
