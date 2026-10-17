@@ -1412,6 +1412,8 @@ export default function Chloe() {
   const [listW,      setListW]      = useState(360);
   const [urlCopied,  setUrlCopied]  = useState(false);
   const [showHelp,    setShowHelp]    = useState(false);
+  // Listen: a simple front door (pick a journey, press play); Studio: the full app
+  const [view, setView] = useState(() => new URLSearchParams(window.location.search).get("v") === "listen" ? "listen" : "studio");
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("chloe-welcomed"));
   const [demoOn,      setDemoOn]      = useState(false);
   useEffect(() => { demoOnRef.current = demoOn; }, [demoOn]);
@@ -3413,6 +3415,116 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const stopAuto = () => { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); setSustainMult(1); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; };
+
+  /* ── LISTEN VIEW ── */
+  if (view === "listen") {
+    const J = journey === "off" ? "dawn" : journey;
+    const playingNow = autoOn;
+    const W = 600, H = 120;
+    // A journey's shape: brightness as a line (up = bright), Storm's intensity as a shaded hill
+    const curve = (id, w, h, pad = 6) => {
+      const pts = [...Array(61).keys()].map(i => { const v = journeyAt(JOURNEYS[id], i / 60); return { x: pad + (w - 2 * pad) * i / 60, b: v.b, tn: v.tn }; });
+      const y = b => pad + (h - 2 * pad) * (1 - (b - 0.25) / 0.5);
+      const line = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${y(p.b).toFixed(1)}`).join(" ");
+      const hill = pts[0].tn === undefined ? null
+        : `M${pad},${h - pad} ` + pts.map(p => `L${p.x.toFixed(1)},${(h - pad - (h - 2 * pad) * 0.8 * p.tn).toFixed(1)}`).join(" ") + ` L${w - pad},${h - pad} Z`;
+      return { line, hill, y, pad };
+    };
+    const BLURB = {
+      dawn: "Dark to bright. For waking up and getting going.",
+      dusk: "Bright to dark. For winding down.",
+      descent: "Down into the dark, and back up into the light.",
+      storm: "Calm, a gathering storm, calm again.",
+    };
+    const play = () => {
+      wake();
+      if (journey === "off") setJourney(J);
+      if (!smooth) setSmooth(0.7);
+      setDemoOn(false); setAutoOn(true);
+    };
+    const f = journeyNow?.f ?? 0;
+    const big = curve(J, W, H, 10);
+    const dotB = journeyNow ? journeyAt(JOURNEYS[J], f).b : null;
+    const chip = (on) => ({
+      background: on ? K.a + "22" : "none", color: on ? K.a : K.t1,
+      border: `1px solid ${on ? K.a : K.br}`, borderRadius: 20, padding: "6px 14px",
+      fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+    });
+    return (
+      <div style={{ background: K.bg, color: K.t1, minHeight: "100vh", fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace", display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 16px 40px" }}>
+        <style>{`* { box-sizing: border-box; } button:hover:not(:disabled) { filter: brightness(1.18); }`}</style>
+        <div style={{ width: "100%", maxWidth: 720, display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 28 }}>
+          <div>
+            <div style={{ color: K.title, fontSize: 22, letterSpacing: 8, fontWeight: 600 }}>CHLOE</div>
+            <div style={{ color: K.t2, fontSize: 11, marginTop: 4 }}>generative music that takes you somewhere</div>
+          </div>
+          <button onClick={() => setView("studio")} title="The full Chloe: every scale, every setting" style={{ ...chip(false), borderRadius: 4, fontSize: 10, letterSpacing: 2, whiteSpace: "nowrap", flexShrink: 0 }}>STUDIO →</button>
+        </div>
+
+        {/* Stage: the light show, with the journey's path and where you are on it */}
+        <div style={{ width: "100%", maxWidth: 720, position: "relative", height: 260, borderRadius: 10, overflow: "hidden", border: `1px solid ${K.br}`, background: K.bg2 }}>
+          <div style={{ position: "absolute", inset: 0, opacity: playingNow ? 0.85 : 0.25, transition: "opacity 2s" }}>
+            <Visualizer analyserRef={analyserRef} playing={playing} rootIdx={rootIdx} active={selSemis} K={K} />
+          </div>
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ position: "absolute", left: 0, right: 0, bottom: 0, width: "100%", height: 110 }}>
+            {big.hill && <path d={big.hill} fill={JOURNEY_COLOR} opacity={0.12} />}
+            <path d={big.line} fill="none" stroke={JOURNEY_COLOR} strokeWidth={2} opacity={0.35} vectorEffect="non-scaling-stroke" />
+            {dotB !== null && <circle cx={10 + (W - 20) * f} cy={big.y(dotB)} r={5} fill={JOURNEY_COLOR} />}
+          </svg>
+          <div style={{ position: "absolute", top: 14, left: 16, right: 16, display: "flex", justifyContent: "space-between", fontSize: 11, color: K.txt, textShadow: "0 1px 4px #000" }}>
+            <span>{playingNow && sel ? (selName || sel.id) : ""}</span>
+            <span style={{ color: JOURNEY_COLOR, fontVariantNumeric: "tabular-nums" }}>
+              {journeyNow ? (journeyNow.ending ? "ending…" : journeyNow.arrived ? "arrived" : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : ""}
+            </span>
+          </div>
+        </div>
+
+        {/* Journeys */}
+        <div style={{ width: "100%", maxWidth: 720, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 18 }}>
+          {Object.keys(JOURNEYS).map(id => {
+            const on = J === id, c = curve(id, 140, 40, 3);
+            return (
+              <button key={id} onClick={() => setJourney(id)} style={{
+                background: on ? K.bg3 : K.bg2, border: `1px solid ${on ? JOURNEY_COLOR : K.br}`, borderRadius: 8,
+                padding: "12px 12px 10px", textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: K.t1,
+                display: "flex", flexDirection: "column", justifyContent: "flex-start",
+              }}>
+                <div style={{ color: on ? JOURNEY_COLOR : K.title, fontSize: 13, letterSpacing: 2, marginBottom: 6 }}>{id.toUpperCase()}</div>
+                <svg viewBox="0 0 140 40" style={{ width: "100%", height: 40, display: "block", marginBottom: 6 }}>
+                  {c.hill && <path d={c.hill} fill={JOURNEY_COLOR} opacity={0.15} />}
+                  <path d={c.line} fill="none" stroke={on ? JOURNEY_COLOR : K.t2} strokeWidth={1.5} />
+                </svg>
+                <div style={{ color: K.t2, fontSize: 10, lineHeight: 1.45 }}>{BLURB[id]}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Length + extras */}
+        <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 18 }}>
+          {JOURNEY_MINS.map(m => <button key={m} onClick={() => setJourneyMins(m)} style={chip(journeyMins === m)}>{m} min</button>)}
+          <span style={{ flex: 1 }} />
+          <button onClick={() => { setSymphonic(v => !v); if (!symphonic) getOrchestra(getCtx()); }} style={chip(symphonic)}>orchestra</button>
+          <button onClick={() => { const v = beatStyle === "off" ? "break" : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
+          <button onClick={() => { wake(); setDroneOn(v => !v); }} style={chip(droneOn)}>drone</button>
+        </div>
+
+        {/* Play */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginTop: 30 }}>
+          <button onClick={() => playingNow ? stopAuto() : play()} style={{
+            width: 84, height: 84, borderRadius: "50%", border: `2px solid ${JOURNEY_COLOR}`,
+            background: playingNow ? JOURNEY_COLOR : "none", color: playingNow ? "#000" : JOURNEY_COLOR,
+            fontSize: 28, cursor: "pointer", fontFamily: "inherit", lineHeight: 1,
+          }}>{playingNow ? "■" : "▶"}</button>
+          <button onClick={toggleRec} title="Record the journey. If it's still recording when the journey ends, Chloe fades out and saves the WAV for you." style={{ ...chip(!!recording), borderColor: recording ? "#c0392b" : K.br, color: recording ? "#e74c3c" : K.t2 }}>
+            {recording ? `⏹ recording ${Math.floor(recSecs / 60)}:${String(recSecs % 60).padStart(2, "0")}` : "⏺ record this journey"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ background: K.bg, color: K.t1, height: "100vh", fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace", display: "flex", flexDirection: "column", fontSize: 12, overflow: "hidden" }}>
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} K={K} />}
@@ -3486,6 +3598,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
           transition: "all .2s", flexShrink: 0, fontVariantNumeric: "tabular-nums",
         }}>{recording ? `⏹ ${Math.floor(recSecs / 60)}:${String(recSecs % 60).padStart(2, "0")}` : "⏺ rec"}</button>
+        <button onClick={() => setView("listen")} title="Listen: pick a journey and press play" style={{
+          background: K.bg3, color: K.txt, border: `1px solid ${K.br}`, borderRadius: 3,
+          padding: "4px 10px", fontSize: 9, letterSpacing: 2, cursor: "pointer", fontFamily: "inherit",
+        }}>LISTEN</button>
         <button onClick={copyURL} style={{
           background: urlCopied ? K.a : K.bg3,
           color: urlCopied ? "#000" : K.txt,
@@ -4218,7 +4334,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 { label: arpOn && !demoOn && !autoOn ? "■ Stop" : "▶ Play", on: arpOn && !demoOn && !autoOn, disabled: !sel, onClick: () => { wake(); setArpOn(p => !p); } },
                 { label: autoOn ? "⟲ Stop" : "⟲ Auto", on: autoOn, onClick: () => {
                   wake();
-                  if (autoOn) { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); setSustainMult(1); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; }
+                  if (autoOn) stopAuto();
                   else { setDemoOn(false); setAutoOn(true); }
                 }},
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
