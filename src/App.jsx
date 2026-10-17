@@ -877,19 +877,19 @@ const ARP_RHYTHM_PATS = {
 
 const DARK_K = {
   bg:  "#060a0e", bg2: "#0a1219", bg3: "#0e1822",
-  br:  "#162030", t1:  "#aabec8", t2:  "#3e5868",
+  br:  "#2a3e52", t1:  "#aabec8", t2:  "#8fadc0",
   a:   "#e8922a", ag:  "rgba(232,146,42,0.07)",
   txt: "#c8e4f0", lbl: "#a0c8dc", title: "#d8eaf2",
-  demoB: "#0a1a0a", demoBr: "#1a3a1a", demoT: "#a0c8a0", demoT2: "#7ab87a", demoT3: "#5a8a5a", demoT4: "#3a6a3a",
+  demoB: "#0a1a0a", demoBr: "#1a3a1a", demoT: "#a0c8a0", demoT2: "#7ab87a", demoT3: "#7aaa7a", demoT4: "#5f8f5f",
   demoEL: "#0f2a0f", demoE1: "#0d220d",
-  wh: "#0a1219", whBr: "#2a4055", whTxt: "#5a8499",
+  wh: "#0a1219", whBr: "#36506a", whTxt: "#7fa5ba",
   keyW: "#c8dde4", keyWBr: "#8ab0bc", keyB: "#0e161b",
-  modB: "#0d1520", modBr: "#2a3f54", modT: "#d8eaf2", modST: "#6a8fa0",
+  modB: "#0d1520", modBr: "#2a3f54", modT: "#d8eaf2", modST: "#8aaabb",
 };
 
 const LIGHT_K = {
   bg:  "#f0f4f7", bg2: "#ffffff", bg3: "#e4eaef",
-  br:  "#c0cdd6", t1:  "#1a2830", t2:  "#5a7888",
+  br:  "#a8b8c4", t1:  "#1a2830", t2:  "#4a6676",
   a:   "#d07818", ag:  "rgba(208,120,24,0.10)",
   txt: "#1a2830", lbl: "#3a6070", title: "#0a1820",
   demoB: "#edf8f0", demoBr: "#9ed4aa", demoT: "#2a7040", demoT2: "#3a8a50", demoT3: "#4a7060", demoT4: "#2a5a40",
@@ -914,7 +914,7 @@ const PRESETS = [
 function Sec({ label, children, K }) {
   return (
     <div style={{ padding: "10px 14px", borderBottom: `1px solid ${K.br}`, flexShrink: 0 }}>
-      <div style={{ color: K.lbl, fontSize: 8, letterSpacing: 3, marginBottom: 7, display: "flex", alignItems: "center" }}>
+      <div style={{ color: K.lbl, fontSize: 9, letterSpacing: 3, marginBottom: 7, display: "flex", alignItems: "center" }}>
         {label}
       </div>
       {children}
@@ -923,7 +923,7 @@ function Sec({ label, children, K }) {
 }
 
 function Lbl({ children, K }) {
-  return <div style={{ color: K.lbl, fontSize: 8, letterSpacing: 3, marginBottom: 5 }}>{children}</div>;
+  return <div style={{ color: K.lbl, fontSize: 9, letterSpacing: 3, marginBottom: 5 }}>{children}</div>;
 }
 
 
@@ -3775,7 +3775,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       <div style={{ background: K.bg2, borderBottom: `1px solid ${K.br}`, padding: "10px 18px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
         <div style={{ userSelect: "none" }}>
           <div style={{ fontFamily: "'Trebuchet MS', 'Gill Sans', 'Century Gothic', sans-serif", fontSize: 20, fontWeight: 800, letterSpacing: 4, color: K.title, lineHeight: 1 }}>CHLOE</div>
-          <div style={{ fontSize: 7, color: K.t2, letterSpacing: 5 }}>SCALE EXPLORER</div>
+          <div style={{ fontSize: 8, color: K.t2, letterSpacing: 5 }}>SCALE EXPLORER</div>
         </div>
 
         <div style={{ width: 1, height: 32, background: K.br, flexShrink: 0 }} />
@@ -3902,7 +3902,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
           {/* VOL */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-            <span title="Note volume. Drone volume is independent." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>VOL</span>
+            <span title="Note volume. Drone volume is independent." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>VOL</span>
             <input type="range" min={0} max={1} step={0.01} value={noteVol}
               onChange={e => setNoteVol(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -3912,7 +3912,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
           {/* REV */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-            <span title="Reverb wet level. Convolution reverb shared by drone and all notes." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>REV</span>
+            <span title="Reverb wet level. Convolution reverb shared by drone and all notes." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>REV</span>
             <input type="range" min={0} max={1} step={0.01} value={reverbAmt}
               onChange={e => setReverbAmt(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -3922,7 +3922,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
           {/* DEL */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-            <span title="Delay wet level." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>DEL</span>
+            <span title="Delay wet level." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>DEL</span>
             <input type="range" min={0} max={1} step={0.01} value={delayAmt}
               onChange={e => setDelayAmt(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -3932,7 +3932,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
           {/* SUS */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-            <span title="Note sustain — multiplier on note duration. Below 1.0 = staccato, above 1.0 = legato/overlapping." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>SUS</span>
+            <span title="Note sustain — multiplier on note duration. Below 1.0 = staccato, above 1.0 = legato/overlapping." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>SUS</span>
             <input type="range" min={0.1} max={3} step={0.05} value={sustainMult}
               onChange={e => setSustainMult(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -3942,7 +3942,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
           {/* DEL TIME */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-            <span title="Delay time in seconds." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>D.T</span>
+            <span title="Delay time in seconds." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>D.T</span>
             <input type="range" min={0.05} max={1.5} step={0.01} value={delayTime}
               onChange={e => setDelayTime(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -3954,7 +3954,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
           {/* TUNE */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-            <span title="Concert pitch reference. 440 Hz standard, 432 Hz alternative." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>A =</span>
+            <span title="Concert pitch reference. 440 Hz standard, 432 Hz alternative." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>A =</span>
             <input type="range" min={432} max={440} step={1} value={aRef}
               onChange={e => setARef(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -3964,7 +3964,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
           {/* BPM */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-            <span title="Tempo for arpeggio and melody modes (40-480 BPM). Above 240 is for fast runs — try it with GROUPS." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
+            <span title="Tempo for arpeggio and melody modes (40-480 BPM). Above 240 is for fast runs — try it with GROUPS." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>BPM</span>
             <input type="range" min={monasticMode ? 1 : 40} max={480} value={bpm}
               onChange={e => setBpm(+e.target.value)}
               style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -4069,7 +4069,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               fontSize: 9, padding: "2px 6px", cursor: "pointer", borderRadius: 3, flexShrink: 0 };
             return (
               <div style={{ borderTop: `1px solid ${K.demoBr}`, padding: "5px 18px", display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, flexShrink: 0 }}>BRIGHT</span>
+                <span style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>BRIGHT</span>
                 {jOn && (
                   <span title={JOURNEYS[journey]?.tip} style={{ color: JOURNEY_COLOR, fontSize: 9, flexShrink: 0, fontVariantNumeric: "tabular-nums", cursor: "help" }}>
                     {journey} {journeyNow.endless ? `· ${mmss(journeyNow.el)}` : journeyNow.ending ? "· ending" : journeyNow.arrived ? "· arrived" : `${Math.round(journeyNow.f * 100)}%`}
@@ -4159,7 +4159,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               borderRadius: 3, fontFamily: "inherit" });
             const set = (k, v) => { if (!arc) setArcCfg(p => ({ ...p, [k]: v })); };
             const c = arc || arcCfg;
-            const lbl = { color: K.lbl, fontSize: 8, letterSpacing: 2, minWidth: 52 };
+            const lbl = { color: K.lbl, fontSize: 9, letterSpacing: 2, minWidth: 52 };
             let status = null;
             if (arc) {
               if (arc.mode === "mirror") status = arcNow < arc.mins * 60000
@@ -4296,14 +4296,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 background: noteCountFilter === n ? K.a : K.bg3,
                 color: noteCountFilter === n ? "#000" : K.txt,
                 border: `1px solid ${noteCountFilter === n ? K.a : K.br}`,
-                borderRadius: 3, padding: "2px 7px", fontSize: 8,
+                borderRadius: 3, padding: "2px 7px", fontSize: 9,
                 cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.5,
               }}>{n}</button>
             ))}
             {(listSearch || noteCountFilter !== null) && (
               <button onClick={() => { setListSearch(""); setNoteCountFilter(null); }} style={{
                 background: "none", border: `1px solid ${K.br}`, color: K.t2,
-                borderRadius: 3, padding: "2px 6px", fontSize: 8,
+                borderRadius: 3, padding: "2px 6px", fontSize: 9,
                 cursor: "pointer", fontFamily: "inherit", marginLeft: 2,
               }}>clear</button>
             )}
@@ -4314,7 +4314,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 background: showDiatonic ? K.ag : "none",
                 border: `1px solid ${showDiatonic ? K.a : K.br}`,
                 color: showDiatonic ? K.a : K.t2,
-                borderRadius: 3, padding: "2px 6px", fontSize: 8,
+                borderRadius: 3, padding: "2px 6px", fontSize: 9,
                 cursor: "pointer", fontFamily: "inherit", marginLeft: "auto",
               }}>≈ mode</button>
             <button
@@ -4326,7 +4326,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 background: showOutside ? K.ag : "none",
                 border: `1px solid ${showOutside ? K.a : K.br}`,
                 color: showOutside ? K.a : K.t2,
-                borderRadius: 3, padding: "2px 6px", fontSize: 8,
+                borderRadius: 3, padding: "2px 6px", fontSize: 9,
                 cursor: "pointer", fontFamily: "inherit",
               }}>outside</button>
           </div>
@@ -4432,7 +4432,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                             return (
                               <span
                                 title={`${nb.sharedPitches}/${nb.totalPitches} pitches shared with ${nb.relatives.join(', ')}`}
-                                style={{ color: K.t2, fontSize: 8, opacity: 0.75, marginLeft: "auto", flexShrink: 0, whiteSpace: "nowrap" }}
+                                style={{ color: K.t2, fontSize: 9, opacity: 0.75, marginLeft: "auto", flexShrink: 0, whiteSpace: "nowrap" }}
                               >≈ {nb.relatives.join(' / ')}</span>
                             );
                           })()}
@@ -4515,7 +4515,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           <Sec label="PLAYBACK" K={K}>
             {/* Drone octave */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Drop the drone 1-3 octaves for a deep bass foundation." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE OCT</span>
+              <span title="Drop the drone 1-3 octaves for a deep bass foundation." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE OCT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[0, -12, -24, -36].map(o => (
                   <button key={o} onClick={() => setDroneOct(o)} style={{
@@ -4531,7 +4531,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Drone vol */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Drone volume." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE VOL</span>
+              <span title="Drone volume." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE VOL</span>
               <input type="range" min={0} max={3} step={0.01} value={droneVol}
                 onChange={e => setDroneVol(+e.target.value)}
                 style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -4540,7 +4540,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Drone tone */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Drone tone — lowpass filter cutoff. Left = dark/muffled, right = bright/open." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TONE</span>
+              <span title="Drone tone — lowpass filter cutoff. Left = dark/muffled, right = bright/open." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TONE</span>
               <input type="range" min={0} max={1} step={0.01} value={droneTone}
                 onChange={e => setDroneTone(+e.target.value)}
                 style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -4549,7 +4549,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Drone type */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
+              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
               <select value={droneWave} onChange={e => setDroneWave(e.target.value)} style={{
                 marginLeft: "auto", background: K.bg3, color: K.txt, border: `1px solid ${K.br}`,
                 borderRadius: 3, padding: "3px 6px", fontSize: 9, fontFamily: "inherit",
@@ -4664,7 +4664,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                       }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ color: K.a, fontSize: 10, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.scaleName}</div>
-                          <div style={{ color: K.t2, fontSize: 8, letterSpacing: 0.5 }}>{CHROMATIC[m.rootIdx]} · {m.bpm}bpm · {m.rhythm} · {m.arpDir}{m.chordVoice !== "off" ? ` · ${m.chordVoice}` : ""}</div>
+                          <div style={{ color: K.t2, fontSize: 9, letterSpacing: 0.5 }}>{CHROMATIC[m.rootIdx]} · {m.bpm}bpm · {m.rhythm} · {m.arpDir}{m.chordVoice !== "off" ? ` · ${m.chordVoice}` : ""}</div>
                         </div>
                         <button onClick={() => playMoment(m)} title="Restore all settings and play" style={{
                           background: K.a, color: "#000", border: "none",
@@ -4684,7 +4684,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             )}
             {/* Beat vol — hidden for now
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, marginBottom: 2 }}>
-              <span title="Beat volume." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT VOL</span>
+              <span title="Beat volume." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT VOL</span>
               <input type="range" min={0} max={1} step={0.01} value={beatVol}
                 onChange={e => setBeatVol(+e.target.value)}
                 style={{ flex: 1, minWidth: 40, accentColor: K.a, background: K.br, cursor: "pointer" }}
@@ -4749,7 +4749,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Octaves */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Number of octaves to span when playing. 1 = single octave, 2 = two octaves, 3 = three octaves." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>OCTAVES</span>
+              <span title="Number of octaves to span when playing. 1 = single octave, 2 = two octaves, 3 = three octaves." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>OCTAVES</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[1, 2, 3].map(o => (
                   <button key={o} onClick={() => setArpOct(o)} style={{
@@ -4765,7 +4765,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Grouping — overrides rhythm with even notes in groups of N */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Play the line in repeating groups of N even notes, each group moved one scale step. Groups of 5 or 6 run against the 4-count, Eric Johnson style, so the line sounds faster and more tangled than it is. The first note of each group is accented. mix = group sizes change within the bar (5+5+6, 3+3+5+5, 5+4+5+5+4+5+4…) and always add up to whole bars, so the line lands back on the downbeat. Off = normal rhythm." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>GROUPS</span>
+              <span title="Play the line in repeating groups of N even notes, each group moved one scale step. Groups of 5 or 6 run against the 4-count, Eric Johnson style, so the line sounds faster and more tangled than it is. The first note of each group is accented. mix = group sizes change within the bar (5+5+6, 3+3+5+5, 5+4+5+5+4+5+4…) and always add up to whole bars, so the line lands back on the downbeat. Off = normal rhythm." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>GROUPS</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[0, 3, 5, 6, 7, "mix"].map(g => (
                   <button key={g} onClick={() => setGrouping(g)} style={{
@@ -4781,7 +4781,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Scale change — hard cut, or blend through voice-leading moves */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="How the line moves to a new scale while playing. Cut = switch at once. Blend = swap the notes that differ one at a time, each to its nearest new note, about one per bar; shared notes stay put, so close scales glide and distant ones take a few bars. The wheel shows the in-between shape." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SCALE CHANGE</span>
+              <span title="How the line moves to a new scale while playing. Cut = switch at once. Blend = swap the notes that differ one at a time, each to its nearest new note, about one per bar; shared notes stay put, so close scales glide and distant ones take a few bars. The wheel shows the in-between shape." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SCALE CHANGE</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[{ l: "cut", v: false }, { l: "blend", v: true }].map(o => (
                   <button key={o.l} onClick={() => setBlend(o.v)} style={{
@@ -4797,7 +4797,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Tempo change — jump, or glide between BPMs */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="How the tempo moves when the BPM changes (Auto, Claude or the slider). Cut = jump at once. Glide = ease to the new tempo, about 12 seconds per doubling or halving (4 to 30 seconds, up to twice as long with Smooth), so it never drops from fast straight to very slow." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TEMPO CHANGE</span>
+              <span title="How the tempo moves when the BPM changes (Auto, Claude or the slider). Cut = jump at once. Glide = ease to the new tempo, about 12 seconds per doubling or halving (4 to 30 seconds, up to twice as long with Smooth), so it never drops from fast straight to very slow." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TEMPO CHANGE</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[{ l: "cut", v: false }, { l: "glide", v: true }].map(o => (
                   <button key={o.l} onClick={() => setTempoGlide(o.v)} style={{
@@ -4813,7 +4813,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Journey — a shape over time that steers Auto (brightness, tempo, reverb, tension) */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: journey === "off" ? 8 : 4 }}>
-              <span title="Pick a journey and Auto travels it over the length you choose: Dawn = dark to bright, Dusk = bright to dark, Descent = bright, down into the dark and back up, Storm = calm, a building storm, calm again. Scales move one note at a time so the change is gradual, and the tempo, reverb and note length follow the shape. Choosing one starts Auto. When it arrives it keeps playing at the destination; if you're recording, it settles on a home scale, fades out and saves the WAV, a finished piece." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>JOURNEY</span>
+              <span title="Pick a journey and Auto travels it over the length you choose: Dawn = dark to bright, Dusk = bright to dark, Descent = bright, down into the dark and back up, Storm = calm, a building storm, calm again. Scales move one note at a time so the change is gradual, and the tempo, reverb and note length follow the shape. Choosing one starts Auto. When it arrives it keeps playing at the destination; if you're recording, it settles on a home scale, fades out and saves the WAV, a finished piece." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>JOURNEY</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {["off", ...Object.keys(JOURNEYS)].map(v => (
                   <button key={v} title={JOURNEYS[v]?.tip} onClick={() => {
@@ -4832,7 +4832,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {journey !== "off" && journey !== "endless" && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                <span title="How long the journey takes. Changing it mid-journey keeps the clock running, so it may jump ahead or back along the shape." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>LENGTH</span>
+                <span title="How long the journey takes. Changing it mid-journey keeps the clock running, so it may jump ahead or back along the shape." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>LENGTH</span>
                 <span style={{ color: JOURNEY_COLOR, fontSize: 9, fontVariantNumeric: "tabular-nums" }}>
                   {journeyNow ? (journeyNow.ending ? "ending…" : journeyNow.arrived ? "arrived · holding" : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : autoOn ? "" : "starts with Auto"}
                 </span>
@@ -4857,7 +4857,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             )}
             {/* Auto tempo — wander, or hold steady with short surprise bursts */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="How Auto moves the tempo. Drift = wander in small steps (about ±10%) around the BPM you started at. Bursts = hold your BPM steady, and every 45-120 seconds (longer with Smooth) throw in a 4-8 bar surprise: double time, a push up, a pull back or half time, then return. With Smooth at 50% or more, only the gentle push and pull. Untick BPM in Auto's ⚙ to stop all tempo changes." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>AUTO TEMPO</span>
+              <span title="How Auto moves the tempo. Drift = wander in small steps (about ±10%) around the BPM you started at. Bursts = hold your BPM steady, and every 45-120 seconds (longer with Smooth) throw in a 4-8 bar surprise: double time, a push up, a pull back or half time, then return. With Smooth at 50% or more, only the gentle push and pull. Untick BPM in Auto's ⚙ to stop all tempo changes." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>AUTO TEMPO</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {["drift", "bursts"].map(v => (
                   <button key={v} onClick={() => setAutoTempo(v)} style={{
@@ -4873,7 +4873,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Sound change — switch instrument at once, or crossfade */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="How the sound moves when the instrument or wave changes (Auto or a click). Cut = switch at once. Blend = crossfade over about 4 seconds; each note plays on both sounds, the old one fading out as the new one fades in." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SOUND CHANGE</span>
+              <span title="How the sound moves when the instrument or wave changes (Auto or a click). Cut = switch at once. Blend = crossfade over about 4 seconds; each note plays on both sounds, the old one fading out as the new one fades in." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SOUND CHANGE</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[{ l: "cut", v: false }, { l: "blend", v: true }].map(o => (
                   <button key={o.l} onClick={() => setSoundBlend(o.v)} style={{
@@ -4889,7 +4889,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Tuning — equal temperament, or pure ratios above the root */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="How the notes are tuned. Equal = standard 12-tone equal temperament, like a piano or fretted guitar. Just = pure ratios above the root (5/4 major 3rd, 3/2 fifth): very still against the drone; major 3rds are 14 cents flatter than a guitar's. Pyth = Pythagorean, built only from pure 3/2 fifths: fifths are pure, major 3rds come out 8 cents sharp and bright." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TUNING</span>
+              <span title="How the notes are tuned. Equal = standard 12-tone equal temperament, like a piano or fretted guitar. Just = pure ratios above the root (5/4 major 3rd, 3/2 fifth): very still against the drone; major 3rds are 14 cents flatter than a guitar's. Pyth = Pythagorean, built only from pure 3/2 fifths: fifths are pure, major 3rds come out 8 cents sharp and bright." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>TUNING</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {["equal", "just", "pyth"].map(v => (
                   <button key={v} onClick={() => setTuning(v)} style={{
@@ -4905,7 +4905,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Symphonic — sampled strings + double bass under the line */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Adds an orchestra under the line: a string section swells on chords built from the current scale, cellos drive a low pulse, a double bass holds the roots, and timpani and taiko drums hit the changes (a big boom on a new scale), violin and flute weave fast runs through it, all in a cathedral reverb. Uses real recorded samples, a one-time download of about 20 MB the first time you switch it on." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SYMPHONIC{orchLoading ? " · loading…" : ""}</span>
+              <span title="Adds an orchestra under the line: a string section swells on chords built from the current scale, cellos drive a low pulse, a double bass holds the roots, and timpani and taiko drums hit the changes (a big boom on a new scale), violin and flute weave fast runs through it, all in a cathedral reverb. Uses real recorded samples, a one-time download of about 20 MB the first time you switch it on." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>SYMPHONIC{orchLoading ? " · loading…" : ""}</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {[{ l: "off", v: false }, { l: "orchestra", v: true }].map(o => (
                   <button key={o.l} onClick={() => { setSymphonic(o.v); if (o.v) getOrchestra(getCtx()); }} style={{
@@ -4921,7 +4921,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
@@ -4937,7 +4937,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Rhythm — only applies in arpeggio mode */}
             <div style={{ marginBottom: 8, opacity: melMode || grouping ? 0.35 : 1, transition: "opacity .2s" }}>
-              <div title="Arpeggio rhythm pattern. Even = straight quarters. Swing = long-short. Gallop = short-short-long. Waltz = 3/4 feel. Clave = son clave." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>RHYTHM</div>
+              <div title="Arpeggio rhythm pattern. Even = straight quarters. Swing = long-short. Gallop = short-short-long. Waltz = 3/4 feel. Clave = son clave." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>RHYTHM</div>
               <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                 {[
                   { l: "even",   v: "even" },
@@ -4958,7 +4958,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Chord voicing */}
             <div style={{ marginBottom: 2 }}>
-              <div title="Chord voicing: off, power (root+5th), sus2 (root+2nd+5th), sus4 (root+4th+5th), triad, 7th, all (whole scale). Notes strum with a slight delay." style={{ color: K.lbl, fontSize: 8, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>CHORD</div>
+              <div title="Chord voicing: off, power (root+5th), sus2 (root+2nd+5th), sus4 (root+4th+5th), triad, 7th, all (whole scale). Notes strum with a slight delay." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>CHORD</div>
               <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                 {[
                   { l: "off",   v: "off" },
@@ -4997,7 +4997,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   <button onClick={handlePin} title="Pin for A/B comparison" style={{
                     background: onPinned ? K.ag : "none", border: `1px solid ${onPinned ? K.a : K.br}`,
                     color: onPinned ? K.a : K.t2, borderRadius: 3, padding: "1px 6px",
-                    fontSize: 8, cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.5, flexShrink: 0,
+                    fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.5, flexShrink: 0,
                   }}>⊿ {onPinned ? "pinned" : "pin"}</button>
                 </div>
                 <div style={{ color: K.t1, fontSize: 11, marginBottom: pinnedScale ? 8 : 14, opacity: 0.75, letterSpacing: 0.5 }}>
@@ -5021,7 +5021,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                               padding: "5px 8px", fontSize: 9, cursor: target ? "pointer" : "default",
                               fontFamily: "inherit", fontWeight: isActive ? 600 : 400, textAlign: "left",
                             }}>
-                            <div style={{ fontSize: 7, letterSpacing: 2, opacity: 0.6, marginBottom: 1 }}>{side.toUpperCase()}{isActive ? " ▶" : ""}</div>
+                            <div style={{ fontSize: 8, letterSpacing: 2, opacity: 0.6, marginBottom: 1 }}>{side.toUpperCase()}{isActive ? " ▶" : ""}</div>
                             <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
                           </button>
                         );
@@ -5047,7 +5047,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 <Piano active={selSemis} playing={playing} K={K} />
                 <div style={{ display: "flex", marginTop: 5, marginBottom: 16 }}>
                   {CHROMATIC.map((n, i) => (
-                    <span key={i} style={{ color: selSemis.has(i) ? K.a : K.t2 + "35", fontSize: 7, width: `${100 / 12}%`, textAlign: "center" }}>{n}</span>
+                    <span key={i} style={{ color: selSemis.has(i) ? K.a : K.t2 + "35", fontSize: 8, width: `${100 / 12}%`, textAlign: "center" }}>{n}</span>
                   ))}
                 </div>
 
@@ -5180,7 +5180,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>
-              <div title="Give Auto a destination: dawn = dark to bright, dusk = bright to dark, descent = down into the dark and back up, storm = calm, storm, calm. Starts when Auto starts (or right away if it's running)." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, marginBottom: 6, cursor: "help" }}>JOURNEY</div>
+              <div title="Give Auto a destination: dawn = dark to bright, dusk = bright to dark, descent = down into the dark and back up, storm = calm, storm, calm. Starts when Auto starts (or right away if it's running)." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, marginBottom: 6, cursor: "help" }}>JOURNEY</div>
               <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 6 }}>
                 {["off", ...Object.keys(JOURNEYS)].map(v => (
                   <button key={v} title={JOURNEYS[v]?.tip} onClick={() => setJourney(v)} style={{
@@ -5192,7 +5192,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               </div>
               {journey !== "off" && journey !== "endless" && (
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                  <span style={{ color: K.t2, fontSize: 8, letterSpacing: 2, marginRight: 4 }}>LENGTH</span>
+                  <span style={{ color: K.t2, fontSize: 9, letterSpacing: 2, marginRight: 4 }}>LENGTH</span>
                   {JOURNEY_MINS.map(m => (
                     <button key={m} onClick={() => setJourneyMins(m)} style={{
                       background: journeyMins === m ? K.a : K.bg3, color: journeyMins === m ? "#000" : K.txt,
@@ -5205,7 +5205,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             <div style={{ marginBottom: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span title="How hard it is to hear where Auto's changes happen. 0 = everything changes together on each pick, as before. Higher: each setting changes at its own moment between picks, fewer change per pick, reverb/delay/drone levels glide, the sound crossfade stretches to 12 s, scales morph note by note at half speed, the drone fades in and out, and the beat fades (sometimes resting for a while and fading back in) instead of cutting." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>SMOOTH</span>
+                <span title="How hard it is to hear where Auto's changes happen. 0 = everything changes together on each pick, as before. Higher: each setting changes at its own moment between picks, fewer change per pick, reverb/delay/drone levels glide, the sound crossfade stretches to 12 s, scales morph note by note at half speed, the drone fades in and out, and the beat fades (sometimes resting for a while and fading back in) instead of cutting." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, cursor: "help", flexShrink: 0 }}>SMOOTH</span>
                 <input type="range" min={0} max={100} step={5} value={Math.round(smooth * 100)}
                   onChange={e => setSmooth(+e.target.value / 100)}
                   style={{ flex: 1, accentColor: K.a, cursor: "pointer" }} />
@@ -5242,7 +5242,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               ]},
             ].map(group => (
               <div key={group.label} style={{ marginBottom: 14 }}>
-                <div style={{ color: K.t2, fontSize: 8, letterSpacing: 2, marginBottom: 6 }}>{group.label}</div>
+                <div style={{ color: K.t2, fontSize: 9, letterSpacing: 2, marginBottom: 6 }}>{group.label}</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 12px" }}>
                   {group.items.map(({ key, label, demoOnly }) => (
                     <label key={key} style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
@@ -5251,7 +5251,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                         style={{ accentColor: K.a, cursor: "pointer" }}
                       />
                       <span style={{ color: autoLocks[key] ? K.txt : K.t2, fontSize: 10 }}>{label}</span>
-                      {demoOnly && <span style={{ color: K.t2, fontSize: 8, opacity: 0.6 }}>demo</span>}
+                      {demoOnly && <span style={{ color: K.t2, fontSize: 9, opacity: 0.6 }}>demo</span>}
                     </label>
                   ))}
                 </div>
