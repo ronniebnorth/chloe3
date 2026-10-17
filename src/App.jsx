@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { Soundfont, DrumMachine } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
 
@@ -3972,7 +3972,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             <span style={{ color: K.a, fontSize: 9, fontWeight: 600, minWidth: 28 }}>{bpm}</span>
             <button onClick={() => setShowAutoLocks(true)}
               title="Configure which settings Auto and Demo modes can change"
-              style={{ background: "none", border: `1px solid ${K.br}`, color: K.t2, borderRadius: 3, padding: "1px 6px", fontSize: 10, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>⚙</button>
+              style={{ background: "none", border: `1px solid ${K.a}`, color: K.a, borderRadius: 3, padding: "2px 7px", fontSize: 11, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, letterSpacing: 1 }}>⚙ auto</button>
             {eegData?.heart_rate > 0 && (
               <button
                 onClick={() => setBpm(Math.max(40, Math.min(240, Math.round(eegData.heart_rate))))}
@@ -4421,11 +4421,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                           {!name && !isEditingThis && customName && (
                             <>
                               <span style={{ color: isSel ? K.a : K.t1, fontSize: 10 }}>{customName}</span>
-                              <button onClick={e => { e.stopPropagation(); setEditingName(mode); setNameInput(customName); }} title="Edit name" style={{ background: "none", border: "none", color: K.t2, cursor: "pointer", fontSize: 9, padding: "0 2px", flexShrink: 0 }}>✎</button>
+                              <button onClick={e => { e.stopPropagation(); setEditingName(mode); setNameInput(customName); }} title="Edit name" style={{ background: "none", border: "none", color: K.lbl, cursor: "pointer", fontSize: 12, padding: "0 2px", flexShrink: 0 }}>✎</button>
                             </>
                           )}
                           {!name && !isEditingThis && !customName && (
-                            <button onClick={e => { e.stopPropagation(); setEditingName(mode); setNameInput(""); }} title="Name this scale" style={{ background: "none", border: "none", color: K.t2, cursor: "pointer", fontSize: 9, padding: "0 2px", flexShrink: 0 }}>✎</button>
+                            <button onClick={e => { e.stopPropagation(); setEditingName(mode); setNameInput(""); }} title="Name this scale" style={{ background: "none", border: "none", color: K.lbl, cursor: "pointer", fontSize: 12, padding: "0 2px", flexShrink: 0 }}>✎</button>
                           )}
                           {showDiatonic && (() => {
                             const nb = diatonicNeighborhood(mode);
@@ -4568,7 +4568,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   wake();
                   if (autoOn) stopAuto();
                   else { setDemoOn(false); setAutoOn(true); }
-                }},
+                }, gear: true },
                 { label: demoOn ? "★ Stop" : "★ Claude", on: demoOn, onClick: () => {
                   if (!demoKey) { setDemoKeyInput(true); return; }
                   if (demoOn) { setDemoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setChatLog([]); setChatInput(""); setChatOpen(false); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); setSustainMult(1); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; }
@@ -4592,17 +4592,19 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   }
                 }},
                 // { label: beatOn ? "♩ Stop" : "♩ Beat", on: beatOn, onClick: () => { wake(); setBeatOn(p => !p); }},
-              ].map(b => (
-                <button key={b.label} onClick={b.onClick} disabled={b.disabled} style={{
+              ].map(b => (<Fragment key={b.label}>
+                <button onClick={b.onClick} disabled={b.disabled} style={{
                   flex: 1, background: b.on ? K.a : K.bg3,
-                  color: b.on ? "#000" : b.disabled ? K.txt + "28" : K.txt,
+                  color: b.on ? "#000" : b.disabled ? K.txt + "70" : K.txt,
                   border: `1px solid ${b.on ? K.a : K.br}`,
                   borderRadius: 3, padding: "7px 4px",
                   fontSize: 10, cursor: b.disabled ? "default" : "pointer",
                   fontFamily: "inherit", fontWeight: b.on ? 600 : 400,
                   transition: "all .15s",
                 }}>{b.label}</button>
-              ))}
+                {b.gear && <button onClick={() => setShowAutoLocks(true)} title="Auto settings: journey, smooth, and which settings Auto may change"
+                  style={{ background: K.bg3, border: `1px solid ${K.a}`, color: K.a, borderRadius: 3, padding: "0 7px", fontSize: 14, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, marginLeft: -2 }}>⚙</button>}
+              </Fragment>))}
             </div>
             {/* Scale pool toggle */}
             <div style={{ display: "flex", gap: 0, border: `1px solid ${K.br}`, borderRadius: 4, overflow: "hidden", marginBottom: 6 }}>
