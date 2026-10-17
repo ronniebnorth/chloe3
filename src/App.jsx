@@ -431,6 +431,29 @@ const BREAKS = {
   fusion: { k: { 0: 116, 6: 82, 10: 104, 13: 70 }, s: { 4: 110, 12: 114 }, g: { 2: 26, 7: 30, 9: 24, 11: 28, 15: 34 },
             r: { 0: 86, 2: 54, 4: 76, 6: 54, 8: 86, 10: 54, 12: 76, 14: 54 }, h: {}, o: {} },
 };
+// Downtempo and hand drums, in the spirit of '90s downtempo (Enigma, Deep
+// Forest): swung 16ths, laid back, played half-time above 120 BPM. Each
+// voice maps step → velocity. downtempo: kick/snare/clap groove with a big
+// room snare, shaker, tambourine and congas woven through; hand: no kit,
+// congas, shaker and tambourine over a low tom pulse. No crash cymbals.
+const WORLD = {
+  downtempo: {
+    kick: { 0: 122, 7: 88, 10: 112 }, "snare-m": { 4: 116, 12: 120 }, clap: { 4: 64, 12: 70 },
+    "hhclosed-short": { 0: 46, 2: 36, 4: 46, 6: 36, 8: 46, 10: 36, 12: 46, 14: 40 },
+    cabasa: { 1: 26, 3: 30, 5: 26, 7: 30, 9: 26, 11: 30, 13: 26, 15: 32 },
+    tambourine: { 12: 40 }, "conga-h": { 3: 52, 11: 58 }, "conga-m": { 6: 56, 14: 50 }, "conga-l": { 15: 48 },
+  },
+  hand: {
+    "tom-ll": { 0: 92 }, "tom-l": { 10: 68 },
+    "conga-ll": { 0: 78, 10: 62 }, "conga-l": { 7: 58, 15: 54 }, "conga-m": { 4: 70, 12: 74 },
+    "conga-h": { 2: 52, 6: 44, 11: 60, 14: 48 },
+    cabasa: { 0: 34, 1: 22, 2: 30, 3: 22, 4: 34, 5: 22, 6: 30, 7: 22, 8: 34, 9: 22, 10: 30, 11: 22, 12: 34, 13: 22, 14: 30, 15: 24 },
+    tambourine: { 4: 36, 12: 40 },
+  },
+};
+const WORLD_FILL = ["conga-h", "conga-h", "conga-m", "conga-l"];   // last beat of every 4th bar
+const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion" };
+
 // Linear fills for fusion: one drum per 16th. Short = the last beat of every
 // 4th bar; long = the last two beats of every 8th, phrased in 3s across the beat.
 const FUSION_FILLS = {
@@ -1332,7 +1355,7 @@ export default function Chloe() {
         smooth:     Math.min(100, Math.max(0, parseInt(p.get("sm") ?? "0") || 0)) / 100,
         journeyMins: JOURNEY_MINS.includes(parseInt(p.get("jm"))) ? parseInt(p.get("jm")) : 15,
         symphonic:  p.get("sy") === "1",
-        beatStyle:  ["break", "drive", "heavy", "fusion"].includes(p.get("bt")) ? p.get("bt") : "off",
+        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -2202,7 +2225,7 @@ export default function Chloe() {
           if (marchNow) {
             lastMarch = ac.currentTime;
             // Auto with the beat ticked: the march brings in the heavy beat
-            if (autoOnRef.current && autoLocksRef.current.beat && st.beatStyle !== "off" && st.beatStyle !== "heavy") setBeatStyle("heavy");
+            if (autoOnRef.current && autoLocksRef.current.beat && BEAT_FAMILY[st.beatStyle] === "kit" && st.beatStyle !== "heavy") setBeatStyle("heavy");
             orchDeg = 0;
             orchKey = st.sel.pattern + "@" + st.rootIdx;
             hold = playMarch(o, ac, st, b, semiOf, rootMidi, tune);
@@ -2606,6 +2629,26 @@ export default function Chloe() {
       }
       fusionTick++;
     };
+    // One 16th of downtempo / hand: swung off-16ths, ±6 velocity, ±5 ms.
+    // Snares and conga accents also go to the room. Calm thins the shaker and
+    // congas; tense adds a kick. A conga run ends every 4th bar; every 16 bars
+    // a deep boom (kick + low tom) instead of a crash.
+    const worldStep = (kit, snareKit, style, i, bar, t0, stepDur, noBoom) => {
+      const P = WORLD[style], t = t0 + (i % 2 ? 0.17 * stepDur : 0);
+      const hit = (note, v, k2 = kit) => v > 0 && k2.start({ note, velocity: Math.max(1, Math.min(127, Math.round(v + (Math.random() - 0.5) * 12))), time: t + (Math.random() - 0.5) * 0.01 });
+      const calm = energy < 0.25, tense = energy > 0.6;
+      if (bar % 4 === 3 && i >= 12) { hit(WORLD_FILL[i - 12], 58 + (i - 12) * 10); if (style === "hand" && i === 12) hit("tom-ll", 84); return; }
+      for (const [note, steps] of Object.entries(P)) {
+        let v = steps[i] || 0;
+        if (!v) continue;
+        if (calm && (note === "cabasa" && i % 2 || note === "conga-h")) continue;
+        hit(note, v);
+        if (note === "snare-m") hit("snare-m", v * 0.9, snareKit);
+        if (note === "conga-m" && v > 65) hit("conga-m", v * 0.5, snareKit);
+      }
+      if (tense && i === 14) hit(style === "hand" ? "tom-l" : "kick", 76);
+      if (i === 0 && bar % 16 === 0 && !noBoom) { hit("kick-alt", 110); hit("tom-ll", 90); }
+    };
     const beatLoop = () => {
       try {
         const st = stRef.current, sm = smoothRef.current, F = 1 + 7 * sm;
@@ -2646,6 +2689,15 @@ export default function Chloe() {
           }
           while (beatNext < ac.currentTime + 0.12) {
             const b0 = tg.cur ?? st.bpm, bb = b0 > 160 ? b0 / 2 : b0;
+            if (WORLD[beatStyleNow]) {
+              const lb = b0 > 120 ? b0 / 2 : b0, sd = 60 / lb / 4;   // laid back: half-time above 120
+              worldStep(kit, snareKit, beatStyleNow, beatStep, beatBar, beatNext, sd, beatNoCrash);
+              if (beatStep === 0 && beatBar > 0) beatNoCrash = false;
+              beatNext += sd;
+              beatStep = (beatStep + 1) % 16;
+              if (beatStep === 0) beatBar++;
+              continue;
+            }
             if (beatStyleNow === "fusion") {
               fusionStep(kit, snareKit, beatStep, beatBar, beatNext, st.grouping);
               if (beatStep === 0 && beatBar % 16 === 0 && !beatNoCrash) kit.start({ note: "crash", velocity: 84, time: beatNext });
@@ -3098,11 +3150,17 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // switches it on or off); drive likelier when tense, break when calm
       if (_al.beat && stRef.current.beatStyle !== "off" && Math.random() < 0.3 && maybe()) {
         const e = energyRef.current;
-        // Fusion is only played when you pick it, never chosen by Auto
-        const w = { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 };
-        let r = Math.random() * (w.break + w.drive + w.heavy), pickB = "heavy";
-        for (const k of ["break", "drive"]) { if ((r -= w[k]) < 0) { pickB = k; break; } }
-        if (pickB !== stRef.current.beatStyle) later(() => setBeatStyle(pickB));
+        // Switches only within a family, so the feel holds: kit = break/drive/heavy,
+        // world = downtempo/hand (hand likelier when calm). Fusion stays put.
+        const fam = BEAT_FAMILY[stRef.current.beatStyle];
+        const w = fam === "world" ? { downtempo: 0.4 + e, hand: 1.1 - e }
+                : fam === "kit" ? { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 } : null;
+        if (w) {
+          const ks = Object.keys(w);
+          let r = Math.random() * ks.reduce((a, k) => a + w[k], 0), pickB = ks[ks.length - 1];
+          for (const k of ks) { if ((r -= w[k]) < 0) { pickB = k; break; } }
+          if (pickB !== stRef.current.beatStyle) later(() => setBeatStyle(pickB));
+        }
       }
       // Smooth: the beat sometimes rests for 1-3 picks, fading out and back in
       if (_al.beat && sm && stRef.current.beatStyle !== "off") {
@@ -3575,9 +3633,18 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           {JOURNEY_MINS.map(m => <button key={m} onClick={() => setJourneyMins(m)} style={chip(journeyMins === m)}>{m} min</button>)}
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSymphonic(v => !v); if (!symphonic) getOrchestra(getCtx()); }} style={chip(symphonic)}>orchestra</button>
-          <button onClick={() => { const v = beatStyle === "off" ? "break" : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
+          <button onClick={() => { const v = beatStyle === "off" ? "downtempo" : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
           <button onClick={() => { wake(); setDroneOn(v => !v); }} style={chip(droneOn)}>drone</button>
         </div>
+
+        {/* Drum feel, while drums are on */}
+        {beatStyle !== "off" && (
+          <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+            {[["downtempo", "downtempo"], ["hand", "hand drums"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
+              <button key={v} onClick={() => setBeatStyle(v)} style={{ ...chip(beatStyle === v), fontSize: 10, padding: "4px 11px" }}>{l}</button>
+            ))}
+          </div>
+        )}
 
         {/* Play */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginTop: 30 }}>
@@ -4758,9 +4825,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
-              <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
-                {["off", "break", "drive", "heavy", "fusion"].map(v => (
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
                     background: beatStyle === v ? K.a : K.bg3,
                     color: beatStyle === v ? "#000" : K.txt,
