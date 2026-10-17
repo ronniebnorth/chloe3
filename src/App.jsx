@@ -423,6 +423,21 @@ const BREAKS = {
   // Heavy half-time: one big snare on beat 3
   heavy: { k: { 0: 127, 6: 100, 10: 110 }, s: { 8: 127 }, g: { 13: 32 },
            h: { 0: 64, 2: 44, 4: 60, 6: 44, 8: 64, 10: 44, 12: 60, 14: 44 }, o: {} },
+  // Fusion (in the spirit of the Shrapnel-era session players, Atma Anur and
+  // co.): syncopated kick, ghost notes only where kick and snare aren't (one
+  // limb at a time, linear), ride instead of hats, hi-hat foot on 2 and 4.
+  // Played by fusionStep below: group accents, linear tom fills, cross-stick
+  // when calm, a little human looseness.
+  fusion: { k: { 0: 116, 6: 82, 10: 104, 13: 70 }, s: { 4: 110, 12: 114 }, g: { 2: 26, 7: 30, 9: 24, 11: 28, 15: 34 },
+            r: { 0: 86, 2: 54, 4: 76, 6: 54, 8: 86, 10: 54, 12: 76, 14: 54 }, h: {}, o: {} },
+};
+// Linear fills for fusion: one drum per 16th. Short = the last beat of every
+// 4th bar; long = the last two beats of every 8th, phrased in 3s across the beat.
+const FUSION_FILLS = {
+  short: [["snare-h", "tom-h", "tom-m", "kick"], ["tom-hh", "tom-h", "kick", "tom-l"], ["snare-m", "kick", "tom-m", "tom-ll"], ["snare-h", "snare-m", "tom-l", "kick"]],
+  long: [["snare-h", "tom-hh", "kick", "tom-h", "tom-m", "kick", "tom-l", "tom-ll"],
+         ["tom-hh", "snare-h", "kick", "tom-h", "snare-m", "kick", "tom-m", "kick"],
+         ["snare-h", "tom-h", "tom-m", "kick", "tom-l", "tom-ll", "kick", "kick"]],
 };
 
 // Tunings, as ratios above the scale root for each semitone. Equal = 2^(n/12).
@@ -1296,7 +1311,7 @@ export default function Chloe() {
         rootIdx:    parseInt(p.get("r") ?? "0"),
         timbre:     ["sine","triangle","square","sawtooth"].includes(p.get("t")) ? p.get("t") : "sine",
         instrument: ["piano","guitar","xylo","space"].includes(p.get("i")) ? p.get("i") : null,
-        noteVol:    parseFloat(p.get("v") ?? "0.7"),
+        noteVol:    Number.isFinite(parseFloat(p.get("v"))) ? parseFloat(p.get("v")) : 0.7,
         reverbAmt:  parseFloat(p.get("rv") ?? "0.75"),
         delayAmt:   parseFloat(p.get("dl") ?? "0.15"),
         bpm:        parseInt(p.get("b") ?? "100"),
@@ -1317,7 +1332,7 @@ export default function Chloe() {
         smooth:     Math.min(100, Math.max(0, parseInt(p.get("sm") ?? "0") || 0)) / 100,
         journeyMins: JOURNEY_MINS.includes(parseInt(p.get("jm"))) ? parseInt(p.get("jm")) : 15,
         symphonic:  p.get("sy") === "1",
-        beatStyle:  ["break", "drive", "heavy"].includes(p.get("bt")) ? p.get("bt") : "off",
+        beatStyle:  ["break", "drive", "heavy", "fusion"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1413,11 +1428,13 @@ export default function Chloe() {
   const [urlCopied,  setUrlCopied]  = useState(false);
   const [showHelp,    setShowHelp]    = useState(false);
   // Listen: a simple front door (pick a journey, press play); Studio: the full app
-  // Which door opens: ?v= wins; a shared settings link opens Studio; otherwise
+  // Which door opens: ?view= wins; a shared settings link opens Studio; otherwise
   // the last view used, Listen for first-time visitors
   const [view, setView] = useState(() => {
-    const p = new URLSearchParams(window.location.search), v = p.get("v");
+    const p = new URLSearchParams(window.location.search), v = p.get("view");
     if (v === "listen" || v === "studio") return v;
+    // An old ?v=listen link (v is note volume) still opens Listen
+    if (p.get("v") === "listen") return "listen";
     if ([...p.keys()].length) return "studio";
     try { return localStorage.getItem("chloe-view") === "studio" ? "studio" : "listen"; } catch { return "listen"; }
   });
@@ -2559,6 +2576,35 @@ export default function Chloe() {
         p.linearRampToValueAtTime(v, ac.currentTime + Math.max(0.01, sec));
       }
     };
+    // One 16th of the fusion groove. Group accents: with GROUPS on, a kick +
+    // ride accent every 3/5/6/7 16ths, crossing the bar line and resolving to
+    // the 1 every 4 bars. Calm = cross-stick backbeat; tense = more ghosts and
+    // kicks. Velocities ±8 and timing ±4 ms so it breathes.
+    let fusionTick = 0, fillPat = null;
+    const fusionStep = (kit, snareKit, i, bar, t0, grouping) => {
+      const P = BREAKS.fusion;
+      const hit = (note, v, k2 = kit) => v > 0 && k2.start({ note, velocity: Math.max(1, Math.min(127, Math.round(v + (Math.random() - 0.5) * 16))), time: t0 + (Math.random() - 0.5) * 0.008 });
+      if (i === 0 && bar % 4 === 0) fusionTick = 0;
+      const longFill = bar % 8 === 7 && i >= 8, shortFill = bar % 4 === 3 && i >= 12;
+      if ((longFill && i === 8) || (shortFill && !longFill && i === 12)) {
+        const v = FUSION_FILLS[longFill ? "long" : "short"]; fillPat = v[Math.floor(Math.random() * v.length)];
+      }
+      if (longFill || shortFill) {
+        const n = fillPat?.[i - (longFill ? 8 : 12)];
+        if (n) hit(n, 70 + (i % 4) * 12 + (n === "kick" ? 20 : 0));
+        if (i % 4 === 0) hit("ride", 40);
+      } else {
+        const g = typeof grouping === "number" && grouping > 0 ? grouping : grouping === "mix" ? 5 : 0;
+        const accent = g && fusionTick % g === 0 && !P.s[i];
+        const calm = energy < 0.25, tense = energy > 0.6;
+        hit("kick", P.k[i] || (accent ? 92 : 0) || (tense && i === 15 ? 74 : 0));
+        if (P.s[i]) { calm ? hit("stick-m", P.s[i] * 0.85) : (hit("snare-m", P.s[i]), hit("snare-m", P.s[i] * 0.75, snareKit)); }
+        else hit("snare-l", P.g[i] ? P.g[i] + (tense ? 10 : 0) : tense && i % 2 && !P.k[i] ? 22 : 0);
+        hit("ride", accent ? 108 : P.r[i] || 0);
+        if (i === 4 || i === 12) hit("hhclosed-short", 36);
+      }
+      fusionTick++;
+    };
     const beatLoop = () => {
       try {
         const st = stRef.current, sm = smoothRef.current, F = 1 + 7 * sm;
@@ -2599,6 +2645,15 @@ export default function Chloe() {
           }
           while (beatNext < ac.currentTime + 0.12) {
             const b0 = tg.cur ?? st.bpm, bb = b0 > 160 ? b0 / 2 : b0;
+            if (beatStyleNow === "fusion") {
+              fusionStep(kit, snareKit, beatStep, beatBar, beatNext, st.grouping);
+              if (beatStep === 0 && beatBar % 16 === 0 && !beatNoCrash) kit.start({ note: "crash", velocity: 84, time: beatNext });
+              if (beatStep === 0 && beatBar > 0) beatNoCrash = false;
+              beatNext += 60 / bb / 4;
+              beatStep = (beatStep + 1) % 16;
+              if (beatStep === 0) beatBar++;
+              continue;
+            }
             const P = BREAKS[beatStyleNow] || BREAKS.break, i = beatStep, t = beatNext;
             const fill = beatBar % 4 === 3 && i >= 12;
             const hit = (note, v, k2 = kit) => v && k2.start({ note, velocity: Math.min(127, Math.round(v)), time: t });
@@ -3039,9 +3094,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // switches it on or off); drive likelier when tense, break when calm
       if (_al.beat && stRef.current.beatStyle !== "off" && Math.random() < 0.3 && maybe()) {
         const e = energyRef.current;
-        const w = { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 };
-        let r = Math.random() * (w.break + w.drive + w.heavy), pickB = "heavy";
-        for (const k of ["break", "drive"]) { if ((r -= w[k]) < 0) { pickB = k; break; } }
+        // fusion likelier when the line is playing in groups (its accents follow them)
+        const w = { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6, fusion: stRef.current.grouping ? 1.2 : 0.6 };
+        let r = Math.random() * (w.break + w.drive + w.heavy + w.fusion), pickB = "heavy";
+        for (const k of ["break", "drive", "fusion"]) { if ((r -= w[k]) < 0) { pickB = k; break; } }
         if (pickB !== stRef.current.beatStyle) later(() => setBeatStyle(pickB));
       }
       // Smooth: the beat sometimes rests for 1-3 picks, fading out and back in
@@ -4698,9 +4754,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 8, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
-                {["off", "break", "drive", "heavy"].map(v => (
+                {["off", "break", "drive", "heavy", "fusion"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
                     background: beatStyle === v ? K.a : K.bg3,
                     color: beatStyle === v ? "#000" : K.txt,
