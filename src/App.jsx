@@ -1896,14 +1896,35 @@ export default function Chloe() {
     const vol = ac.createGain(); vol.gain.value = stRef.current.beatVol ?? 1;
     // fade / fadeRoom: the beat's fade in and out (Smooth), dry and reverb send together
     const fade = ac.createGain(), fadeRoom = ac.createGain();
-    inGain.connect(comp); comp.connect(vol); vol.connect(fade); fade.connect(masterOut(ac));
+    // Distance (setBeatDistance): darker (low-pass), less dry, more of it in the
+    // reverb and a little in the delay, so the drums sit far back in the room
+    const tone = ac.createBiquadFilter(); tone.type = "lowpass"; tone.Q.value = 0.5; tone.frequency.value = 18000;
+    const dry = ac.createGain(), farSend = ac.createGain(), farDelay = ac.createGain();
+    dry.gain.value = 1; farSend.gain.value = 0; farDelay.gain.value = 0;
+    inGain.connect(comp); comp.connect(vol); vol.connect(tone);
+    tone.connect(dry); dry.connect(fade); fade.connect(masterOut(ac));
+    tone.connect(farSend); farSend.connect(fadeRoom);
+    fade.connect(farDelay); farDelay.connect(getOrCreateDelay(ac).delayNode);
     const roomSend = ac.createGain(); roomSend.gain.value = 0.35;
     roomSend.connect(fadeRoom); fadeRoom.connect(getOrCreateReverb(ac).convolver);
     const kit = DrumMachine(ac, { instrument: "LM-2", destination: inGain });
     const snareKit = DrumMachine(ac, { instrument: "LM-2", destination: roomSend });
-    kitRef.current = { ac, kit, snareKit, vol, roomSend, fade, fadeRoom };
+    kitRef.current = { ac, kit, snareKit, vol, roomSend, fade, fadeRoom, tone, dry, farSend, farDelay, dist: 0 };
     return kitRef.current;
+  // getOrCreateDelay is defined below and stable ([] deps); listing it here would hit it before it exists
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getOrCreateReverb]);
+  // 0 = up close (as recorded) .. 1 = far away: low-pass 18 kHz → 1.8 kHz,
+  // dry 1 → 0.3, reverb send 0 → 1.2, delay send 0 → 0.35. Eases over ~3 s.
+  const setBeatDistance = (k, d) => {
+    if (Math.abs(k.dist - d) < 0.01) return;
+    k.dist = d;
+    const now = k.ac.currentTime, to = (p, v) => { p.cancelScheduledValues(now); p.setTargetAtTime(v, now, 1); };
+    to(k.tone.frequency, 18000 * Math.pow(0.1, d));
+    to(k.dry.gain, 1 - 0.7 * d);
+    to(k.farSend.gain, 1.2 * d);
+    to(k.farDelay.gain, 0.35 * d);
+  };
   useEffect(() => { if (kitRef.current) kitRef.current.vol.gain.value = beatVol; }, [beatVol]);
   useEffect(() => { if (beatStyle !== "off" && ctxRef.current) getKit(ctxRef.current); }, [beatStyle, getKit]);
 
@@ -2711,7 +2732,9 @@ export default function Chloe() {
         }
         if (beatStyleNow === "off" || beatStyleNow === null) { beatNext = 0; }
         else {
-          const { kit, snareKit } = getKit(ac);
+          const K0 = getKit(ac), { kit, snareKit } = K0;
+          // Far and dreamy in Endless, fairly far for brushes, up close otherwise
+          setBeatDistance(K0, JOURNEYS[journeyRef.current?.id]?.endless ? 0.9 : beatStyleNow === "brushes" ? 0.7 : 0);
           // A fresh context (the periodic swap) restarts its clock near 0: carry on
           // from where the pattern is instead of waiting for the old clock time
           if (ac !== beatAc) { if (beatAc) beatNext = ac.currentTime + 0.05; beatAc = ac; }
