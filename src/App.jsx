@@ -1583,6 +1583,7 @@ export default function Chloe() {
   const energyRef = useRef(0);        // orchestra tension energy, shared with Auto
   const autoOnRef = useRef(false);
   const tempoSnapRef = useRef(false); // next BPM change jumps instead of gliding
+  const leadTempoRef = useRef(1);       // lead-only burst: the lead plays at this × the band's tempo
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
@@ -2692,7 +2693,7 @@ export default function Chloe() {
       const notes = [];
       for (let o = 0; o < aOct; o++) baseNotes.forEach(n => notes.push(n + o * 12));
       melPrevRef.current = Math.min(melPrevRef.current, notes.length - 1);
-      const eighth = 60000 / playBpm() / 2;
+      const eighth = 60000 / (playBpm() * leadTempoRef.current) / 2;
       const isChord = cv !== "off";  // "rand" also counts as chord
       const G = stRef.current.grouping || 0;
       // Group size changed mid-group (Auto or a click): start a fresh group,
@@ -3373,7 +3374,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     // Bursts: tempo holds at home; every 20-60 s a 2-4 bar surprise, then back.
     // Double/half time snap in and out; push/pull glide.
     // Every 45-120 s (longer with Smooth), 4-8 bars. With Smooth at half or more,
-    // no double/half-time snaps, only the gentle push and pull.
+    // no double/half-time snaps, only the gentle push and pull. Double and half
+    // time are mostly the lead's alone (it races or lags over a band that keeps
+    // its tempo); now and then, and for push and pull, everything moves.
     const BURSTS = [
       { f: 2,    snap: true,  w: 30 },  // double time
       { f: 1.15, snap: false, w: 35 },  // push
@@ -3391,9 +3394,18 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const pool = smoothRef.current >= 0.5 ? fwd.filter(x => !x.snap) : fwd;
       let r = Math.random() * pool.reduce((a, x) => a + x.w, 0), b = pool[0];
       for (const x of pool) { if ((r -= x.w) < 0) { b = x; break; } }
+      const bars = 4 + Math.floor(Math.random() * 5);
+      if (b.snap && Math.random() < 0.75) {
+        leadTempoRef.current = Math.min(480, Math.max(40, st.bpm * b.f)) / st.bpm;
+        burstT = setTimeout(() => {
+          if (cancelled) return;
+          leadTempoRef.current = 1;
+          scheduleBurst();
+        }, bars * 4 * 60000 / st.bpm);
+        return;
+      }
       burstHome = st.bpm;
       const to = Math.round(Math.min(480, Math.max(40, burstHome * b.f)));
-      const bars = 4 + Math.floor(Math.random() * 5);
       tempoSnapRef.current = b.snap;
       setBpm(to);
       burstT = setTimeout(() => {
@@ -3588,7 +3600,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     const laterTs = [];
     pickNext();
     return () => {
-      cancelled = true; clearTimeout(timeout); clearTimeout(burstT); laterTs.forEach(clearTimeout); beatRestRef.current = 0;
+      cancelled = true; clearTimeout(timeout); clearTimeout(burstT); laterTs.forEach(clearTimeout); beatRestRef.current = 0; leadTempoRef.current = 1;
       if (burstHome !== null) { tempoSnapRef.current = false; setBpm(burstHome); }
     };
   }, [autoOn]); // reads live state via stRef; getCtx/pick/set* are stable
@@ -5153,7 +5165,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             )}
             {/* Auto tempo — wander, or hold steady with short surprise bursts */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="How Auto moves the tempo. Drift = wander in small steps (about ±10%) around the BPM you started at. Bursts = hold your BPM steady, and every 45-120 seconds (longer with Smooth) throw in a 4-8 bar surprise: double time, a push up, a pull back or half time, then return. With Smooth at 50% or more, only the gentle push and pull. Untick BPM in Auto's ⚙ to stop all tempo changes." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>AUTO TEMPO</span>
+              <span title="How Auto moves the tempo. Drift = wander in small steps (about ±10%) around the BPM you started at. Bursts = hold your BPM steady, and every 45-120 seconds (longer with Smooth) throw in a 4-8 bar surprise: double time, a push up, a pull back or half time, then return. Double and half time are usually the lead's alone, over a band that keeps its tempo; sometimes everything moves. With Smooth at 50% or more, only the gentle push and pull. Untick BPM in Auto's ⚙ to stop all tempo changes." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>AUTO TEMPO</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {["drift", "bursts"].map(v => (
                   <button key={v} onClick={() => setAutoTempo(v)} style={{
