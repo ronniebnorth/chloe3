@@ -1784,6 +1784,7 @@ export default function Chloe() {
         journeyMins: JOURNEY_MINS.includes(parseInt(p.get("jm"))) ? parseInt(p.get("jm")) : 15,
         sleepMins:  SLEEP_MINS.includes(parseInt(p.get("sl"))) ? parseInt(p.get("sl")) : undefined,
         symphonic:  p.get("sy") === "1",
+        beatWander: p.get("bw") === "1",
         beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
@@ -1870,6 +1871,8 @@ export default function Chloe() {
   const orchRef = useRef(null);
   // Beat: off | break | drive | heavy (sampled LinnDrum through a punch compressor)
   const [beatStyle, setBeatStyle] = useState(_u.beatStyle ?? "off");
+  // Wander: Auto's beat changes roam across every style instead of staying in one family
+  const [beatWander, setBeatWander] = useState(_u.beatWander ?? false);
   const kitRef = useRef(null);
   const beatRestRef = useRef(0);   // Smooth: Date.now() until which Auto rests the beat (0 = playing)
   const beatPhraseRef = useRef(false);   // Auto's style change waits for the end of the 4-bar phrase
@@ -2293,7 +2296,7 @@ export default function Chloe() {
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
   const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol, droneWave });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn]);
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -3855,14 +3858,26 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         const e = energyRef.current;
         // Switches only within a family, so the feel holds: kit = break/drive/heavy,
         // world = downtempo/hand (hand likelier when calm). Fusion stays put.
+        // Wander roams every style instead: soft and earthy when calm (brushes,
+        // hand, shaman), kit grooves when tense; Endless keeps to the soft ones,
+        // Rise to the kit and shaman.
         const fam = BEAT_FAMILY[stRef.current.beatStyle];
-        const w = fam === "world" ? { downtempo: 0.4 + e, hand: 1.1 - e }
+        const w = stRef.current.beatWander
+          ? (sleepJ ? { brushes: 1, hand: 0.7, shaman: 0.8 }
+            : epicJ ? { break: 0.6, drive: 1, heavy: 0.6, shaman: 0.5 }
+            : { brushes: 0.8 * (1 - e) ** 2, downtempo: 0.9, hand: 1 - 0.6 * e, shaman: 1,
+                break: 0.3 + 0.8 * e, drive: 0.1 + 1.2 * e, heavy: 0.6 * e, fusion: 0.35 })
+          : fam === "world" ? { downtempo: 0.4 + e, hand: 1.1 - e }
                 : fam === "kit" ? { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 } : null;
+        if (w && stRef.current.beatWander) delete w[stRef.current.beatStyle];
         if (w) {
           const ks = Object.keys(w);
           let r = Math.random() * ks.reduce((a, k) => a + w[k], 0), pickB = ks[ks.length - 1];
           for (const k of ks) { if ((r -= w[k]) < 0) { pickB = k; break; } }
           if (pickB !== stRef.current.beatStyle) later(() => { beatPhraseRef.current = true; setBeatStyle(pickB); });
+          // Wandering into shaman brings the steppe with it now and then: a throat or jaw-harp drone
+          if (pickB === "shaman" && stRef.current.beatWander && stRef.current.droneOn && _al.droneWave && Math.random() < 0.5)
+            later(() => setDroneWave(Math.random() < 0.6 ? "throat" : "jawharp"));
         }
       }
       // Smooth: the beat sometimes rests for 1-3 picks, fading out and back in
@@ -4163,6 +4178,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (autoTempo !== "bursts") p.set("at", autoTempo);
     if (symphonic) p.set("sy", "1");
     if (beatStyle !== "off") p.set("bt", beatStyle);
+    if (beatWander) p.set("bw", "1");
     if (journey !== "off") { p.set("jo", journey); if (journeyMins !== 15) p.set("jm", journeyMins); if (sleepMins) p.set("sl", sleepMins); }
     if (smooth) p.set("sm", Math.round(smooth * 100));
     // Only differences from the defaults travel: al = unticked, an = ticked-but-off-by-default
@@ -4173,7 +4189,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, beatWander, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
 
   // Record button: start tapping the master output; stop → download the WAV
   const toggleRec = useCallback(async () => {
@@ -4374,8 +4390,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         {/* Drum feel, while drums are on */}
         {beatStyle !== "off" && (
           <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+            <button onClick={() => setBeatWander(w => !w)} title="Wander: the drums roam across every style as the music goes, from brushes and shaman drums to breakbeats" style={{ ...chip(beatWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
             {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
-              <button key={v} onClick={() => setBeatStyle(v)} style={{ ...chip(beatStyle === v), fontSize: 10, padding: "4px 11px" }}>{l}</button>
+              <button key={v} onClick={() => { setBeatStyle(v); setBeatWander(false); }} style={{ ...chip(beatStyle === v && !beatWander), fontSize: 10, padding: "4px 11px", ...(beatWander && beatStyle === v ? { borderStyle: "dashed" } : {}) }}>{l}</button>
             ))}
           </div>
         )}
@@ -5570,7 +5587,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves), and wandering into shaman sometimes brings a throat-singing or jaw-harp drone. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
@@ -5582,6 +5599,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     fontWeight: beatStyle === v ? 600 : 400,
                   }}>{v}</button>
                 ))}
+                <button onClick={() => setBeatWander(w => !w)} title="Wander: under Auto, the beat roams across every style instead of staying in one family. Calm leans to brushes, hand drums and shaman; tension to breakbeat, drive and heavy." style={{
+                  background: beatWander ? K.a : K.bg3, color: beatWander ? "#000" : K.txt,
+                  border: `1px solid ${beatWander ? K.a : K.br}`, borderRadius: 3, padding: "3px 8px",
+                  fontSize: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: beatWander ? 600 : 400,
+                }}>wander</button>
               </div>
             </div>
             {/* Rhythm — only applies in arpeggio mode */}
