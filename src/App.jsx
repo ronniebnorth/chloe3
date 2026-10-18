@@ -530,7 +530,7 @@ function makeHandDrum(ac, d) {
     const x = (Math.random() * 2 - 1) * Math.exp(-k / sr / 0.006);
     const v = b0 * x - b0 * x2 - a1 * y1 - a2 * y2;
     x2 = x1; x1 = x; y2 = y1; y1 = v;
-    y[k] += d.slap * 3 * v;
+    y[k] += d.slap * 4.2 * v;
   }
   for (let k = 0; k < 64; k++) y[k] *= k / 64;   // no click at the start
   let peak = 0; for (let k = 0; k < n; k++) peak = Math.max(peak, Math.abs(y[k]));
@@ -2759,7 +2759,7 @@ export default function Chloe() {
       const src = ac.createBufferSource(), g = ac.createGain(), p = ac.createStereoPanner();
       src.buffer = takes[Math.floor(Math.random() * takes.length)];
       src.playbackRate.value = 0.99 + Math.random() * 0.02;
-      g.gain.value = 0.55 * (d.g ?? 1) * Math.pow(Math.min(127, v) / 127, 1.6);
+      g.gain.value = 0.75 * (d.g ?? 1) * Math.pow(Math.min(127, v) / 127, 1.6);
       p.pan.value = d.pan;
       src.connect(g); g.connect(p); p.connect(k.vol);
       if (room) p.connect(k.roomSend);
