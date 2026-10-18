@@ -364,6 +364,7 @@ function synthDrone(ac, freq, type, opts) {
 
 
 window.__synthDrone = synthDrone;   // console / level tests
+window.__synthNote = synthNote;
 
 // Master bus: every sound goes through a limiter so loud accents and big
 // chords can't clip. Chrome's compressor adds ~+1.7 dB make-up gain; the
@@ -770,7 +771,47 @@ const tunedRatio = (semi, tuning) => {
 
 // Per-sound gain so every instrument/wave plays at about the same loudness
 // (measured K-weighted, eighth-note runs C3-C5, levelled to -28 LUFS).
-const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
+const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, lute: 1.88, fiddle: 0.78, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
+
+// Steppe strings slide into a note from the one before (within a 4th, not
+// across a rest, not between the notes of one chord)
+let lastString = { freq: 0, t: -9 };
+const slideFrom = (ac, freq, chance) => {
+  const now = ac.currentTime, p = lastString;
+  const near = p.freq && now - p.t > 0.03 && now - p.t < 0.8 && Math.abs(12 * Math.log2(freq / p.freq)) <= 5 && Math.abs(12 * Math.log2(freq / p.freq)) > 0.5;
+  if (now - p.t > 0.03) lastString = { freq, t: now };
+  return near && Math.random() < chance ? p.freq : 0;
+};
+
+// Plucked lute (tovshuur / dombra, the oud family): a Karplus-Strong gut
+// string, fractional delay so it stays in tune up high, plucked a sixth of the
+// way along (the comb on the pick noise), dying faster on high notes, through
+// a wooden body (low resonances, rolled-off top). Two takes per pitch.
+const luteCache = new Map();
+function luteBuffer(ac, freq) {
+  const key = ac.sampleRate + ":" + freq.toFixed(1);
+  const takes = luteCache.get(key) || [];
+  if (takes.length >= 2) return takes[Math.floor(Math.random() * 2)];
+  const sr = ac.sampleRate, T60 = Math.max(0.6, Math.min(2.6, 2.6 * Math.pow(110 / freq, 0.5)));
+  const n = Math.floor(sr * Math.min(3, T60 + 0.2)), buf = ac.createBuffer(1, n, sr), y = buf.getChannelData(0);
+  const P = sr / freq - 0.5, g = Math.exp(Math.log(0.001) / (freq * T60));
+  const N = Math.max(2, Math.round(P)), pick = Math.max(1, Math.round(N / 6));
+  const exc = new Float32Array(N + pick);
+  let lp = 0;
+  for (let i = 0; i < N; i++) { lp += 0.5 * ((Math.random() * 2 - 1) - lp); exc[i] = lp; }
+  const at = (k) => { if (k < 0) return 0; const i = Math.floor(k), f = k - i; return y[i] * (1 - f) + (y[i + 1] ?? 0) * f; };
+  for (let i = 0; i < n; i++) {
+    const e = i < N ? exc[i] - (i >= pick ? exc[i - pick] : 0) : 0;
+    y[i] = e + g * 0.5 * (at(i - P) + at(i - P - 1));
+  }
+  let peak = 0; for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(y[i]));
+  for (let i = 0; i < n; i++) y[i] /= peak || 1;
+  const fadeN = Math.floor(0.05 * sr);
+  for (let i = n - fadeN; i < n; i++) y[i] *= (n - i) / fadeN;
+  takes.push(buf); luteCache.set(key, takes);
+  if (luteCache.size > 400) luteCache.delete(luteCache.keys().next().value);
+  return buf;
+}
 
 function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend, analyserSend, out) {
   vel *= SOUND_GAIN[instrument || timbre] ?? 1;
@@ -832,6 +873,60 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     connectOut(g);
     src2.start(now); src2.stop(now + 0.05);
     o.start(now); o.stop(now + dur);
+    cleanup(dur);
+    return { start: now, stop: now + dur };
+  }
+
+  if (instrument === "lute") {
+    const src = mkB(); src.buffer = luteBuffer(ac, freq);
+    // A slide (or hammer-on) from the last note: the string starts at the old pitch
+    const from = slideFrom(ac, freq, 0.3);
+    if (from) { src.playbackRate.setValueAtTime(from / freq, now); src.playbackRate.exponentialRampToValueAtTime(1, now + 0.05 + Math.random() * 0.05); }
+    const b1 = mkF("peaking", 210); b1.Q.value = 1.4; b1.gain.value = 7;     // the wooden body
+    const b2 = mkF("peaking", 520); b2.Q.value = 2; b2.gain.value = 4;
+    const top = mkF("highshelf", 2800); top.gain.value = -8;
+    const g = mkG();
+    const dur = Math.min(Math.max(beatDur * 2.2, 0.5), src.buffer.duration);
+    g.gain.setValueAtTime(vel * 0.9, now);
+    g.gain.setValueAtTime(vel * 0.9, now + dur - 0.08);
+    g.gain.linearRampToValueAtTime(0, now + dur);
+    src.connect(b1); b1.connect(b2); b2.connect(top); top.connect(g); connectOut(g);
+    src.start(now); src.stop(now + dur + 0.02);
+    cleanup(dur);
+    return { start: now, stop: now + dur };
+  }
+
+  if (instrument === "fiddle") {
+    // Morin khuur, the horsehead fiddle: a bowed string (a saw, softened) with
+    // the bow swelling in, horsehair grit (noise around 2.5 kHz following the
+    // bow), vibrato that blooms after the attack, a slide in from the last note,
+    // through a hollow, nasal body
+    const dur = Math.max(0.28, Math.min(beatDur * 1.5, 3.5));
+    const atk = Math.min(0.14, dur * 0.3), rel = Math.min(0.25, dur * 0.35);
+    const o1 = mkO("sawtooth"), o2 = mkO("sawtooth");
+    o1.frequency.value = freq; o2.frequency.value = freq; o2.detune.value = 7;
+    const from = slideFrom(ac, freq, 0.55);
+    if (from) for (const o of [o1, o2]) { o.frequency.setValueAtTime(from, now); o.frequency.exponentialRampToValueAtTime(freq, now + 0.07 + Math.random() * 0.06); }
+    const vib = mkO("sine"); vib.frequency.value = 5 + Math.random() * 0.6;
+    const vibG = mkG(); vibG.gain.setValueAtTime(0, now); vibG.gain.linearRampToValueAtTime(16, now + Math.min(0.5, dur * 0.6));
+    vib.connect(vibG); vibG.connect(o1.detune); vibG.connect(o2.detune);
+    const mixG = mkG(); mixG.gain.value = 0.5; o1.connect(mixG); o2.connect(mixG);
+    const nb = mkB(); const nbuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.5), ac.sampleRate);
+    const nd = nbuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    nb.buffer = nbuf; nb.loop = true;
+    const nf = mkF("bandpass", 2500); nf.Q.value = 1.2;
+    const ng = mkG(); ng.gain.value = 0.05; nb.connect(nf); nf.connect(ng); ng.connect(mixG);
+    const lp = mkF("lowpass", 3200), f1 = mkF("peaking", 330), f2 = mkF("peaking", 1250), dip = mkF("peaking", 700);
+    f1.Q.value = 2; f1.gain.value = 6; f2.Q.value = 2.5; f2.gain.value = 5; dip.Q.value = 1.5; dip.gain.value = -5;
+    const g = mkG();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(vel * 0.85, now + atk);
+    g.gain.setTargetAtTime(vel * 0.7, now + atk, dur * 0.4);           // the bow eases off a little
+    g.gain.setValueAtTime(vel * 0.7, now + dur - rel);
+    g.gain.linearRampToValueAtTime(0, now + dur);
+    mixG.connect(f1); f1.connect(dip); dip.connect(f2); f2.connect(lp); lp.connect(g); connectOut(g);
+    for (const o of [o1, o2, vib]) { o.start(now); o.stop(now + dur + 0.02); }
+    nb.start(now); nb.stop(now + dur + 0.02);
     cleanup(dur);
     return { start: now, stop: now + dur };
   }
@@ -1000,7 +1095,12 @@ function Piano({ active, playing, K }) {
 const ROOTS = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
 const OFFS  = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const TIMBRES = ["sine", "triangle", "square", "sawtooth"];
-const INSTRUMENTS = ["piano", "guitar", "xylo", "space"];
+const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle"];
+// Steppe: with the throat-singing or jaw-harp drone, or the shaman beat, the
+// lead becomes Mongolian strings: the horsehead fiddle at slow tempos (90 BPM
+// and under), the plucked lute at faster ones (100 and up; between, it keeps
+// whichever it had). The chosen instrument comes back when the steppe sounds go.
+const isSteppe = st => (st.droneOn && (st.droneWave === "throat" || st.droneWave === "jawharp")) || st.beatStyle === "shaman";
 const GRP_NAME = { 3: "Tritonic", 4: "Tetratonic", 5: "Pentatonic", 6: "Hexatonic", 7: "Heptatonic", 8: "Octatonic" };
 const GRP_PFX  = { 3: "tri", 4: "tet", 5: "pen", 6: "hex", 7: "hep", 8: "oct" };
 // Sidebar group key — outside families get their own groups below the main ones
@@ -1660,7 +1760,7 @@ export default function Chloe() {
       return {
         rootIdx:    parseInt(p.get("r") ?? "0"),
         timbre:     ["sine","triangle","square","sawtooth"].includes(p.get("t")) ? p.get("t") : "sine",
-        instrument: ["piano","guitar","xylo","space"].includes(p.get("i")) ? p.get("i") : null,
+        instrument: ["piano","guitar","xylo","space","lute","fiddle"].includes(p.get("i")) ? p.get("i") : null,
         noteVol:    Number.isFinite(parseFloat(p.get("v"))) ? parseFloat(p.get("v")) : 0.7,
         reverbAmt:  parseFloat(p.get("rv") ?? "0.75"),
         delayAmt:   parseFloat(p.get("dl") ?? "0.15"),
@@ -2193,7 +2293,7 @@ export default function Chloe() {
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
   const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol, droneWave });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave]);
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -2763,9 +2863,15 @@ export default function Chloe() {
       orchT = setTimeout(orchTick, hold * 1000);
     };
 
+    let steppeInst = "lute";
     const playNote = (semi, dur, vel) => {
-      const { rootIdx: ri, timbre: t, instrument: inst, noteVol: nv, aRef: ar, tuning: tu } = stRef.current;
+      const { rootIdx: ri, timbre: t, noteVol: nv, aRef: ar, tuning: tu } = stRef.current;
       const b = tg.cur ?? stRef.current.bpm;
+      let inst = stRef.current.instrument;
+      if (isSteppe(stRef.current)) {
+        if (b <= 90) steppeInst = "fiddle"; else if (b >= 100) steppeInst = "lute";
+        inst = steppeInst;
+      }
       const ac = getCtx();
       const rev = getOrCreateReverb(ac);
       const del = getOrCreateDelay(ac);
