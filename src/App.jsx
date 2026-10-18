@@ -1571,6 +1571,7 @@ export default function Chloe() {
   const [beatStyle, setBeatStyle] = useState(_u.beatStyle ?? "off");
   const kitRef = useRef(null);
   const beatRestRef = useRef(0);   // Smooth: Date.now() until which Auto rests the beat (0 = playing)
+  const beatPhraseRef = useRef(false);   // Auto's style change waits for the end of the 4-bar phrase
   const riffHoldRef = useRef(0);   // Rise: Date.now() until which a riff owns the tempo (Auto and bursts leave it alone)
   const riffBufsRef = useRef(null); // Rise riffs: { ready, bufs } once fetched (AudioBuffers work in any context)
   // Recorder state: null, or { rec, t0 } while recording
@@ -2822,9 +2823,9 @@ export default function Chloe() {
     // Beat: look-ahead scheduler on the audio clock, one 16th per step at the
     // tempo actually playing (half-time above 160 BPM). Fill on the last beat of
     // every 4th bar, crash every 16 bars. Tension doubles the hats and adds kicks.
-    // With Smooth up, the beat fades instead of cutting: a style change fades
-    // out, switches and fades back in on the same grid; on/off (and Auto's
-    // rests) fade over 1-8 s. beatStyleNow is the style actually playing.
+    // A style change cuts on a downbeat without stopping the clock: the next
+    // bar for a click, the bar after a fill for Auto. With Smooth up, on/off
+    // (and Auto's rests) fade over 1-8 s. beatStyleNow is the style actually playing.
     let beatT = null, beatNext = 0, beatStep = 0, beatBar = 0, beatStyleNow = null;
     // Rise riffs (RISE_RIFFS): at the peaks, now and then, on a kit beat. The
     // tempo picks the key: the riff is sped up or slowed by whole semitones to
@@ -2880,7 +2881,7 @@ export default function Chloe() {
     };
     // Console: __chloeRiff() brings one in at the next 4-bar line (Rise, kit beat); __chloeRiff(false) shows the state
     window.__chloeRiff = (go = true) => { if (go) { riffForce = true; riffNext = 0; } return riff && { phase: riff.phase, bpm: riff.bpm, left: riff.left, bar: riff.bar }; };
-    let beatFadeTo = null, beatFadeEnd = 0, beatFadeAc = null, beatAc = null, beatNoCrash = false;
+    let beatFadeTo = null, beatFadeEnd = 0, beatFadeAc = null, beatAc = null, beatNoCrash = false, beatSwapTo = null;
     // A rainstick fall through the kit's volume, distance and fade
     const rainstick = (k, ac, t, level) => {
       if (!k.rain) k.rain = [2.6, 3.6, 4.8].map(d => makeRainstick(ac, d));
@@ -2977,15 +2978,16 @@ export default function Chloe() {
         const want = st.beatStyle === "off" || resting ? "off" : st.beatStyle;
         const playing = beatStyleNow !== null && beatStyleNow !== "off";
         const ac = playing || want !== "off" ? getCtx() : null;
-        if (beatFadeTo !== null && want === beatStyleNow) {
+        beatSwapTo = playing && want !== "off" && want !== beatStyleNow && beatFadeTo === null ? want : null;
+        if (beatSwapTo) {
+          // Style to style: swapped on a downbeat inside the scheduler below
+        } else if (beatFadeTo !== null && want === beatStyleNow) {
           // Changed back mid-fade: bring it up again
           beatFadeTo = null; rampBeat(getKit(ac), ac, 1, F / 2);
         } else if (want !== beatStyleNow) {
           if (!sm || !playing) {
             if (want !== "off") {
               const k = getKit(ac);
-              // A new style starts on a fresh downbeat with a crash, right away
-              if (playing) { beatNext = ac.currentTime + 0.03; beatStep = 0; beatBar = 0; beatNoCrash = false; }
               if (!playing && sm) { rampBeat(k, ac, 0, 0.01); rampBeat(k, ac, 1, F); } else rampBeat(k, ac, 1, 0.01);
             }
             beatStyleNow = want; beatFadeTo = null;
@@ -3011,6 +3013,11 @@ export default function Chloe() {
             beatNoCrash = sm > 0;   // fading in: no crash on the way in
           }
           while (beatNext < ac.currentTime + 0.12) {
+            // The new style comes in on the downbeat with a crash, in time with the old one
+            if (beatSwapTo && beatStep === 0 && (!beatPhraseRef.current || beatBar % 4 === 0)) {
+              beatStyleNow = beatSwapTo; beatSwapTo = null; beatBar = 0; beatNoCrash = false;
+              beatPhraseRef.current = false;
+            }
             const b0 = tg.cur ?? st.bpm, bb = b0 > 160 ? b0 / 2 : b0;
             if (WORLD[beatStyleNow]) {
               const lb = b0 > 120 ? b0 / 2 : b0, sd = 60 / lb / 4;   // laid back: half-time above 120
@@ -3503,7 +3510,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           const ks = Object.keys(w);
           let r = Math.random() * ks.reduce((a, k) => a + w[k], 0), pickB = ks[ks.length - 1];
           for (const k of ks) { if ((r -= w[k]) < 0) { pickB = k; break; } }
-          if (pickB !== stRef.current.beatStyle) later(() => setBeatStyle(pickB));
+          if (pickB !== stRef.current.beatStyle) later(() => { beatPhraseRef.current = true; setBeatStyle(pickB); });
         }
       }
       // Smooth: the beat sometimes rests for 1-3 picks, fading out and back in
