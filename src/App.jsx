@@ -7,6 +7,11 @@ import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightn
 ═══════════════════════════════════════════════════════ */
 
 // Right-rotate a 12-bit pattern by n steps
+// Usage stats (GoatCounter, loaded in index.html): an event is a path on the dashboard.
+// count.js skips it all on browsers opted out with ?nocount
+const track = (path) => { try { window.goatcounter?.count?.({ path, title: path, event: true }); } catch {} };
+const LISTEN_MARKS = [1, 5, 15, 30, 60];   // minutes of sound per visit
+
 const rot12 = (p, n) => {
   n = ((n % 12) + 12) % 12;
   return ((p >>> n) | (p << (12 - n))) & 0xfff;
@@ -1510,6 +1515,7 @@ export default function Chloe() {
   const [droneOn,    setDroneOn]    = useState(_u.droneOn ?? false);
   const [droneOct,   setDroneOct]   = useState(_u.droneOct   ?? -24);
   const [arpOn,      setArpOn]      = useState(false);
+  const usageRef = useRef({ secs: 0, next: 0 });
   const [arpDir,     setArpDir]     = useState("asc"); // "asc" | "desc" | "rand"
   const [arpOct,     setArpOct]     = useState(3);
   // Note grouping (0 = off): play the line in repeating groups of N even notes,
@@ -1594,7 +1600,7 @@ export default function Chloe() {
     try { return localStorage.getItem("chloe-view") === "studio" ? "studio" : "listen"; } catch { return "listen"; }
   });
   // Only a click on LISTEN / STUDIO is remembered, not a link that opened one
-  const goView = (v) => { setView(v); try { localStorage.setItem("chloe-view", v); } catch {} };
+  const goView = (v) => { setView(v); try { localStorage.setItem("chloe-view", v); } catch {} if (v === "studio") track("studio/open"); };
   const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem("chloe-welcomed"));
   const [demoOn,      setDemoOn]      = useState(false);
   useEffect(() => { demoOnRef.current = demoOn; }, [demoOn]);
@@ -1615,6 +1621,16 @@ export default function Chloe() {
   const [showDemoLog, setShowDemoLog] = useState(false);
   const [logCopied,   setLogCopied]   = useState(false);
   const [autoOn,      setAutoOn]      = useState(false);
+  // Usage stats: GoatCounter events at 1/5/15/30/60 minutes of sound per visit
+  useEffect(() => {
+    if (!autoOn && !arpOn) return;
+    const id = setInterval(() => {
+      const u = usageRef.current;
+      u.secs += 15;
+      while (u.next < LISTEN_MARKS.length && u.secs >= LISTEN_MARKS[u.next] * 60) track(`listened/${LISTEN_MARKS[u.next++]}min`);
+    }, 15000);
+    return () => clearInterval(id);
+  }, [autoOn, arpOn]);
   const demoOnRef = useRef(false);
   useEffect(() => { autoOnRef.current = autoOn; }, [autoOn]);
   const [loopOn,      setLoopOn]      = useState(false);
@@ -3905,6 +3921,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     };
     const play = () => {
       wake();
+      track(`listen/play/${J}`);
       if (journey === "off") setJourney(J);
       if (J === "endless") {
         setSmooth(Math.max(smooth, 0.9));   // sleep: hide every seam
@@ -3962,6 +3979,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             return (
               <button key={id} onClick={() => {
                 setJourney(id);
+                if (id !== J) track(`listen/journey/${id}`);
                 // Rise wants the whole band: orchestra on, and a kit beat (drive)
                 if (JOURNEYS[id].epic) {
                   if (!symphonic) { setSymphonic(true); getOrchestra(getCtx()); }

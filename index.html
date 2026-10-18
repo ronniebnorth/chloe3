@@ -2,6 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // GoatCounter skips this browser while localStorage skipgc = "t":
+      // ?nocount turns counting off on your own devices, ?count turns it back on
+      try {
+        var q = new URLSearchParams(location.search);
+        if (q.has("nocount")) localStorage.setItem("skipgc", "t");
+        if (q.has("count")) localStorage.removeItem("skipgc");
+      } catch (e) {}
+    </script>
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chloe — generative music that takes you somewhere</title>
