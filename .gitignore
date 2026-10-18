@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Raw guitar takes (big; sliced samples go elsewhere)
+samples/guitar/raw/
