@@ -3857,7 +3857,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             {dotB !== null && <circle cx={10 + (W - 20) * f} cy={big.y(dotB)} r={5} fill={JOURNEY_COLOR} />}
           </svg>
           <div style={{ position: "absolute", top: 14, left: 16, right: 16, display: "flex", justifyContent: "space-between", fontSize: 11, color: K.txt, textShadow: "0 1px 4px #000" }}>
-            <span>{playingNow && sel ? (selName || sel.id) : ""}</span>
+            {/* While a scale change moves note by note, the wheel shows the notes sounding now and the name is where it's heading */}
+            <span title={morphSemis ? "Changing one note at a time into this scale" : undefined}>
+              {playingNow && sel ? (morphSemis ? <><span style={{ color: JOURNEY_COLOR }}>→ </span>{selName || sel.id}</> : (selName || sel.id)) : ""}
+            </span>
             <span style={{ color: JOURNEY_COLOR, fontVariantNumeric: "tabular-nums" }}>
               {journeyNow ? (journeyNow.endless ? `${mmss(journeyNow.el)} · endless` : journeyNow.ending ? "ending…" : journeyNow.arrived ? "arrived" : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : ""}
               {sleepLeft !== null && (sleepLeft <= SLEEP_FADE * 1000 ? " · fading out…" : ` · sleep in ${mmss(sleepLeft)}`)}
