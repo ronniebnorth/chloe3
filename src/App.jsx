@@ -9,8 +9,33 @@ import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightn
 // Right-rotate a 12-bit pattern by n steps
 // Usage stats (GoatCounter, loaded in index.html): an event is a path on the dashboard.
 // count.js skips it all on browsers opted out with ?nocount
-const track = (path) => { try { window.goatcounter?.count?.({ path, title: path, event: true }); } catch {} };
+const track = (path, title = path) => { try { window.goatcounter?.count?.({ path, title, event: true }); } catch {} };
 const LISTEN_MARKS = [1, 5, 15, 30, 60];   // minutes of sound per visit
+
+// ♥ "more of this": each like is a snapshot of what was playing. Auto's picks
+// lean toward liked things: a like's pull halves every 15 minutes, and every
+// like ever saved (in this browser) keeps a small share of a fixed 0.3 pull,
+// so Chloe slowly learns a listener's taste without getting stuck.
+const LIKE_HALF = 15 * 60000, LIKE_KEEP = 60;
+const loadLikes = () => { try { return JSON.parse(localStorage.getItem("chloe-likes") || "[]"); } catch { return []; } };
+const likeW = (likes, now = Date.now()) => likes.map(l => Math.pow(0.5, (now - l.t) / LIKE_HALF) + 0.3 / Math.max(5, likes.length));
+// A liked value of one field, among the allowed ones, or null: the stronger the
+// likes, the likelier (one fresh like ≈ 45%, several ≈ 80%)
+const likedPick = (likes, field, allowed) => {
+  const w = likeW(likes), votes = new Map();
+  likes.forEach((l, i) => { const v = l[field]; if (v !== undefined && v !== null && (!allowed || allowed.includes(v))) votes.set(v, (votes.get(v) || 0) + w[i]); });
+  const S = [...votes.values()].reduce((a, x) => a + x, 0);
+  if (!S || Math.random() > 0.9 * S / (S + 1)) return null;
+  let r = Math.random() * S;
+  for (const [v, x] of votes) if ((r -= x) < 0) return v;
+  return null;
+};
+// The liked average of a number field (log space for tempo) and how hard it pulls (0-0.7)
+const likedMean = (likes, field, log = false) => {
+  const w = likeW(likes); let S = 0, m = 0;
+  likes.forEach((l, i) => { const v = l[field]; if (typeof v === "number" && v > 0) { S += w[i]; m += w[i] * (log ? Math.log(v) : v); } });
+  return S ? { v: log ? Math.exp(m / S) : m / S, k: 0.7 * S / (S + 1) } : null;
+};
 
 const rot12 = (p, n) => {
   n = ((n % 12) + 12) % 12;
@@ -1873,6 +1898,8 @@ export default function Chloe() {
   const [beatStyle, setBeatStyle] = useState(_u.beatStyle ?? "off");
   // Wander: Auto's beat changes roam across every style instead of staying in one family
   const [beatWander, setBeatWander] = useState(_u.beatWander ?? false);
+  const likesRef = useRef(loadLikes());
+  const [likeFlash, setLikeFlash] = useState(0);   // Date.now() of the last ♥, for the "more like this" note
   const kitRef = useRef(null);
   const beatRestRef = useRef(0);   // Smooth: Date.now() until which Auto rests the beat (0 = playing)
   const beatPhraseRef = useRef(false);   // Auto's style change waits for the end of the 4-bar phrase
@@ -3778,11 +3805,21 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // Journey: walk toward its brightness target one note at a time (a one-note
       // change, or a note added / dropped), Storm also pulled toward its tension.
       // Far from the target (the start) it jumps straight there instead.
-      const jv = journeyRef.current?.vals;
-      if (!entry && jv && cur && !isOutsideId(cur.id) && Math.abs(normalizedBrightness(cur.pattern) - jv.b) <= 0.12) {
+      // ♥ likes bend every brightness target toward the liked brightness, and
+      // now and then bring back a liked scale outright
+      const likes = likesRef.current, likeB = likes.length ? likedMean(likes, "b") : null;
+      const bend = b => (likeB && b !== null ? b + likeB.k * 0.6 * (likeB.v - b) : b);
+      const jv = journeyRef.current?.vals, jb = jv ? bend(jv.b) : null;
+      // (in a journey, only a liked scale near where the journey is heading)
+      if (!entry && likes.length) {
+        const lp = likedPick(likes, "pat", catalogue.map(e => e.pat));
+        if (lp !== null && lp !== cur?.pattern && Math.random() < 0.25 && (jb === null || Math.abs(normalizedBrightness(lp) - jb) <= 0.15))
+          entry = catalogue.find(e => e.pat === lp) || null;
+      }
+      if (!entry && jv && cur && !isOutsideId(cur.id) && Math.abs(normalizedBrightness(cur.pattern) - jb) <= 0.12) {
         const scored = catalogue.filter(e => e.pat !== cur.pattern).map(e => {
           const d = popcount(e.pat ^ cur.pattern);
-          let sc = Math.abs(normalizedBrightness(e.pat) - jv.b) + 0.03 * d + Math.random() * 0.02;
+          let sc = Math.abs(normalizedBrightness(e.pat) - jb) + 0.03 * d + Math.random() * 0.02;
           if (jv.tn !== undefined) sc += 0.4 * Math.abs(tensionOf(patSemis(e.pat)) - jv.tn);
           return { e, sc };
         }).sort((x, y) => x.sc - y.sc);
@@ -3793,7 +3830,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const override = overrideTargetRef.current;
       const brainTarget = eegBrainTarget(eegDataRef.current, BRIGHTNESS_CONFIG);
       if (brainTarget !== null) setEegTarget(brainTarget);
-      const brightTarget = override !== null ? override : brainTarget;
+      const brightTarget = bend(override !== null ? override : brainTarget ?? (likeB && Math.random() < likeB.k ? likeB.v : null));
       if (!entry && brightTarget !== null) {
         const catFlat = catalogue.map(e => ({ familyId: e.fam.id, modeIdx: e.modeIdx, pattern: e.fam.modes[e.modeIdx] }));
         // A set target (slider, lock, arc) is held tighter than EEG wandering
@@ -3812,7 +3849,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const rhythm     = RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
       const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
       const chordVoice = VOICES[Math.floor(Math.random() * VOICES.length)];
-      let bpm          = driftBpm(stRef.current.bpm);
+      const likeT = likes.length ? likedMean(likes, "bpm", true) : null;
+      const bendT = b => (likeT ? b * Math.pow(likeT.v / b, likeT.k * 0.5) : b);
+      let bpm          = Math.round(bendT(driftBpm(stRef.current.bpm)));
 
       const ac = getCtx();
       if (ac.state === "suspended") ac.resume();
@@ -3847,8 +3886,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         const s = only[Math.floor(Math.random() * only.length)];
         if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); }
       } else if (_al.sound && Math.random() < 0.4 && maybe()) {
-        const s = only ? only[Math.floor(Math.random() * only.length)]
-          : ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth"][Math.floor(Math.random() * 10)];
+        const pool = only || ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth"];
+        const s = likedPick(likes, "snd", pool) ?? pool[Math.floor(Math.random() * pool.length)];
         later(() => { if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); } });
       }
       // Tuning changes on ~30% of picks; equal stays the most common
@@ -3874,6 +3913,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           const ks = Object.keys(w);
           let r = Math.random() * ks.reduce((a, k) => a + w[k], 0), pickB = ks[ks.length - 1];
           for (const k of ks) { if ((r -= w[k]) < 0) { pickB = k; break; } }
+          pickB = likedPick(likes, "beat", ks) ?? pickB;
           if (pickB !== stRef.current.beatStyle) later(() => { beatPhraseRef.current = true; setBeatStyle(pickB); });
           // Wandering into shaman brings the steppe with it now and then: a throat or jaw-harp drone
           if (pickB === "shaman" && stRef.current.beatWander && stRef.current.droneOn && _al.droneWave && Math.random() < 0.5)
@@ -3891,7 +3931,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const J = journeyRef.current;
       if (_al.bpm && J?.vals && riffHoldRef.current > Date.now()) { /* a Rise riff owns the tempo */ }
       else if (_al.bpm && J?.vals) {
-        const jb = J.homeBpm * J.vals.t;
+        const jb = bendT(J.homeBpm * J.vals.t);
         const to = Math.round(Math.min(240, Math.max(40, stRef.current.autoTempo === "drift" ? jb * (0.95 + Math.random() * 0.1) : jb)));
         bpm = to;
         later(() => { if (burstHome !== null) burstHome = to; else setBpm(to); });
@@ -3907,10 +3947,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (delayRef.current) { const fb = J?.vals?.fb ?? 0.4; later(() => glideParam(delayRef.current?.feedbackGain.gain, fb)); }
       if (_al.sustain && J?.vals) { const su = parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)); later(() => setSustainMult(su)); }
       else if (_al.sustain && maybe()) { const su = [0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]; later(() => setSustainMult(su)); }
-      if (_al.droneOn && maybe())   { const on = Math.random() > (epicJ ? 0.15 : 0.35); later(() => setDroneOn(on)); }
+      if (_al.droneOn && maybe())   { const on = likedPick(likes, "droneOn") ?? Math.random() > (epicJ ? 0.15 : 0.35); later(() => setDroneOn(on)); }
       const drones = sleepJ ? ["sine", "pad"] : epicJ ? ["organ", "strings"] : ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp"];
       if (_al.droneWave && (sleepJ || epicJ) && !drones.includes(stRef.current.droneWave)) later(() => setDroneWave(sleepJ ? "pad" : "organ"));
-      else if (_al.droneWave && maybe()) { const w = drones[Math.floor(Math.random() * drones.length)]; later(() => setDroneWave(w)); }
+      else if (_al.droneWave && maybe()) { const w = likedPick(likes, "drone", drones) ?? drones[Math.floor(Math.random() * drones.length)]; later(() => setDroneWave(w)); }
       if (_al.droneOct && maybe())  { const o = [-12, -24, -36][Math.floor(Math.random() * 3)]; later(() => setDroneOct(o)); }
       if (_al.droneVol && maybe())  { const v = parseFloat((0.3 + Math.random() * 0.7).toFixed(2)); later(() => setDroneVol(v)); }
       setArpOn(true);
@@ -4270,6 +4310,18 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const likeNow = () => {
+    const st = stRef.current;
+    const l = {
+      t: Date.now(), pat: st.sel?.pattern ?? null, b: st.sel ? normalizedBrightness(st.sel.pattern) : null,
+      bpm: st.bpm, beat: st.beatStyle, droneOn: !!st.droneOn, drone: st.droneOn ? st.droneWave : null,
+      snd: st.instrument || st.timbre, steppe: isSteppe(st),
+    };
+    likesRef.current = [...likesRef.current, l].slice(-LIKE_KEEP);
+    try { localStorage.setItem("chloe-likes", JSON.stringify(likesRef.current)); } catch {}
+    setLikeFlash(Date.now()); setTimeout(() => setLikeFlash(f => (Date.now() - f >= 2500 ? 0 : f)), 2600);
+    track("like", `like · ${journeyRef.current?.id ?? "free"} · beat ${l.beat} · drone ${l.drone ?? "off"} · ${l.snd} · ${l.bpm} bpm · bright ${l.b?.toFixed(2)}`);
+  };
   const stopAuto = () => { setAutoOn(false); setLoopOn(false); setArpOn(false); setDemoComment(""); setDemoRequest(""); setShowDemoLog(false); setEegTarget(null); setOverrideTarget(null); setBrightnessLocked(false); setClaudeOverride(null); setClaudeBpmOverride(null); setSustainMult(1); overrideTargetRef.current = null; brightnessLockedRef.current = false; claudeOverrideRef.current = null; claudeBpmOverrideRef.current = null; };
 
   /* ── LISTEN VIEW ── */
@@ -4413,6 +4465,16 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             background: playingNow ? JOURNEY_COLOR : "none", color: playingNow ? "#000" : JOURNEY_COLOR,
             fontSize: 28, cursor: "pointer", fontFamily: "inherit", lineHeight: 1,
           }}>{playingNow ? "■" : "▶"}</button>
+          {playingNow && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+              <button onClick={likeNow} title="More of this: Chloe leans toward what's playing now (the scale's brightness, tempo, drums, drone and sound)" style={{
+                ...chip(Date.now() - likeFlash < 2500), borderRadius: 20, fontSize: 15, padding: "6px 18px",
+                borderColor: "#e05a6a", color: Date.now() - likeFlash < 2500 ? "#000" : "#ff8a96",
+                background: Date.now() - likeFlash < 2500 ? "#ff8a96" : "none", transition: "all .3s",
+              }}>♥ more of this</button>
+              <span style={{ fontSize: 10, color: K.t2, minHeight: 13 }}>{Date.now() - likeFlash < 2500 ? "got it, heading that way" : ""}</span>
+            </div>
+          )}
           <button onClick={toggleRec} title="Record the journey. If it's still recording when the journey ends, Chloe fades out and saves the WAV for you." style={{ ...chip(!!recording), borderColor: recording ? "#c0392b" : K.br, color: recording ? "#e74c3c" : K.t2 }}>
             {recording ? `⏹ recording ${Math.floor(recSecs / 60)}:${String(recSecs % 60).padStart(2, "0")}` : "⏺ record this journey"}
           </button>
@@ -4486,6 +4548,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
           flexShrink: 0, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5,
         }}><span style={{color:"#e03030", fontSize:16, lineHeight:1}}>♥</span> tip</a>
+        {(autoOn || demoOn) && <button onClick={likeNow} title="More of this: Auto leans toward what's playing now (the scale's brightness, tempo, drums, drone and sound). Each like's pull halves every 15 minutes." style={{
+          background: Date.now() - likeFlash < 2500 ? "#ff8a96" : K.bg3, color: Date.now() - likeFlash < 2500 ? "#000" : "#ff8a96",
+          border: "1px solid #e05a6a", borderRadius: 3, padding: "5px 12px",
+          fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1, transition: "all .3s", flexShrink: 0,
+        }}>♥ more of this</button>}
         <button onClick={toggleRec} title="Record exactly what you hear to a 24-bit stereo WAV. Click again to stop and download." style={{
           background: recording ? "#c0392b" : K.bg3,
           color: recording ? "#fff" : K.txt,
