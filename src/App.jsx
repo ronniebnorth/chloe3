@@ -493,6 +493,51 @@ function makeRainstick(ac, dur) {
   return buf;
 }
 
+// Hand drums, synthesized (the LM-2's congas are gritty 12-bit samples): a skin
+// ringing at its own pitch with a few inharmonic partials (each dying faster
+// than the last), the pitch settling down a few percent as the head relaxes,
+// and a short slap of filtered noise on the attack. Pitches and pan per drum;
+// the hand pattern's toms become a low djembe-style bass tone.
+const HAND_DRUMS = {
+  "conga-h":  { f: 340, decay: 0.22, slap: 0.5,  pan: 0.35 },
+  "conga-hh": { f: 400, decay: 0.18, slap: 0.55, pan: 0.45 },
+  "conga-m":  { f: 255, decay: 0.28, slap: 0.4,  pan: 0.1 },
+  "conga-l":  { f: 196, decay: 0.34, slap: 0.3,  pan: -0.2 },
+  "conga-ll": { f: 150, decay: 0.4,  slap: 0.22, pan: -0.35 },
+  "conga-lll":{ f: 120, decay: 0.45, slap: 0.2,  pan: -0.4 },
+  "tom-l":    { f: 98,  decay: 0.42, slap: 0.12, pan: -0.15, g: 0.7 },
+  "tom-ll":   { f: 72,  decay: 0.55, slap: 0.08, pan: 0, g: 0.7 },
+};
+const HAND_MODES = [[1, 1], [1.52, 0.42], [1.98, 0.22], [2.44, 0.12], [3.02, 0.06]];   // ratio, level
+function makeHandDrum(ac, d) {
+  const sr = ac.sampleRate, dur = d.decay * 4, n = Math.floor(sr * dur);
+  const buf = ac.createBuffer(1, n, sr), y = buf.getChannelData(0);
+  const f0 = d.f * (0.985 + Math.random() * 0.03);
+  HAND_MODES.forEach(([ratio, lvl], m) => {
+    const a = lvl * (0.85 + Math.random() * 0.3), tau = d.decay / (1 + m * 0.9);
+    let ph = Math.random() * 0.2;
+    for (let k = 0; k < n; k++) {
+      const t = k / sr, f = f0 * ratio * (1 + 0.05 * Math.exp(-t / 0.025));
+      ph += 2 * Math.PI * f / sr;
+      y[k] += a * Math.exp(-t / tau) * Math.sin(ph);
+    }
+  });
+  // Slap: noise through a resonant band-pass ~2.2 kHz, ~6 ms
+  const w = 2 * Math.PI * 2200 / sr, q = 2.5, al = Math.sin(w) / (2 * q), cw = Math.cos(w);
+  const b0 = al / (1 + al), a1 = -2 * cw / (1 + al), a2 = (1 - al) / (1 + al);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let k = 0; k < Math.floor(0.04 * sr); k++) {
+    const x = (Math.random() * 2 - 1) * Math.exp(-k / sr / 0.006);
+    const v = b0 * x - b0 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1; x1 = x; y2 = y1; y1 = v;
+    y[k] += d.slap * 3 * v;
+  }
+  for (let k = 0; k < 64; k++) y[k] *= k / 64;   // no click at the start
+  let peak = 0; for (let k = 0; k < n; k++) peak = Math.max(peak, Math.abs(y[k]));
+  for (let k = 0; k < n; k++) y[k] /= peak || 1;
+  return buf;
+}
+
 const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes" };
 
 // Linear fills for fusion: one drum per 16th. Short = the last beat of every
@@ -2705,6 +2750,22 @@ export default function Chloe() {
       g.gain.value = level;
       src.connect(g); g.connect(k.vol); src.start(t);
     };
+    // A synthesized hand drum through the kit's volume, distance and fade; to
+    // the room too (like the snare) when it's played hard
+    const handDrum = (k, ac, note, v, t, room) => {
+      const d = HAND_DRUMS[note];
+      if (!k.hand) k.hand = {};
+      const takes = k.hand[note] || (k.hand[note] = [0, 1, 2].map(() => makeHandDrum(ac, d)));
+      const src = ac.createBufferSource(), g = ac.createGain(), p = ac.createStereoPanner();
+      src.buffer = takes[Math.floor(Math.random() * takes.length)];
+      src.playbackRate.value = 0.99 + Math.random() * 0.02;
+      g.gain.value = 0.55 * (d.g ?? 1) * Math.pow(Math.min(127, v) / 127, 1.6);
+      p.pan.value = d.pan;
+      src.connect(g); g.connect(p); p.connect(k.vol);
+      if (room) p.connect(k.roomSend);
+      src.start(Math.max(t, ac.currentTime));
+      src.onended = () => { try { p.disconnect(); } catch {} };
+    };
     window.__chloeRain = () => { const ac = getCtx(); rainstick(getKit(ac), ac, ac.currentTime + 0.05, 0.32); };
     const rampBeat = (k, ac, v, sec) => {
       for (const g of [k.fade, k.fadeRoom]) {
@@ -2746,9 +2807,12 @@ export default function Chloe() {
     // Snares and conga accents also go to the room. Calm thins the shaker and
     // congas; tense adds a kick. A conga run ends every 4th bar; every 16 bars
     // a deep boom (kick + low tom) instead of a crash.
-    const worldStep = (kit, snareKit, style, i, bar, t0, stepDur, noBoom) => {
+    const worldStep = (K0, ac, style, i, bar, t0, stepDur, noBoom) => {
+      const { kit, snareKit } = K0;
       const P = WORLD[style], t = t0 + (i % 2 ? 0.17 * stepDur : 0);
-      const hit = (note, v, k2 = kit) => v > 0 && k2.start({ note, velocity: Math.max(1, Math.min(127, Math.round(v + (Math.random() - 0.5) * 12))), time: t + (Math.random() - 0.5) * 0.01 });
+      const hit = (note, v, k2 = kit) => v > 0 && (HAND_DRUMS[note] && (note.startsWith("conga") || style === "hand")
+        ? k2 === kit && handDrum(K0, ac, note, v + (Math.random() - 0.5) * 12, t + (Math.random() - 0.5) * 0.01, v > 70)
+        : k2.start({ note, velocity: Math.max(1, Math.min(127, Math.round(v + (Math.random() - 0.5) * 12))), time: t + (Math.random() - 0.5) * 0.01 }));
       const calm = energy < 0.25, tense = energy > 0.6;
       if (style === "brushes") {
         if (bar % 8 === 7 && i === 12) hit("tom-l", 34);
@@ -2810,7 +2874,7 @@ export default function Chloe() {
             const b0 = tg.cur ?? st.bpm, bb = b0 > 160 ? b0 / 2 : b0;
             if (WORLD[beatStyleNow]) {
               const lb = b0 > 120 ? b0 / 2 : b0, sd = 60 / lb / 4;   // laid back: half-time above 120
-              worldStep(kit, snareKit, beatStyleNow, beatStep, beatBar, beatNext, sd, beatNoCrash);
+              worldStep(K0, ac, beatStyleNow, beatStep, beatBar, beatNext, sd, beatNoCrash);
               // Now and then a rainstick falls across the bar (about one in every 16 bars)
               if (beatStep === 0 && beatBar % 8 === 4 && Math.random() < 0.5)
                 rainstick(K0, ac, beatNext, beatStyleNow === "brushes" ? 0.26 : 0.32);
