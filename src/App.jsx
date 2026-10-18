@@ -106,7 +106,184 @@ const KNOWN = {
   1843: "Coltrane Dominant", // 0 1 4 5 8 9 10 — augmented hexatonic + ♭7
 };
 
-function synthDrone(ac, freq, type) {
+// Overtone voices (throat singing, jaw harp) play the drone root's own
+// harmonic series; these are the harmonics they sing, kept to the ones whose
+// pitch is in the scale (6, 8, 12, 16 = fifth and root, always safe).
+// Harmonic 7 is the bluesy flat 7th (31 cents flat), 9 the 2nd, 10 the 3rd.
+const OVERTONES = [6, 7, 8, 9, 10, 12, 14, 15, 16];
+const harmPc = n => Math.round(12 * Math.log2(n)) % 12;
+const overtonesIn = (semis, lo = 0, hi = 99) => {
+  const pcs = new Set(semis.map(x => ((x % 12) + 12) % 12));
+  const ok = OVERTONES.filter(n => n >= lo && n <= hi && pcs.has(harmPc(n)));
+  return ok.length >= 2 ? ok : OVERTONES.filter(n => n >= lo && n <= hi && harmPc(n) === 0 || n === 12);
+};
+// A buzzy source wave: harmonic n at 1/n^tilt
+const harmWave = (ac, tilt, N = 48) => {
+  const re = new Float32Array(N + 1), im = new Float32Array(N + 1);
+  for (let n = 1; n <= N; n++) im[n] = 1 / Math.pow(n, tilt);
+  return ac.createPeriodicWave(re, im);
+};
+const fold = (f, lo, hi) => { while (f < lo) f *= 2; while (f > hi) f /= 2; return f; };
+
+// Mongolian throat singing (khöömei / sygyt): a steady buzzing voice shaped
+// by an "oo-aa" mouth, a very narrow resonance picking out one harmonic as a
+// whistle that walks slowly through the overtones, a kargyraa growl an octave
+// under that swells in and out, and a breath every 14-26 s.
+// opts.scale() = the scale's semitones. Its own pitch is folded to 90-180 Hz.
+function synthThroat(ac, freq, opts) {
+  let F = fold(freq, 90, 180);
+  const master = ac.createGain(), bright = ac.createGain(), phrase = ac.createGain();
+  master.gain.value = 0.13; bright.gain.value = 0.13;   // level with the tanpura
+  const src = ac.createOscillator(); src.setPeriodicWave(harmWave(ac, 1.05)); src.frequency.value = F;
+  const sub = ac.createOscillator(); sub.setPeriodicWave(harmWave(ac, 1.3, 24)); sub.frequency.value = F / 2;
+  const jit = ac.createOscillator(), jitG = ac.createGain();   // a little unsteadiness, ±4 cents
+  jit.frequency.value = 0.31; jitG.gain.value = 4; jit.connect(jitG); jitG.connect(src.detune); jitG.connect(sub.detune);
+  src.connect(phrase);
+  // Mouth: two vowel formants
+  const vowel = (f, q, g) => { const b = ac.createBiquadFilter(); b.type = "bandpass"; b.frequency.value = f; b.Q.value = q;
+    const gg = ac.createGain(); gg.gain.value = g; phrase.connect(b); b.connect(gg); gg.connect(master); return b; };
+  const f1 = vowel(480, 2.5, 1.1), f2 = vowel(1050, 5, 0.4);
+  const vl = ac.createOscillator(), vlG = ac.createGain();   // the vowel drifts oo↔aa
+  vl.frequency.value = 0.07; vlG.gain.value = 90; vl.connect(vlG); vlG.connect(f1.frequency);
+  // Growl: the sub through a low-pass, swelling in and out
+  const growlLp = ac.createBiquadFilter(); growlLp.type = "lowpass"; growlLp.frequency.value = 380;
+  const growl = ac.createGain(); growl.gain.value = 0.15;
+  const gl = ac.createOscillator(), glG = ac.createGain(); gl.frequency.value = 0.045; glG.gain.value = 0.15;
+  gl.connect(glG); glG.connect(growl.gain);
+  sub.connect(growlLp); growlLp.connect(growl); growl.connect(phrase);
+  // Whistle: two narrow band-passes in a row on one harmonic, past the tone filter
+  const w1 = ac.createBiquadFilter(), w2 = ac.createBiquadFilter(), wg = ac.createGain();
+  for (const w of [w1, w2]) { w.type = "bandpass"; w.Q.value = 38; w.frequency.value = 8 * F; }
+  wg.gain.value = 0;
+  phrase.connect(w1); w1.connect(w2); w2.connect(wg); wg.connect(bright);
+  const W = 6;   // the band-passes leave ~1/n of the source: the whistle sits ~3 dB over the voice
+  let h = 8, alive = true, wT = null, bT = null;
+  const t0 = ac.currentTime;
+  phrase.gain.setValueAtTime(0, t0); phrase.gain.linearRampToValueAtTime(1, t0 + 1.2);
+  wg.gain.setValueAtTime(0, t0); wg.gain.linearRampToValueAtTime(W, t0 + 3);
+  const step = () => {
+    if (!alive) return;
+    const ok = overtonesIn(opts?.scale?.() ?? [0, 7], 6, 16);
+    let i = ok.indexOf(h); if (i < 0) i = ok.indexOf(8) >= 0 ? ok.indexOf(8) : 0;
+    const r = Math.random();
+    const j = Math.max(0, Math.min(ok.length - 1, i + (r < 0.3 ? 1 : r < 0.6 ? -1 : r < 0.75 ? 2 : r < 0.9 ? -2 : 0)));
+    h = ok[j];
+    const now = ac.currentTime;
+    for (const w of [w1, w2]) w.frequency.setTargetAtTime(h * F, now, 0.06 + Math.random() * 0.1);
+    // Now and then the whistle sinks back into the drone for a while
+    wg.gain.setTargetAtTime(Math.random() < 0.2 ? W * 0.12 : W, now, 0.5);
+    wT = setTimeout(step, 700 + Math.random() * 2800);
+  };
+  wT = setTimeout(step, 2500);
+  const breathe = () => {
+    if (!alive) return;
+    const now = ac.currentTime, p = phrase.gain;
+    p.cancelScheduledValues(now); p.setValueAtTime(p.value, now);
+    p.linearRampToValueAtTime(0, now + 0.35); p.setValueAtTime(0, now + 1.1); p.linearRampToValueAtTime(1, now + 1.6);
+    h = Math.random() < 0.5 ? 8 : 6;   // a new breath starts low
+    bT = setTimeout(breathe, 14000 + Math.random() * 12000);
+  };
+  bT = setTimeout(breathe, 14000 + Math.random() * 12000);
+  const oscs = [src, sub, jit, vl, gl];
+  oscs.forEach(o => o.start());
+  return {
+    node: master, bright, oscs, baseFreq: freq,
+    setFreq: (ratio, glide) => {
+      const now = ac.currentTime; F *= ratio;
+      for (const [o, f] of [[src, F], [sub, F / 2]]) { o.frequency.cancelScheduledValues(now); o.frequency.setValueAtTime(o.frequency.value, now); o.frequency.exponentialRampToValueAtTime(f, now + glide); }
+      for (const w of [w1, w2]) w.frequency.setTargetAtTime(h * F, now, glide / 3);
+    },
+    stop: () => {
+      alive = false; clearTimeout(wT); clearTimeout(bT);
+      oscs.forEach(o => { try { o.stop(); } catch {} });
+      setTimeout(() => { try { master.disconnect(); bright.disconnect(); } catch {} }, 150);
+    },
+  };
+}
+
+// Jaw harp (khomus / aman khuur): a buzzing reed plucked in rhythm, the mouth
+// a resonance that jumps between the reed's harmonics with the "wow" swoop
+// between them, a fixed twang formant higher up and a little body underneath.
+// Plucks ride the beat's own 16th grid when a beat plays (opts.stepHook), or
+// keep their own time from opts.bpm(). Gallop, straight 8ths or 3+3+2,
+// changing every few bars; the mouth repeats a short motif. Pitch folded to 80-160 Hz.
+const JAW_PATTERNS = [
+  [1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1],   // gallop
+  [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],   // straight 8ths
+  [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0],   // 3+3+2
+];
+function synthJawHarp(ac, freq, opts) {
+  let F = fold(freq, 80, 160);
+  const master = ac.createGain(), bright = ac.createGain();
+  master.gain.value = 0.44; bright.gain.value = 0.44;   // level with the tanpura
+  const reed = ac.createOscillator(); reed.setPeriodicWave(harmWave(ac, 0.6, 60)); reed.frequency.value = F;
+  const amp = ac.createGain(); amp.gain.value = 0;
+  reed.connect(amp);
+  const body = ac.createBiquadFilter(); body.type = "lowpass"; body.frequency.value = 420;
+  const bodyG = ac.createGain(); bodyG.gain.value = 0.55; amp.connect(body); body.connect(bodyG); bodyG.connect(master);
+  const mouth = ac.createBiquadFilter(); mouth.type = "bandpass"; mouth.Q.value = 11; mouth.frequency.value = 6 * F;
+  const mouthG = ac.createGain(); mouthG.gain.value = 3.2; amp.connect(mouth); mouth.connect(mouthG); mouthG.connect(bright);
+  const twang = ac.createBiquadFilter(); twang.type = "bandpass"; twang.Q.value = 2.5; twang.frequency.value = 2600;
+  const twangG = ac.createGain(); twangG.gain.value = 0.3; amp.connect(twang); twang.connect(twangG); twangG.connect(bright);
+  let alive = true, pat = JAW_PATTERNS[0], bars = 0, motif = [6, 8], mi = 0, h = 6, lastHook = -1;
+  const newMotif = () => {
+    const ok = overtonesIn(opts?.scale?.() ?? [0, 7], 4, 12).concat([4, 5].filter(n => (opts?.scale?.() ?? [0, 4]).some(x => ((x % 12) + 12) % 12 === harmPc(n))));
+    motif = Array.from({ length: 3 + Math.floor(Math.random() * 4) }, () => ok[Math.floor(Math.random() * ok.length)]);
+    mi = 0;
+  };
+  newMotif();
+  const pluck = (t, step) => {
+    if (!pat[step % 16]) return;
+    if (step % 16 === 0 && ++bars % 4 === 0) {
+      pat = JAW_PATTERNS[Math.floor(Math.random() * JAW_PATTERNS.length)];
+      if (Math.random() < 0.5) newMotif();
+    }
+    const accent = step % 4 === 0, g = amp.gain;
+    g.setTargetAtTime(accent ? 1 : 0.7, t, 0.002);
+    g.setTargetAtTime(0.12, t + 0.015, 0.22 + Math.random() * 0.12);   // rings on between plucks
+    // The mouth moves on about half the plucks: a quick swoop to the next harmonic
+    if (accent || Math.random() < 0.4) {
+      const prev = h; h = motif[mi++ % motif.length];
+      mouth.frequency.setTargetAtTime(prev * F * (Math.random() < 0.3 ? 0.8 : 1), t, 0.01);
+      mouth.frequency.setTargetAtTime(h * F, t + 0.02, 0.035);
+    }
+  };
+  const hook = (ac2, t, step) => { if (ac2 === ac && alive) { lastHook = ac.currentTime; pluck(t, step); } };
+  if (opts?.stepHook) opts.stepHook.current = hook;
+  // No beat: its own clock (half time above 120 BPM, like the hand drums)
+  let nextT = 0, own = 0;
+  const tick = () => {
+    if (!alive) return;
+    if (ac.currentTime - lastHook > 0.3) {
+      const b = Math.max(40, opts?.bpm?.() ?? 100), sd = 60 / (b > 120 ? b / 2 : b) / 4;
+      if (nextT < ac.currentTime) { nextT = ac.currentTime + 0.05; own = 0; }
+      while (nextT < ac.currentTime + 0.12) { pluck(nextT, own++); nextT += sd; }
+    } else nextT = 0;
+    tT = setTimeout(tick, 25);
+  };
+  let tT = setTimeout(tick, 25);
+  const oscs = [reed];
+  reed.start();
+  return {
+    node: master, bright, oscs, baseFreq: freq,
+    setFreq: (ratio, glide) => {
+      const now = ac.currentTime; F *= ratio;
+      reed.frequency.cancelScheduledValues(now); reed.frequency.setValueAtTime(reed.frequency.value, now);
+      reed.frequency.exponentialRampToValueAtTime(F, now + glide);
+      mouth.frequency.setTargetAtTime(h * F, now, glide / 3);
+    },
+    stop: () => {
+      alive = false; clearTimeout(tT);
+      if (opts?.stepHook?.current === hook) opts.stepHook.current = null;
+      try { reed.stop(); } catch {}
+      setTimeout(() => { try { master.disconnect(); bright.disconnect(); } catch {} }, 150);
+    },
+  };
+}
+
+function synthDrone(ac, freq, type, opts) {
+  if (type === "throat") return synthThroat(ac, freq, opts);
+  if (type === "jawharp") return synthJawHarp(ac, freq, opts);
   const oscs = [];
   const mk = (f, wt, detune = 0) => {
     const o = ac.createOscillator();
@@ -185,6 +362,8 @@ function synthDrone(ac, freq, type) {
   };
 }
 
+
+window.__synthDrone = synthDrone;   // console / level tests
 
 // Master bus: every sound goes through a limiter so loud accents and big
 // chords can't clip. Chrome's compressor adds ~+1.7 dB make-up gain; the
@@ -463,6 +642,13 @@ const WORLD = {
     "stick-l": { 4: 38, 12: 40 }, "snare-l": { 4: 18, 12: 20 },
     hhclosed: { 4: 20, 12: 22 }, kick: { 0: 52, 10: 38 },
   },
+  // Shaman: a deep frame drum's steady pulse, the heartbeat "da-DUM" leading
+  // into each bar, the iron pendants jingling softly on every stroke
+  // (tambourine + shaker). Tension doubles it to 8ths, the trance speeding up.
+  shaman: {
+    frame: { 0: 118, 4: 88, 8: 102, 12: 88, 15: 56 }, "frame-edge": { 10: 46 },
+    tambourine: { 0: 30, 4: 22, 8: 26, 12: 22 }, cabasa: { 0: 22, 4: 16, 8: 20, 12: 16 },
+  },
 };
 const WORLD_FILL = ["conga-h", "conga-h", "conga-m", "conga-l"];   // last beat of every 4th bar
 
@@ -522,6 +708,10 @@ const HAND_DRUMS = {
   "conga-lll":{ f: 120, decay: 0.45, slap: 0.2,  pan: -0.4 },
   "tom-l":    { f: 98,  decay: 0.42, slap: 0.12, pan: -0.15, g: 0.7 },
   "tom-ll":   { f: 72,  decay: 0.55, slap: 0.08, pan: 0, g: 0.7 },
+  // Shaman's frame drum: a big, loose skin hit with a felt beater, low and long,
+  // and the higher ring of a strike near the rim
+  "frame":    { f: 52,  decay: 1.0,  slap: 0.1,  pan: 0, g: 1 },
+  "frame-edge": { f: 140, decay: 0.35, slap: 0.35, pan: 0.2, g: 0.45 },
 };
 const HAND_MODES = [[1, 1], [1.52, 0.42], [1.98, 0.22], [2.44, 0.12], [3.02, 0.06]];   // ratio, level
 function makeHandDrum(ac, d) {
@@ -553,7 +743,7 @@ function makeHandDrum(ac, d) {
   return buf;
 }
 
-const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes" };
+const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes", shaman: "shaman" };
 
 // Linear fills for fusion: one drum per 16th. Short = the last beat of every
 // 4th bar; long = the last two beats of every 8th, phrased in 3s across the beat.
@@ -1480,6 +1670,7 @@ export default function Chloe() {
         aRef:       parseInt(p.get("a") ?? "440"),
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         droneOn:    p.get("dr") === "1",
+        droneWave:  ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp"].includes(p.get("dw")) ? p.get("dw") : undefined,
         melMode:    p.get("m") === "1",
         autoOff:    p.get("al") ?? "",
         autoOn:     p.get("an") ?? "",
@@ -1493,7 +1684,7 @@ export default function Chloe() {
         journeyMins: JOURNEY_MINS.includes(parseInt(p.get("jm"))) ? parseInt(p.get("jm")) : 15,
         sleepMins:  SLEEP_MINS.includes(parseInt(p.get("sl"))) ? parseInt(p.get("sl")) : undefined,
         symphonic:  p.get("sy") === "1",
-        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes"].includes(p.get("bt")) ? p.get("bt") : "off",
+        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -1593,6 +1784,7 @@ export default function Chloe() {
   const energyRef = useRef(0);        // orchestra tension energy, shared with Auto
   const autoOnRef = useRef(false);
   const tempoSnapRef = useRef(false); // next BPM change jumps instead of gliding
+  const beatStepHookRef = useRef(null); // the jaw harp plucks on the beat's 16ths: (ac, time, step, stepDur)
   const leadTempoRef = useRef(1);       // lead-only burst: the lead plays at this × the band's tempo
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
@@ -1656,7 +1848,7 @@ export default function Chloe() {
   const [beatOn,      setBeatOn]      = useState(false);
   const [droneVol,    setDroneVol]    = useState(1.0);
   const [droneTone,   setDroneTone]   = useState(0.5);
-  const [droneWave,   setDroneWave]   = useState("tanpura");
+  const [droneWave,   setDroneWave]   = useState(_u.droneWave ?? "tanpura");
   const [beatVol,     setBeatVol]     = useState(1.0);
   const beatStepRef  = useRef(0);
   const beatTimeout  = useRef(null);
@@ -2188,7 +2380,11 @@ export default function Chloe() {
     f.type = "lowpass"; f.frequency.value = 200 * Math.pow(40, droneTone);
     droneFilterRef.current = f;
     const dFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
-    const voice = synthDrone(ac, dFreq, droneWave);
+    const voice = synthDrone(ac, dFreq, droneWave, {
+      scale: () => toSemis(stRef.current.sel?.pattern || 0),
+      bpm: () => stRef.current.bpm,
+      stepHook: beatStepHookRef,
+    });
     droneVoiceRef.current = voice;
     droneFreqRef.current = dFreq;
     const volGain = ac.createGain();
@@ -2200,6 +2396,7 @@ export default function Chloe() {
     volGain.gain.linearRampToValueAtTime(droneVol, ac.currentTime + (swapped ? SWAP_FADE : 0.08 + smoothFade()));
     droneGainRef.current = volGain;
     voice.node.connect(f); f.connect(volGain);
+    if (voice.bright) voice.bright.connect(volGain);   // whistle / mouth: past the tone filter
     volGain.connect(masterOut(ac)); volGain.connect(rev.convolver); volGain.connect(del.delayNode); volGain.connect(an.node);
     return () => {
       const now = ac.currentTime, out = ctxRef.current === ac ? 0.08 + smoothFade() : SWAP_FADE;
@@ -2228,7 +2425,8 @@ export default function Chloe() {
     const ratio = newFreq / oldFreq;
     const now = ac.currentTime;
     const glideTime = 0.3 + 2.7 * smoothRef.current; // 300 ms, up to 3 s with Smooth
-    for (const osc of voice.oscs) {
+    if (voice.setFreq) voice.setFreq(ratio, glideTime);
+    else for (const osc of voice.oscs) {
       const curFreq = osc.frequency.value;
       osc.frequency.cancelScheduledValues(now);
       osc.frequency.setValueAtTime(curFreq, now);
@@ -2976,11 +3174,16 @@ export default function Chloe() {
     const worldStep = (K0, ac, style, i, bar, t0, stepDur, noBoom) => {
       const { kit, snareKit } = K0;
       const P = WORLD[style], t = t0 + (i % 2 ? 0.17 * stepDur : 0);
-      const hit = (note, v, k2 = kit) => v > 0 && (HAND_DRUMS[note] && (note.startsWith("conga") || style === "hand")
+      const hit = (note, v, k2 = kit) => v > 0 && (HAND_DRUMS[note] && (note.startsWith("conga") || note.startsWith("frame") || style === "hand")
         ? k2 === kit && handDrum(K0, ac, note, v + (Math.random() - 0.5) * 12, t + (Math.random() - 0.5) * 0.01, v > 70)
         : k2.start({ note, velocity: Math.max(1, Math.min(127, Math.round(v + (Math.random() - 0.5) * 12))), time: t + (Math.random() - 0.5) * 0.01 }));
       const calm = energy < 0.25, tense = energy > 0.6;
-      if (style === "brushes") {
+      if (style === "shaman") {
+        // A roll building into every 4th bar; a big stroke every 16
+        if (bar % 4 === 3 && i >= 12) { hit("frame", 70 + (i - 12) * 12); hit("tambourine", 20 + (i - 12) * 4); return; }
+        if (energy > 0.5 && i % 4 === 2) hit("frame", 58 + 20 * (energy - 0.5));
+        if (i === 0 && bar % 16 === 0 && !noBoom) { hit("frame", 127); hit("tom-ll", 70); }
+      } else if (style === "brushes") {
         if (bar % 8 === 7 && i === 12) hit("tom-l", 34);
         if (bar % 8 === 7 && i === 14) hit("tom-ll", 30);
       } else if (bar % 4 === 3 && i >= 12) { hit(WORLD_FILL[i - 12], 58 + (i - 12) * 10); if (style === "hand" && i === 12) hit("tom-ll", 84); return; }
@@ -2992,7 +3195,7 @@ export default function Chloe() {
         if (note === "snare-m" || note === "snare-l") hit(note, v * 0.9, snareKit);
         if (note === "conga-m" && v > 65) hit("conga-m", v * 0.5, snareKit);
       }
-      if (style === "brushes") return;
+      if (style === "brushes" || style === "shaman") return;
       if (tense && i === 14) hit(style === "hand" ? "tom-l" : "kick", 76);
       if (i === 0 && bar % 16 === 0 && !noBoom) { hit("kick-alt", 110); hit("tom-ll", 90); }
     };
@@ -3044,6 +3247,7 @@ export default function Chloe() {
               beatPhraseRef.current = false;
             }
             const b0 = tg.cur ?? st.bpm, bb = b0 > 160 ? b0 / 2 : b0;
+            beatStepHookRef.current?.(ac, beatNext, beatStep, WORLD[beatStyleNow] ? 60 / (b0 > 120 ? b0 / 2 : b0) / 4 : 60 / bb / 4);
             if (WORLD[beatStyleNow]) {
               const lb = b0 > 120 ? b0 / 2 : b0, sd = 60 / lb / 4;   // laid back: half-time above 120
               worldStep(K0, ac, beatStyleNow, beatStep, beatBar, beatNext, sd, beatNoCrash);
@@ -3248,8 +3452,8 @@ export default function Chloe() {
         max_tokens: 400,
         system: `You are exploring a musical scale app. Each turn you choose a scale to play and settings to use.
 Respond ONLY with valid JSON matching this schema exactly:
-{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"sustainMult":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura","commentary":"string","reply":"string","request":"string","brightnessOverride":number|null,"bpmOverride":"heart_rate"|number|null}
-scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). sustainMult 0.1-3.0 (note duration multiplier: 0.1 = very staccato, 1.0 = default, 2.0 = legato, 3.0 = long overlapping notes — particularly effective with sparse scales and slow BPM). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
+{"scaleId":"string","rootNote":number,"rhythm":"even"|"swing"|"gallop"|"waltz"|"clave","arpDir":"asc"|"desc"|"rand","chordVoice":"off"|"power"|"sus2"|"sus4"|"triad"|"7th"|"all","bpm":number,"reverbAmt":number,"delayAmt":number,"delayTime":number,"sustainMult":number,"droneOn":boolean,"droneVol":number,"droneOct":number,"droneWave":"sine"|"organ"|"pad"|"strings"|"tanpura"|"throat"|"jawharp","commentary":"string","reply":"string","request":"string","brightnessOverride":number|null,"bpmOverride":"heart_rate"|number|null}
+scaleId is the exact ID from the scale list (e.g. "hep-6.5"). rootNote is 0=C 1=C# 2=D 3=D# 4=E 5=F 6=F# 7=G 8=G# 9=A 10=A# 11=B. bpm between 60-160. reverbAmt 0.0-1.0 (reverb wet level). delayAmt 0.0-1.0 (delay wet level). delayTime 0.05-1.5 (delay time in seconds — try rhythmic values like 0.125, 0.25, 0.375, 0.5, 0.75). sustainMult 0.1-3.0 (note duration multiplier: 0.1 = very staccato, 1.0 = default, 2.0 = legato, 3.0 = long overlapping notes — particularly effective with sparse scales and slow BPM). droneOn: whether to enable the drone. droneVol 0.0-2.0 (drone volume). droneOct: semitone drop for drone — 0 (same octave), -12 (1 oct down), -24 (2 oct down), -36 (3 oct down). droneWave: drone timbre — sine (clean), organ (harmonic series), pad (shimmer), strings (bowed), tanpura (Indian pulsing), throat (Mongolian throat singing, whistled overtones), jawharp (plucked jaw harp, rhythmic). commentary is 1-2 sentences about this scale's character. reply is a brief conversational response to the user's message if they sent one — omit if no user message. request is optional — if there is a genuinely missing capability you wish the app had, describe it briefly. Omit if you have no request.
 The app already has: drone (sustained root note, independently volume-controlled, up to 3 octaves down, 5 timbres), beat (kick/snare/hat patterns), reverb (with wet level control), delay (with wet level and time controls), 4 instruments (piano/guitar/xylo/space), chord voicing (power/sus2/sus4/triad/7th/all), melody mode, arpeggio with direction and rhythm patterns, concert pitch tuning, URL sharing, and favourites. Only request things not on this list.
 ${activeFamiliesRef.current.some(f => f.outside) ? "IMPORTANT: The catalogue includes \"outside\" scales (IDs starting with x-) that contain 3 consecutive semitones — chromatic clusters with a tense, crowded sound. Treat them like passing tones: a brief moment of chromatic confusion or human imperfection between normal scales. Use one fairly often — about 1 turn in 3 — but only for a single turn before returning to a normal scale. Strongly prefer ones with short semitone runs (3 in a row); runs of 6-8 consecutive semitones should be rare. They have no brightness position." : "IMPORTANT: All scales in this app exclude any scale containing 3 or more consecutive semitones. This means common scales like the blues scale, chromatic scale, and others with clustered half-steps are NOT available."} Only reference scales that are actually in the available scale list — do not mention or promise scales by name unless they appear in the catalogue provided.
 currentState.currentBrightnessNorm is the normalized brightness of the active scale (0.0 = darkest possible for this note count, 1.0 = brightest, 0.5 = Dorian-equivalent neutral). currentState.brightnessSource tells you what is driving scale selection: 'eeg' = EEG headband is active and has pre-selected a scale; 'slider' = user has manually set a brightness target with the slider; 'locked' = user has locked the current brightness zone; 'claude' = you have set a brightnessOverride and are actively driving toward a goal; 'free' = no EEG, no override — you choose freely. When brightnessSource is 'eeg': a brightness-matching algorithm has pre-selected a scale (currentState.brightnessSelected) — your role is to choose BPM, rhythm, voicing, and effects to complement it; only override the scale if you have a strong musical reason. When brightnessSource is 'slider' or 'locked': the user has taken manual control of brightness — describe the musical character of the scale rather than brain state. When brightnessSource is 'free': choose scales autonomously.
@@ -3337,7 +3541,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (AL.droneOn   && choice.droneOn   != null) setDroneOn(!!choice.droneOn);
       if (AL.droneVol  && choice.droneVol  != null) setDroneVol(Math.max(0, Math.min(2, choice.droneVol)));
       if (AL.droneOct  && choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
-      if (AL.droneWave && choice.droneWave != null && ["sine","organ","pad","strings","tanpura"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
+      if (AL.droneWave && choice.droneWave != null && ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
       setArpOn(true);
       // Commentary and requests go to chat panel; banner shows parameter summary only
       const chatParts = [choice.commentary, choice.request ? `✦ ${choice.request}` : null].filter(Boolean);
@@ -3583,7 +3787,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.sustain && J?.vals) { const su = parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)); later(() => setSustainMult(su)); }
       else if (_al.sustain && maybe()) { const su = [0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]; later(() => setSustainMult(su)); }
       if (_al.droneOn && maybe())   { const on = Math.random() > (epicJ ? 0.15 : 0.35); later(() => setDroneOn(on)); }
-      const drones = sleepJ ? ["sine", "pad"] : epicJ ? ["organ", "strings"] : ["sine","organ","pad","strings","tanpura"];
+      const drones = sleepJ ? ["sine", "pad"] : epicJ ? ["organ", "strings"] : ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp"];
       if (_al.droneWave && (sleepJ || epicJ) && !drones.includes(stRef.current.droneWave)) later(() => setDroneWave(sleepJ ? "pad" : "organ"));
       else if (_al.droneWave && maybe()) { const w = drones[Math.floor(Math.random() * drones.length)]; later(() => setDroneWave(w)); }
       if (_al.droneOct && maybe())  { const o = [-12, -24, -36][Math.floor(Math.random() * 3)]; later(() => setDroneOct(o)); }
@@ -3843,6 +4047,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (aRef !== 440) p.set("a", aRef);
     if (droneOct)    p.set("do", droneOct);
     if (droneOn)     p.set("dr", "1");
+    if (droneWave !== "tanpura") p.set("dw", droneWave);
     if (melMode)     p.set("m",  "1");
     if (grouping)    p.set("g",  grouping);
     if (!blend)      p.set("bl", "0");
@@ -3862,7 +4067,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
 
   // Record button: start tapping the master output; stop → download the WAV
   const toggleRec = useCallback(async () => {
@@ -4063,7 +4268,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         {/* Drum feel, while drums are on */}
         {beatStyle !== "off" && (
           <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
-            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
+            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
               <button key={v} onClick={() => setBeatStyle(v)} style={{ ...chip(beatStyle === v), fontSize: 10, padding: "4px 11px" }}>{l}</button>
             ))}
           </div>
@@ -4885,14 +5090,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Drone type */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
+              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude. throat: Mongolian throat singing, a buzzing voice with a whistled overtone melody on the root's own harmonics (only those in the scale), a growl an octave under, breathing every 15-25 s. jaw harp: a plucked reed in a gallop or straight rhythm, the mouth jumping between its harmonics; plucks on the beat when drums play." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
               <select value={droneWave} onChange={e => setDroneWave(e.target.value)} style={{
                 marginLeft: "auto", background: K.bg3, color: K.txt, border: `1px solid ${K.br}`,
                 borderRadius: 3, padding: "3px 6px", fontSize: 9, fontFamily: "inherit",
                 cursor: "pointer", letterSpacing: 1,
               }}>
-                {["sine", "organ", "pad", "strings", "tanpura"].map(w => (
-                  <option key={w} value={w}>{w}</option>
+                {["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp"].map(w => (
+                  <option key={w} value={w}>{w === "jawharp" ? "jaw harp" : w}</option>
                 ))}
               </select>
             </div>
@@ -5259,9 +5464,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes"].map(v => (
+                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
                     background: beatStyle === v ? K.a : K.bg3,
                     color: beatStyle === v ? "#000" : K.txt,
