@@ -131,6 +131,52 @@ const KNOWN = {
   1843: "Coltrane Dominant", // 0 1 4 5 8 9 10 — augmented hexatonic + ♭7
 };
 
+// Duduk (Armenian, apricot wood, a big double reed on a cylindrical bore):
+// odd harmonics strong, even ones softer, then a voice-like mouth of formants.
+// Cached per context.
+const dudukWave = ac => ac.__duduk || (ac.__duduk = (() => {
+  const N = 30, re = new Float32Array(N + 1), im = new Float32Array(N + 1);
+  for (let n = 1; n <= N; n++) im[n] = (n % 2 ? 1 : 0.38) / Math.pow(n, 0.95);
+  return ac.createPeriodicWave(re, im);
+})());
+// The formants that make it sound like singing: ~600 Hz, ~1.15 kHz, ~2.6 kHz
+const dudukBody = (ac, input, mk) => {
+  const hp = mk("highpass", 140), f1 = mk("peaking", 600), f2 = mk("peaking", 1150), f3 = mk("peaking", 2600), lp = mk("lowpass", 3600);
+  f1.Q.value = 2; f1.gain.value = 8; f2.Q.value = 3; f2.gain.value = 6; f3.Q.value = 4; f3.gain.value = 3; lp.Q.value = 0.5;
+  input.connect(hp); hp.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(lp);
+  return lp;
+};
+// Dam: the second duduk holding the home note under the melody, circular
+// breathing so it never stops, swelling slowly, the pitch never quite still
+function synthDam(ac, freq) {
+  let F = fold(freq, 98, 196);
+  const master = ac.createGain(); master.gain.value = 0.063;   // level with the tanpura
+  const filt = [];
+  const mk = (type, f) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; filt.push(b); return b; };
+  const o = ac.createOscillator(); o.setPeriodicWave(dudukWave(ac)); o.frequency.value = F;
+  const sw = ac.createGain(); sw.gain.value = 0.85;
+  const swl = ac.createOscillator(), swg = ac.createGain(); swl.frequency.value = 0.08; swg.gain.value = 0.15; swl.connect(swg); swg.connect(sw.gain);
+  const dr = ac.createOscillator(), drg = ac.createGain(); dr.frequency.value = 0.13; drg.gain.value = 5; dr.connect(drg); drg.connect(o.detune);
+  o.connect(sw);
+  const out = dudukBody(ac, sw, mk); out.connect(master);
+  // Breath: a little air through the reed
+  const nb = ac.createBufferSource(), nbuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), nd = nbuf.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  nb.buffer = nbuf; nb.loop = true;
+  const nf = mk("bandpass", 1500); nf.Q.value = 0.8; const ng = ac.createGain(); ng.gain.value = 0.035;
+  nb.connect(nf); nf.connect(ng); ng.connect(sw);
+  const lfos = [swl, dr];
+  [o, ...lfos].forEach(x => x.start()); nb.start();
+  return {
+    node: master, oscs: [o], baseFreq: freq,
+    setFreq: (ratio, glide) => {
+      const now = ac.currentTime; F *= ratio;
+      o.frequency.cancelScheduledValues(now); o.frequency.setValueAtTime(o.frequency.value, now); o.frequency.exponentialRampToValueAtTime(F, now + glide);
+    },
+    stop: () => { [o, ...lfos, nb].forEach(x => { try { x.stop(); } catch {} }); setTimeout(() => { try { master.disconnect(); } catch {} }, 150); },
+  };
+}
+
 // New wave. Gated reverb (the 1980s snare): a burst of dense noise that holds
 // flat for ~230 ms and then is cut off dead, darkened a little.
 function gatedIR(ac) {
@@ -372,6 +418,7 @@ function synthDrone(ac, freq, type, opts) {
   if (type === "throat") return synthThroat(ac, freq, opts);
   if (type === "jawharp") return synthJawHarp(ac, freq, opts);
   if (type === "juno") return synthJuno(ac, freq, opts);
+  if (type === "dam") return synthDam(ac, freq);
   const oscs = [];
   const mk = (f, wt, detune = 0) => {
     const o = ac.createOscillator();
@@ -863,7 +910,7 @@ const tunedRatio = (semi, tuning) => {
 
 // Per-sound gain so every instrument/wave plays at about the same loudness
 // (measured K-weighted, eighth-note runs C3-C5, levelled to -28 LUFS).
-const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, lute: 1.88, fiddle: 0.78, dx7: 0.52, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
+const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, lute: 1.88, fiddle: 0.78, dx7: 0.52, duduk: 0.36, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
 
 // Steppe strings slide into a note from the one before (within a 4th, not
 // across a rest, not between the notes of one chord)
@@ -965,6 +1012,40 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     connectOut(g);
     src2.start(now); src2.stop(now + 0.05);
     o.start(now); o.stop(now + dur);
+    cleanup(dur);
+    return { start: now, stop: now + dur };
+  }
+
+  if (instrument === "duduk") {
+    // The duduk sings: most notes scoop up into pitch from below, some flick
+    // down from the note above (a grace), legato ones slide from the last note;
+    // a soft breathy attack, long notes swell, vibrato blooms late and slow
+    const dur = Math.max(0.35, Math.min(beatDur * 1.7, 4));
+    const o = mkO("sine"); o.setPeriodicWave(dudukWave(ac));
+    const from = slideFrom(ac, freq, 0.4), r = Math.random();
+    if (from) { o.frequency.setValueAtTime(from, now); o.frequency.exponentialRampToValueAtTime(freq, now + 0.1 + Math.random() * 0.08); }
+    else if (r < 0.2 && dur > 0.5) { o.frequency.setValueAtTime(freq * 2 ** (2 / 12), now); o.frequency.setValueAtTime(freq * 2 ** (2 / 12), now + 0.05); o.frequency.exponentialRampToValueAtTime(freq, now + 0.09); }
+    else if (r < 0.85) { o.frequency.setValueAtTime(freq * 2 ** (-(60 + Math.random() * 70) / 1200), now); o.frequency.exponentialRampToValueAtTime(freq, now + 0.12 + Math.random() * 0.1); }
+    else o.frequency.value = freq;
+    const vib = mkO("sine"), vibG = mkG(); vib.frequency.value = 4.6 + Math.random() * 0.6;
+    vibG.gain.setValueAtTime(0, now); vibG.gain.setValueAtTime(0, now + Math.min(0.3, dur * 0.4));
+    vibG.gain.linearRampToValueAtTime(12 + Math.random() * 8, now + Math.min(0.9, dur * 0.8));
+    vib.connect(vibG); vibG.connect(o.detune);
+    const src = mkG(); src.gain.value = 1; o.connect(src);
+    const nb = mkB(); const nbuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.6), ac.sampleRate);
+    const nd = nbuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    nb.buffer = nbuf; nb.loop = true;
+    const nf = mkF("bandpass", 1500); nf.Q.value = 0.8;
+    const ng = mkG(); ng.gain.setValueAtTime(0.09, now); ng.gain.setTargetAtTime(0.03, now + 0.05, 0.1);   // breathier at the start
+    nb.connect(nf); nf.connect(ng); ng.connect(src);
+    const body = dudukBody(ac, src, mkF);
+    const g = mkG(), atk = Math.min(0.09, dur * 0.25), rel = Math.min(0.28, dur * 0.35);
+    g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(vel * 0.7, now + atk);
+    g.gain.linearRampToValueAtTime(vel * (dur > 1 ? 1 : 0.8), now + Math.max(atk + 0.01, dur * 0.6));   // long notes swell
+    g.gain.setValueAtTime(vel * (dur > 1 ? 1 : 0.8), now + dur - rel);
+    g.gain.linearRampToValueAtTime(0, now + dur);
+    body.connect(g); connectOut(g);
+    for (const x of [o, vib, nb]) { x.start(now); x.stop(now + dur + 0.02); }
     cleanup(dur);
     return { start: now, stop: now + dur };
   }
@@ -1211,7 +1292,7 @@ function Piano({ active, playing, K }) {
 const ROOTS = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
 const OFFS  = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const TIMBRES = ["sine", "triangle", "square", "sawtooth"];
-const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7"];
+const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7", "duduk"];
 // Steppe: with the throat-singing or jaw-harp drone, or the shaman beat, the
 // lead becomes Mongolian strings: the horsehead fiddle at slow tempos (90 BPM
 // and under), the plucked lute at faster ones (100 and up; between, it keeps
@@ -1879,7 +1960,7 @@ export default function Chloe() {
       return {
         rootIdx:    parseInt(p.get("r") ?? "0"),
         timbre:     ["sine","triangle","square","sawtooth"].includes(p.get("t")) ? p.get("t") : "sine",
-        instrument: ["piano","guitar","xylo","space","lute","fiddle","dx7"].includes(p.get("i")) ? p.get("i") : null,
+        instrument: ["piano","guitar","xylo","space","lute","fiddle","dx7","duduk"].includes(p.get("i")) ? p.get("i") : null,
         noteVol:    Number.isFinite(parseFloat(p.get("v"))) ? parseFloat(p.get("v")) : 0.7,
         reverbAmt:  parseFloat(p.get("rv") ?? "0.75"),
         delayAmt:   parseFloat(p.get("dl") ?? "0.15"),
@@ -1889,7 +1970,7 @@ export default function Chloe() {
         aRef:       parseInt(p.get("a") ?? "440"),
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         droneOn:    p.get("dr") === "1",
-        droneWave:  ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno"].includes(p.get("dw")) ? p.get("dw") : undefined,
+        droneWave:  ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam"].includes(p.get("dw")) ? p.get("dw") : undefined,
         melMode:    p.get("m") === "1",
         autoOff:    p.get("al") ?? "",
         autoOn:     p.get("an") ?? "",
@@ -3796,7 +3877,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (AL.droneOn   && choice.droneOn   != null) setDroneOn(!!choice.droneOn);
       if (AL.droneVol  && choice.droneVol  != null) setDroneVol(Math.max(0, Math.min(2, choice.droneVol)));
       if (AL.droneOct  && choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
-      if (AL.droneWave && choice.droneWave != null && ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
+      if (AL.droneWave && choice.droneWave != null && ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
       setArpOn(true);
       // Commentary and requests go to chat panel; banner shows parameter summary only
       const chatParts = [choice.commentary, choice.request ? `✦ ${choice.request}` : null].filter(Boolean);
@@ -3998,7 +4079,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // Rise: bold sounds only, the same way
       const sleepJ = !!J0?.vals && JOURNEYS[J0.id]?.endless;
       const epicJ = !!J0?.vals && JOURNEYS[J0.id]?.epic;
-      const SOFT = ["space", "space", "sine", "piano", "triangle"];
+      const SOFT = ["space", "space", "sine", "piano", "triangle", "duduk"];
       const BOLD = ["guitar", "guitar", "sawtooth", "sawtooth", "piano", "square", "xylo"];
       const only = sleepJ ? SOFT : epicJ ? BOLD : null;
       const curSnd = stRef.current.instrument || stRef.current.timbre;
@@ -4006,7 +4087,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         const s = only[Math.floor(Math.random() * only.length)];
         if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); }
       } else if (_al.sound && Math.random() < 0.4 && maybe()) {
-        const pool = only || ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth"];
+        const pool = only || ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth","duduk"];
         const s = likedPick(likes, "snd", pool) ?? pool[Math.floor(Math.random() * pool.length)];
         later(() => { if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); } });
       }
@@ -4071,7 +4152,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.sustain && J?.vals) { const su = parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)); later(() => setSustainMult(su)); }
       else if (_al.sustain && maybe()) { const su = [0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]; later(() => setSustainMult(su)); }
       if (_al.droneOn && maybe())   { const on = likedPick(likes, "droneOn") ?? Math.random() > (epicJ ? 0.15 : 0.35); later(() => setDroneOn(on)); }
-      const drones = sleepJ ? ["sine", "pad"] : epicJ ? ["organ", "strings"] : ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno"];
+      const drones = sleepJ ? ["sine", "pad", "dam"] : epicJ ? ["organ", "strings"] : ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam"];
       if (_al.droneWave && (sleepJ || epicJ) && !drones.includes(stRef.current.droneWave)) later(() => setDroneWave(sleepJ ? "pad" : "organ"));
       else if (_al.droneWave && maybe()) { const w = likedPick(likes, "drone", drones) ?? drones[Math.floor(Math.random() * drones.length)]; later(() => setDroneWave(w)); }
       if (_al.droneOct && maybe())  { const o = [-12, -24, -36][Math.floor(Math.random() * 3)]; later(() => setDroneOct(o)); }
@@ -4476,7 +4557,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (journey === "off") setJourney(J);
       if (J === "endless") {
         setSmooth(Math.max(smooth, 0.9));   // sleep: hide every seam
-        if (!["sine", "pad"].includes(droneWave)) setDroneWave("pad");   // no tanpura buzz
+        if (!["sine", "pad", "dam"].includes(droneWave)) setDroneWave("pad");   // no tanpura buzz
       }
       else if (JOURNEYS[J].epic) setSmooth(0.5);   // lively, but no double/half-time snaps
       else if (!smooth) setSmooth(0.7);
@@ -5403,13 +5484,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Drone type */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude. throat: Mongolian throat singing, a buzzing voice with a whistled overtone melody on the root's own harmonics (only those in the scale), a growl an octave under, breathing every 15-25 s. jaw harp: a plucked reed in a gallop or straight rhythm, the mouth jumping between its harmonics; plucks on the beat when drums play. juno: an 80s polysynth pad, root/fifth/octave (+9th) detuned saws through a stereo chorus." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
+              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude. throat: Mongolian throat singing, a buzzing voice with a whistled overtone melody on the root's own harmonics (only those in the scale), a growl an octave under, breathing every 15-25 s. jaw harp: a plucked reed in a gallop or straight rhythm, the mouth jumping between its harmonics; plucks on the beat when drums play. dam: a second duduk holding the home note, as under Armenian duduk melodies, breathing and swelling. juno: an 80s polysynth pad, root/fifth/octave (+9th) detuned saws through a stereo chorus." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
               <select value={droneWave} onChange={e => setDroneWave(e.target.value)} style={{
                 marginLeft: "auto", background: K.bg3, color: K.txt, border: `1px solid ${K.br}`,
                 borderRadius: 3, padding: "3px 6px", fontSize: 9, fontFamily: "inherit",
                 cursor: "pointer", letterSpacing: 1,
               }}>
-                {["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno"].map(w => (
+                {["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam"].map(w => (
                   <option key={w} value={w}>{w === "jawharp" ? "jaw harp" : w}</option>
                 ))}
               </select>
