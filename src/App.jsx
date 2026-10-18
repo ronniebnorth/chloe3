@@ -785,6 +785,13 @@ const WORLD = {
   // Shaman: a deep frame drum's steady pulse, the heartbeat "da-DUM" leading
   // into each bar, the iron pendants jingling softly on every stroke
   // (tambourine + shaker). Tension doubles it to 8ths, the trance speeding up.
+  // Desert (daf / bendir, as under a duduk in a desert film score): a deep
+  // "dum" on the one, a softer one later, crisp rim "teks", the jingles barely
+  // there. Sparse, so the melody and its silences carry the music.
+  desert: {
+    frame: { 0: 104, 8: 70, 11: 56 }, tek: { 6: 58, 12: 66, 14: 40 },
+    tambourine: { 6: 18, 12: 22 },
+  },
   shaman: {
     frame: { 0: 118, 4: 88, 8: 102, 12: 88, 15: 56 }, "frame-edge": { 10: 46 },
     tambourine: { 0: 30, 4: 22, 8: 26, 12: 22 }, cabasa: { 0: 22, 4: 16, 8: 20, 12: 16 },
@@ -852,6 +859,8 @@ const HAND_DRUMS = {
   // and the higher ring of a strike near the rim
   "frame":    { f: 52,  decay: 1.0,  slap: 0.1,  pan: 0, g: 1 },
   "frame-edge": { f: 140, decay: 0.35, slap: 0.35, pan: 0.2, g: 0.45 },
+  // Daf / bendir "tek": a crisp strike at the rim
+  "tek":      { f: 380, decay: 0.12, slap: 0.6,  pan: 0.25, g: 0.5 },
 };
 const HAND_MODES = [[1, 1], [1.52, 0.42], [1.98, 0.22], [2.44, 0.12], [3.02, 0.06]];   // ratio, level
 function makeHandDrum(ac, d) {
@@ -883,7 +892,7 @@ function makeHandDrum(ac, d) {
   return buf;
 }
 
-const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes", shaman: "shaman", newwave: "neon" };
+const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes", shaman: "shaman", newwave: "neon", desert: "desert" };
 
 // Linear fills for fusion: one drum per 16th. Short = the last beat of every
 // 4th bar; long = the last two beats of every 8th, phrased in 3s across the beat.
@@ -1301,6 +1310,14 @@ const isSteppe = st => st.beatStyle === "shaman" || (st.beatStyle !== "newwave" 
 // Neon (new wave): the new wave beat or the Juno pad makes the lead a DX7
 // electric piano and lifts the scale picks toward bright major colours
 const isNeon = st => st.beatStyle === "newwave" || (st.beatStyle !== "shaman" && st.droneOn && st.droneWave === "juno");
+// Desert: the desert beat or the dam drone makes the lead a duduk singing
+// phrases with silence between them, leans the scales Middle Eastern (Hijaz and
+// friends), slows the tempo and opens a long reverb
+const isDesert = st => st.beatStyle === "desert" || (st.beatStyle !== "shaman" && st.beatStyle !== "newwave" && st.droneOn && st.droneWave === "dam");
+// Hijaz (Phrygian dominant), Hijaz Kar (double harmonic), harmonic minor,
+// Nikriz (Ukrainian Dorian), Kurd (Phrygian), Neapolitan minor, Nahawand
+// (Aeolian), Bayati without its quarter tone (Dorian), with weights
+const DESERT_SCALES = [[1459, 3], [2483, 3], [2477, 2], [1741, 2], [1451, 2], [2475, 1], [1453, 1], [1709, 1]];
 const GRP_NAME = { 3: "Tritonic", 4: "Tetratonic", 5: "Pentatonic", 6: "Hexatonic", 7: "Heptatonic", 8: "Octatonic" };
 const GRP_PFX  = { 3: "tri", 4: "tet", 5: "pen", 6: "hex", 7: "hep", 8: "oct" };
 // Sidebar group key — outside families get their own groups below the main ones
@@ -1985,7 +2002,7 @@ export default function Chloe() {
         sleepMins:  SLEEP_MINS.includes(parseInt(p.get("sl"))) ? parseInt(p.get("sl")) : undefined,
         symphonic:  p.get("sy") === "1",
         beatWander: p.get("bw") === "1",
-        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave"].includes(p.get("bt")) ? p.get("bt") : "off",
+        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave", "desert"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -3077,6 +3094,7 @@ export default function Chloe() {
         if (b <= 90) steppeInst = "fiddle"; else if (b >= 100) steppeInst = "lute";
         inst = steppeInst;
       } else if (isNeon(stRef.current)) inst = "dx7";
+      else if (isDesert(stRef.current)) inst = "duduk";
       const ac = getCtx();
       const rev = getOrCreateReverb(ac);
       const del = getOrCreateDelay(ac);
@@ -3188,6 +3206,7 @@ export default function Chloe() {
       }
     };
 
+    let desertLeft = 5;
     const melTickBody = () => {
       // Check for pending scale transition
       const pending = pendingSelRef.current;
@@ -3220,6 +3239,21 @@ export default function Chloe() {
       // Group size changed mid-group (Auto or a click): start a fresh group,
       // or the old position runs past the end of the new motif
       if (G !== grp.G) { grp.G = G; grp.pos = 0; grp.left = 0; grp.tick = 0; grp.pat = null; }
+
+      // Desert: the duduk sings phrases of 4-9 long notes, the last one held,
+      // then real silence (2-6 beats). No runs, no chords.
+      if (isDesert(stRef.current)) {
+        if (--desertLeft < 0) {
+          desertLeft = 4 + Math.floor(Math.random() * 6);
+          setPlaying(null);
+          melTimeout = setTimeout(melTick, eighth * (4 + Math.random() * 8));
+          return;
+        }
+        const durUnits = desertLeft === 0 ? 8 : [2, 3, 4, 4, 6][Math.floor(Math.random() * 5)];
+        playNote(pickMelNote(notes), durUnits, 0.14 + Math.random() * 0.12);
+        melTimeout = setTimeout(melTick, eighth * durUnits);
+        return;
+      }
 
       if (G && !isChord) {
         // Grouped line: even 8ths, group start accented, a lighter accent every
@@ -3485,11 +3519,16 @@ export default function Chloe() {
     const worldStep = (K0, ac, style, i, bar, t0, stepDur, noBoom) => {
       const { kit, snareKit } = K0;
       const P = WORLD[style], t = t0 + (i % 2 ? 0.17 * stepDur : 0);
-      const hit = (note, v, k2 = kit) => v > 0 && (HAND_DRUMS[note] && (note.startsWith("conga") || note.startsWith("frame") || style === "hand")
+      const hit = (note, v, k2 = kit) => v > 0 && (HAND_DRUMS[note] && (note.startsWith("conga") || note.startsWith("frame") || note === "tek" || style === "hand")
         ? k2 === kit && handDrum(K0, ac, note, v + (Math.random() - 0.5) * 12, t + (Math.random() - 0.5) * 0.01, v > 70)
         : k2.start({ note, velocity: Math.max(1, Math.min(127, Math.round(v + (Math.random() - 0.5) * 12))), time: t + (Math.random() - 0.5) * 0.01 }));
       const calm = energy < 0.25, tense = energy > 0.6;
-      if (style === "shaman") {
+      if (style === "desert") {
+        // A soft rim roll into every 4th bar; calm drops the extra strokes; a deep dum every 16
+        if (bar % 4 === 3 && i >= 12) { hit("tek", 40 + (i - 12) * 8); return; }
+        if (calm && (i === 11 || i === 14)) return;
+        if (i === 0 && bar % 16 === 0 && !noBoom) hit("frame", 120);
+      } else if (style === "shaman") {
         // A roll building into every 4th bar; a big stroke every 16
         if (bar % 4 === 3 && i >= 12) { hit("frame", 70 + (i - 12) * 12); hit("tambourine", 20 + (i - 12) * 4); return; }
         if (energy > 0.5 && i % 4 === 2) hit("frame", 58 + 20 * (energy - 0.5));
@@ -3506,7 +3545,7 @@ export default function Chloe() {
         if (note === "snare-m" || note === "snare-l") hit(note, v * 0.9, snareKit);
         if (note === "conga-m" && v > 65) hit("conga-m", v * 0.5, snareKit);
       }
-      if (style === "brushes" || style === "shaman") return;
+      if (style === "brushes" || style === "shaman" || style === "desert") return;
       if (tense && i === 14) hit(style === "hand" ? "tom-l" : "kick", 76);
       if (i === 0 && bar % 16 === 0 && !noBoom) { hit("kick-alt", 110); hit("tom-ll", 90); }
     };
@@ -4008,9 +4047,16 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // ♥ likes bend every brightness target toward the liked brightness, and
       // now and then bring back a liked scale outright
       const likes = likesRef.current, likeB = likes.length ? likedMean(likes, "b") : null;
-      const neon = isNeon(stRef.current);
+      const neon = isNeon(stRef.current), desert = isDesert(stRef.current);
       const bend = b => { if (b === null) return b; if (likeB) b += likeB.k * 0.6 * (likeB.v - b); return neon ? b + 0.35 * (0.7 - b) : b; };
       const jv = journeyRef.current?.vals, jb = jv ? bend(jv.b) : null;
+      // Desert: mostly a Middle Eastern scale (in a journey, one near its brightness)
+      if (!entry && desert && Math.random() < 0.7) {
+        const cands = DESERT_SCALES.map(([pat, w]) => ({ e: catalogue.find(e => e.pat === pat), w }))
+          .filter(c => c.e && c.e.pat !== cur?.pattern && (jb === null || Math.abs(normalizedBrightness(c.e.pat) - jb) <= 0.2));
+        let r = Math.random() * cands.reduce((a, c) => a + c.w, 0);
+        for (const c of cands) if ((r -= c.w) < 0) { entry = c.e; break; }
+      }
       // (in a journey, only a liked scale near where the journey is heading)
       if (!entry && likes.length) {
         const lp = likedPick(likes, "pat", catalogue.map(e => e.pat));
@@ -4051,7 +4097,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
       const chordVoice = VOICES[Math.floor(Math.random() * VOICES.length)];
       const likeT = likes.length ? likedMean(likes, "bpm", true) : null;
-      const bendT = b => (likeT ? b * Math.pow(likeT.v / b, likeT.k * 0.5) : b);
+      const bendT = b => { if (likeT) b *= Math.pow(likeT.v / b, likeT.k * 0.5); return desert ? b * Math.pow(66 / b, 0.5) : b; };
       let bpm          = Math.round(bendT(driftBpm(stRef.current.bpm)));
 
       const ac = getCtx();
@@ -4103,9 +4149,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         // Rise to the kit and shaman.
         const fam = BEAT_FAMILY[stRef.current.beatStyle];
         const w = stRef.current.beatWander
-          ? (sleepJ ? { brushes: 1, hand: 0.7, shaman: 0.8 }
+          ? (sleepJ ? { brushes: 1, hand: 0.7, shaman: 0.8, desert: 0.8 }
             : epicJ ? { break: 0.6, drive: 1, heavy: 0.6, shaman: 0.5, newwave: 0.7 }
-            : { brushes: 0.8 * (1 - e) ** 2, downtempo: 0.9, hand: 1 - 0.6 * e, shaman: 1,
+            : { brushes: 0.8 * (1 - e) ** 2, downtempo: 0.9, hand: 1 - 0.6 * e, shaman: 1, desert: 0.9 * (1 - 0.5 * e),
                 break: 0.3 + 0.8 * e, drive: 0.1 + 1.2 * e, heavy: 0.6 * e, fusion: 0.35, newwave: 0.5 + 0.6 * e })
           : fam === "world" ? { downtempo: 0.4 + e, hand: 1.1 - e }
                 : fam === "kit" ? { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 } : null;
@@ -4119,6 +4165,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           // Wandering into shaman brings the steppe with it now and then: a throat or jaw-harp drone
           if (pickB === "shaman" && stRef.current.beatWander && stRef.current.droneOn && _al.droneWave && Math.random() < 0.5)
             later(() => setDroneWave(Math.random() < 0.6 ? "throat" : "jawharp"));
+          // ...into the desert, the dam
+          if (pickB === "desert" && stRef.current.beatWander && stRef.current.droneOn && _al.droneWave && Math.random() < 0.5)
+            later(() => setDroneWave("dam"));
           // ...and into new wave, now and then the Juno pad
           if (pickB === "newwave" && stRef.current.beatWander && stRef.current.droneOn && _al.droneWave && Math.random() < 0.5)
             later(() => setDroneWave("juno"));
@@ -4142,6 +4191,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       } else if (_al.bpm && stRef.current.autoTempo === "drift" && maybe()) later(() => setBpm(bpm));
       if (_al.reverb && J?.vals) { const rv = parseFloat(Math.min(1, Math.max(0, J.vals.rv + (Math.random() - 0.5) * 0.08)).toFixed(2)); later(() => setReverbAmt(rv)); }
       else if (_al.reverb && maybe()) { const rv = parseFloat((0.3 + Math.random() * 0.65).toFixed(2)); later(() => setReverbAmt(rv)); }
+      if (_al.reverb && desert) { const rv = parseFloat((0.85 + Math.random() * 0.1).toFixed(2)); later(() => setReverbAmt(rv)); }   // the desert night
       if (_al.delay && J?.vals?.dl !== undefined) { const d = parseFloat(J.vals.dl.toFixed(2)); later(() => setDelayAmt(d)); }
       else if (_al.delay && maybe()) { const d = parseFloat((0.1 + Math.random() * 0.5).toFixed(2)); later(() => setDelayAmt(d)); }
       // Endless holds one slow echo (a delay time change mid-echo clicks or bends)
@@ -4647,7 +4697,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         {beatStyle !== "off" && (
           <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
             <button onClick={() => setBeatWander(w => !w)} title="Wander: the drums roam across every style as the music goes, from brushes and shaman drums to breakbeats" style={{ ...chip(beatWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
-            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["newwave", "new wave"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
+            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["desert", "desert"], ["newwave", "new wave"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
               <button key={v} onClick={() => { setBeatStyle(v); setBeatWander(false); }} style={{ ...chip(beatStyle === v && !beatWander), fontSize: 10, padding: "4px 11px", ...(beatWander && beatStyle === v ? { borderStyle: "dashed" } : {}) }}>{l}</button>
             ))}
           </div>
@@ -5858,9 +5908,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends); it makes the lead a DX7 electric piano and lifts the scales bright. Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves), and wandering into shaman sometimes brings a throat-singing or jaw-harp drone. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends); it makes the lead a DX7 electric piano and lifts the scales bright. Desert = a sparse daf/bendir: a deep dum, crisp rim teks, barely-there jingles; it makes the lead a duduk singing phrases with silence between them, leans to Middle Eastern scales (Hijaz and friends), slows the tempo and opens a long reverb (the dam drone does the same). Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves), and wandering into shaman sometimes brings a throat-singing or jaw-harp drone. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave"].map(v => (
+                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "desert", "newwave"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
                     background: beatStyle === v ? K.a : K.bg3,
                     color: beatStyle === v ? "#000" : K.txt,
