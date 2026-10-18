@@ -1028,15 +1028,14 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
   }
 
   if (instrument === "duduk") {
-    // The duduk sings: most notes scoop up into pitch from below, some flick
-    // down from the note above (a grace), legato ones slide from the last note;
+    // The duduk sings: most notes scoop up into pitch from below, legato ones
+    // slide from the last note;
     // a soft breathy attack, long notes swell, vibrato blooms late and slow
     const dur = Math.max(0.35, Math.min(beatDur * 1.7, 4));
     const o = mkO("sine"); o.setPeriodicWave(dudukWave(ac));
     const from = slideFrom(ac, freq, 0.4), r = Math.random();
     if (from) { o.frequency.setValueAtTime(from, now); o.frequency.exponentialRampToValueAtTime(freq, now + 0.1 + Math.random() * 0.08); }
-    else if (r < 0.2 && dur > 0.5) { o.frequency.setValueAtTime(freq * 2 ** (2 / 12), now); o.frequency.setValueAtTime(freq * 2 ** (2 / 12), now + 0.05); o.frequency.exponentialRampToValueAtTime(freq, now + 0.09); }
-    else if (r < 0.85) { o.frequency.setValueAtTime(freq * 2 ** (-(60 + Math.random() * 70) / 1200), now); o.frequency.exponentialRampToValueAtTime(freq, now + 0.12 + Math.random() * 0.1); }
+    else if (r < 0.75) { o.frequency.setValueAtTime(freq * 2 ** (-(60 + Math.random() * 70) / 1200), now); o.frequency.exponentialRampToValueAtTime(freq, now + 0.12 + Math.random() * 0.1); }
     else o.frequency.value = freq;
     const vib = mkO("sine"), vibG = mkG(); vib.frequency.value = 4.6 + Math.random() * 0.6;
     vibG.gain.setValueAtTime(0, now); vibG.gain.setValueAtTime(0, now + Math.min(0.3, dur * 0.4));
@@ -3225,7 +3224,7 @@ export default function Chloe() {
       }
     };
 
-    let desertLeft = 5;
+    let desertLeft = 5, desertHarm = 0;
     const melTickBody = () => {
       // Check for pending scale transition
       const pending = pendingSelRef.current;
@@ -3260,16 +3259,23 @@ export default function Chloe() {
       if (G !== grp.G) { grp.G = G; grp.pos = 0; grp.left = 0; grp.tick = 0; grp.pat = null; }
 
       // Desert: the duduk sings phrases of 4-9 long notes, the last one held,
-      // then real silence (2-6 beats). No runs, no chords.
+      // then real silence (2-6 beats). No runs, no chords. On ~60% of phrases a
+      // second duduk harmonizes in the scale, a third above or below, softer.
       if (isDesert(stRef.current)) {
         if (--desertLeft < 0) {
           desertLeft = 4 + Math.floor(Math.random() * 6);
+          const r = Math.random();
+          desertHarm = r < 0.3 ? 2 : r < 0.6 ? -2 : 0;
           setPlaying(null);
           melTimeout = setTimeout(melTick, eighth * (4 + Math.random() * 8));
           return;
         }
         const durUnits = desertLeft === 0 ? 8 : [2, 3, 4, 4, 6][Math.floor(Math.random() * 5)];
-        playNote(pickMelNote(notes), durUnits, 0.14 + Math.random() * 0.12);
+        const semi = pickMelNote(notes), vel = 0.14 + Math.random() * 0.12;
+        playNote(semi, durUnits, vel);
+        const li = melPrevRef.current, hi = li + desertHarm;   // pickMelNote's index (its octave lift kept)
+        const NL = notes.length, hw = ((hi % NL) + NL) % NL;   // past either end: wrap an octave
+        if (desertHarm) playNote(notes[hw] + 12 * Math.floor(hi / NL) + semi - notes[li], durUnits, vel * 0.6);
         melTimeout = setTimeout(melTick, eighth * durUnits);
         return;
       }
