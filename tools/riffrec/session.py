@@ -13,10 +13,12 @@ Sections (hits: one hit on each downbeat, 4 bars per step, a cue bar between):
   chords     power chords let ring, root on low E, frets 0-12
   riffs      free: your own riffs over the click (default 4 minutes)
 
-Setup: Body on the power bank, guitar -> Body -> UM2 input 2, UM2 Direct
-Monitor ON (that's how you hear yourself), Bitwig closed, Chloe stopped.
+Setup (Bitwig): guitar (or guitar -> Body) -> UM2 input 2, UM2 Direct
+Monitor OFF, Bitwig open and monitoring input 2 through NAM + cab, Chloe stopped.
+Setup (no Bitwig): Body on the power bank -> UM2 input 2, Direct Monitor ON.
 Raw takes land in ../../samples/guitar/raw/ as <section>_<time>.wav
-(ch 1 guitar, ch 2 click) with a .json of where each step starts.
+(ch 1 dry guitar, ch 2 click, ch 3-4 Bitwig's output if it was open) with a
+.json of where each step starts.
 """
 import json, os, signal, socket, subprocess, sys, time
 import numpy as np, scipy.io.wavfile as w
@@ -60,8 +62,18 @@ def mpv_cmd(sock, *args):
     s = socket.socket(socket.AF_UNIX); s.connect(sock)
     s.send((json.dumps({"command": list(args)}) + "\n").encode()); s.close()
 
+def wet_ports():
+    """Whatever (other than mpv and PulseAudio) feeds system:playback_1/2: Bitwig's master, while it's open."""
+    out, cur = {}, None
+    for line in subprocess.run(["jack_lsp", "-c"], capture_output=True, text=True).stdout.splitlines():
+        if not line.startswith(" "): cur = line.strip(); continue
+        src = line.strip()
+        if cur in ("system:playback_1", "system:playback_2") and not src.startswith(("mpv", "PulseAudio")):
+            out.setdefault(cur, src)
+    return [out[k] for k in ("system:playback_1", "system:playback_2") if k in out]
+
 def record(click, name, plan, bpm):
-    """Play `click` paused-start in mpv, capture guitar + mpv's output, unpause; returns wav path."""
+    """Play `click` paused-start in mpv, capture guitar + mpv's output (+ Bitwig's, if open), unpause; returns wav path."""
     os.makedirs(OUT, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     clk = os.path.join(OUT, f".click_{stamp}.wav")
@@ -75,8 +87,11 @@ def record(click, name, plan, bpm):
         if os.path.exists(sock) and b"mpv:out_0" in subprocess.run(["jack_lsp"], capture_output=True).stdout: break
         time.sleep(0.1)
     dur = len(click) / SR + 1
-    rec = subprocess.Popen(["jack_capture", "-b", "24", "-c", "2", "-d", str(int(dur)),
-                            "-p", "system:capture_2", "-p", "mpv:out_0", wav],
+    wet = wet_ports()
+    print(f"  recording: dry guitar, click{', and what you hear from ' + ' + '.join(wet) if wet else ' (no Bitwig output found: dry only)'}", flush=True)
+    ports = ["system:capture_2", "mpv:out_0", *wet]
+    rec = subprocess.Popen(["jack_capture", "-b", "24", "-c", str(len(ports)), "-d", str(int(dur)),
+                            *[a for p in ports for a in ("-p", p)], wav],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.0)
     mpv_cmd(sock, "set_property", "pause", False)
