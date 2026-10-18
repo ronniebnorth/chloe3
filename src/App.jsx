@@ -510,8 +510,10 @@ function masterOut(ac) {
     lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20;
     lim.attack.value = 0.002; lim.release.value = 0.15;
     const trim = ac.createGain(); trim.gain.value = 0.82;
-    lim.connect(trim); trim.connect(ac.destination);
-    ac.__master = lim;
+    // A gentle top-end cut on everything (-3 dB above ~5 kHz): no shrill edges
+    const soft = ac.createBiquadFilter(); soft.type = "highshelf"; soft.frequency.value = 5000; soft.gain.value = -3;
+    soft.connect(lim); lim.connect(trim); trim.connect(ac.destination);
+    ac.__master = soft;
     ac.__masterTap = trim;      // the recorder listens here: exactly what you hear
   }
   return ac.__master;
@@ -2421,6 +2423,21 @@ export default function Chloe() {
   const analyserRef  = useRef(null);
   // Sleep tone (Endless): the line goes through a low-pass before its reverb
   // and delay sends, so the notes, echoes and tail are all soft
+  // Lead bus (when no orchestra or sleep bus takes the lead): softened (-6 dB
+  // above 3 kHz, a gentle low-pass at 5.5 kHz), a little less dry and more of
+  // it in the reverb, so the line sits back in the room
+  const leadSoftRef = useRef(null);
+  const getLeadSoft = (ac) => {
+    if (leadSoftRef.current && leadSoftRef.current.ac === ac) return leadSoftRef.current;
+    const input = ac.createGain(), shelf = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), dry = ac.createGain(), send = ac.createGain();
+    shelf.type = "highshelf"; shelf.frequency.value = 3000; shelf.gain.value = -6;
+    lp.type = "lowpass"; lp.frequency.value = 5500; lp.Q.value = 0.5;
+    dry.gain.value = 0.85; send.gain.value = 1.4;
+    input.connect(shelf); shelf.connect(lp); lp.connect(dry); dry.connect(masterOut(ac));
+    lp.connect(send); send.connect(getOrCreateReverb(ac).convolver);
+    leadSoftRef.current = { ac, input };
+    return leadSoftRef.current;
+  };
   const darkRef = useRef(null);
   const getDark = (ac) => {
     if (darkRef.current && darkRef.current.ac === ac) return darkRef.current;
@@ -3115,8 +3132,10 @@ export default function Chloe() {
       if (x >= 1) sb.from = null;
       // Equal-power crossfade so the level holds steady through the swap
       const out = sleep ? getDark(ac).input
-        : stRef.current.symphonic && orchRef.current && orchRef.current.ac === ac ? orchRef.current.lead : undefined;
-      const revSend = out ? null : rev.convolver;   // the lead / dark bus has its own reverb send
+        : stRef.current.symphonic && orchRef.current && orchRef.current.ac === ac ? orchRef.current.lead : getLeadSoft(ac).input;
+      const revSend = null;   // every lead bus has its own reverb send
+      // High notes are where it gets piercing: softer the higher they go (-3 dB an octave above F5)
+      if (freq > 700) vel *= Math.sqrt(700 / freq);
       const delSend = sleep ? null : del.delayNode;  // ...and the dark bus its own delay send
       if (sb.from) synthNote(ac, freq, vel * nv * Math.cos(x * Math.PI / 2), sb.from.inst, sb.from.t, beatDur, revSend, delSend, an.node, out);
       synthNote(ac, freq, vel * nv * (sb.from ? Math.sin(x * Math.PI / 2) : 1), inst, t, beatDur, revSend, delSend, an.node, out);
