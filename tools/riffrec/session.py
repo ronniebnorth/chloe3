@@ -11,7 +11,9 @@ Sections (hits: one hit on each downbeat, 4 bars per step, a cue bar between):
   a-chugs    palm-muted single-note chugs, A string, frets 0-7
   pm-chords  palm-muted power chords, root on low E, frets 0-7
   chords     power chords let ring, root on low E, frets 0-12
-  riffs      free: your own riffs over the click (default 4 minutes)
+  riffs      free: your own riffs over a drum beat (4 minutes)
+             /usr/bin/python3 session.py riffs [bpm] [beat]
+             beats: rock, gallop (double-kick 16ths), thrash, halftime, click
 
 Setup (Bitwig): guitar (or guitar -> Body) -> UM2 input 2, UM2 Direct
 Monitor OFF, Bitwig open and monitoring input 2 through NAM + cab, Chloe stopped.
@@ -53,6 +55,52 @@ def click_track(bars, bpm, cue_bars=()):
                 if k == 2: put(blip(1320, 0.25, 0.35), at)
             else:
                 put(blip(1600 if k == 0 else 1000, 0.04, 0.6 if k == 0 else 0.35), at)
+    return y
+
+# Synth kit for the riffs section: enough to lock to, not a production kit
+def _env(n, tau): return np.exp(-np.arange(n) / (tau * SR))
+def kick(v=1.0):
+    n = int(0.35 * SR); t = np.arange(n) / SR
+    f = 45 + 110 * np.exp(-t / 0.03)
+    body = np.sin(2 * np.pi * np.cumsum(f) / SR) * _env(n, 0.12)
+    click = np.random.randn(n) * _env(n, 0.003) * 0.4
+    return v * 0.9 * (body + click)
+def snare(v=1.0):
+    n = int(0.3 * SR); t = np.arange(n) / SR
+    noise = np.random.randn(n); noise = noise - np.convolve(noise, np.ones(4) / 4, "same")
+    return v * 0.55 * (noise * _env(n, 0.06) + 0.8 * np.sin(2 * np.pi * 190 * t) * _env(n, 0.04))
+def hat(v=1.0, open_=False):
+    n = int((0.25 if open_ else 0.06) * SR)
+    x = np.random.randn(n); x = x - np.convolve(x, np.ones(3) / 3, "same")
+    return v * 0.22 * x * _env(n, 0.08 if open_ else 0.012)
+def crash(v=1.0):
+    n = int(1.6 * SR); x = np.random.randn(n); x = x - np.convolve(x, np.ones(2) / 2, "same")
+    return v * 0.25 * x * _env(n, 0.5)
+# 16 steps per bar: K kick, S snare, h hat, o open hat, - rest
+BEATS = {
+    "rock":     ("K---S---K-K-S---", "h-h-h-h-h-h-h-h-"),
+    "gallop":   ("KKKKSKKKKKKKSKKK", "h---h---h---h---"),
+    "thrash":   ("K-S-K-S-K-S-K-S-", "h-h-h-h-h-h-h-h-"),
+    "halftime": ("K--K----S-K-----", "h-h-h-h-h-h-h-o-"),
+}
+def drum_track(bars, bpm, style, count_in=2):
+    s16 = 60 / bpm / 4
+    y = np.zeros(int(SR * (bars * 16 * s16 + 2)))
+    def put(x, at):
+        i = int(at * SR); y[i:i + len(x)] += x[:len(y) - i]
+    for b in range(bars):
+        for k in range(16):
+            at = (b * 16 + k) * s16
+            if b < count_in:                       # sticks on the beat
+                if k % 4 == 0: put(hat(1.6 if k == 0 else 1.0), at)
+                continue
+            ks, hs = BEATS[style]
+            acc = 1.0 if k % 4 == 0 else 0.8
+            if ks[k] == "K": put(kick(acc), at)
+            if ks[k] == "S": put(snare(1.0), at)
+            if hs[k] in "ho": put(hat(acc, hs[k] == "o"), at)
+            if k == 0 and (b - count_in) % 8 == 0: put(crash(), at)
+    y /= max(1.0, np.abs(y).max() / 0.9)
     return y
 
 def big(msg):
@@ -111,6 +159,8 @@ def main():
         print(__doc__); sys.exit(1)
     sec = sys.argv[1]
     bpm = float(sys.argv[2]) if len(sys.argv) > 2 and sec != "level" else 116.0
+    style = sys.argv[3] if len(sys.argv) > 3 else "rock"
+    if style not in [*BEATS, "click"]: print(f"beats: {', '.join(BEATS)}, click"); sys.exit(1)
     beat, bar = 60 / bpm, 240 / bpm
     if sec == "level":
         click = click_track(int(10 / bar) + 1, bpm)
@@ -118,13 +168,13 @@ def main():
         sr, x = w.read(wav); g = x[:, 0].astype(float) / 2 ** 31
         print(f"\nGuitar peak {peak_db(g):.1f} dBFS (aim for -12 to -6; over -3 turn the UM2 gain down)")
         os.remove(wav); return
-    plan, meta = [], {"section": sec, "bpm": bpm, "count_in_bars": 2, "steps": []}
+    plan, meta = [], {"section": sec, "bpm": bpm, "beat": style if sec == "riffs" else "click", "count_in_bars": 2, "steps": []}
     if sec == "riffs":
         mins = 4
         bars = 2 + int(mins * 60 / bar)
-        click = click_track(bars, bpm)
-        plan.append((0, f"RIFFS at {bpm:g} BPM. Count-in: 2 bars"))
-        plan.append((2 * bar, "GO: start each riff on a downbeat (high click), play it 2-4 times, then mute for a bar or more"))
+        click = click_track(bars, bpm) if style == "click" else drum_track(bars, bpm, style)
+        plan.append((0, f"RIFFS at {bpm:g} BPM, {style} beat. Count-in: 2 bars"))
+        plan.append((2 * bar, "GO: start each riff on a downbeat (crash every 8 bars), play it 2-4 times, then mute for a bar or more"))
         for b in range(2, bars, 8):
             plan.append((b * bar, f"bar {b - 1} / {bars - 2}"))
     else:
