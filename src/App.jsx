@@ -939,6 +939,11 @@ const JOURNEY_MINS  = [5, 15, 30, 60];
 // Sleep timer: stop after this many minutes, fading out over the last SLEEP_FADE seconds
 const SLEEP_MINS = [15, 30, 60, 90], SLEEP_FADE = 90;
 const JOURNEY_COLOR = "#e8b04a";
+// Rise: Ronnie's own riffs (recorded 2026-10-18 over a 116 BPM gallop beat;
+// tools/riffrec). Each is 2 bars at 116 BPM with E as its root, plus a 250 ms
+// tail, and starts 4 ms before its downbeat.
+const RISE_RIFFS = ["rise_riff_1.wav", "rise_riff_2.wav"];
+const RIFF_BPM = 116, RIFF_ROOT = 4, RIFF_BARS = 2, RIFF_GAIN = 0.6, RIFF_PRE = 0.004;
 const journeyAt = (j, f) => {
   if (j.endless) return j.at(f * ENDLESS_WINDOW);
   const p = j.pts;
@@ -1559,6 +1564,8 @@ export default function Chloe() {
   const [beatStyle, setBeatStyle] = useState(_u.beatStyle ?? "off");
   const kitRef = useRef(null);
   const beatRestRef = useRef(0);   // Smooth: Date.now() until which Auto rests the beat (0 = playing)
+  const riffHoldRef = useRef(0);   // Rise: Date.now() until which a riff owns the tempo (Auto and bursts leave it alone)
+  const riffBufsRef = useRef(null); // Rise riffs: { ready, bufs } once fetched (AudioBuffers work in any context)
   // Recorder state: null, or { rec, t0 } while recording
   const [recording, setRecording] = useState(null);
   const [recSecs, setRecSecs] = useState(0);
@@ -2802,6 +2809,59 @@ export default function Chloe() {
     // out, switches and fades back in on the same grid; on/off (and Auto's
     // rests) fade over 1-8 s. beatStyleNow is the style actually playing.
     let beatT = null, beatNext = 0, beatStep = 0, beatBar = 0, beatStyleNow = null;
+    // Rise riffs (RISE_RIFFS): at the peaks, now and then, on a kit beat. The
+    // tempo picks the key: the riff is sped up or slowed by whole semitones to
+    // the one nearest the current tempo, Chloe's root moves to the riff's key (so
+    // as Rise speeds up the riffs modulate upward), the tempo settles on exactly
+    // the riff's, then it plays 2-3 times, restarted on every 2-bar line so it
+    // can't drift off the beat. riff: null, or { buf, rate, bpm, phase, bar, left, giveUp }
+    let riff = null, riffNext = 0, riffForce = false;
+    const loadRiffs = (ac) => {
+      const R = riffBufsRef.current;
+      if (R) return R.ready ? R.bufs : null;
+      riffBufsRef.current = { ready: false, bufs: [] };
+      Promise.all(RISE_RIFFS.map(f => fetch(import.meta.env.BASE_URL + "samples/guitar/" + f)
+        .then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b))))
+        .then(bufs => { riffBufsRef.current = { ready: true, bufs }; })
+        .catch(e => { console.error("riffs:", e); });
+      return null;
+    };
+    const riffDone = () => { riff = null; riffHoldRef.current = 0; riffNext = Date.now() + 40000 + Math.random() * 40000; };
+    const riffBar = (k, ac, t, b0) => {
+      if (riff) {
+        if (riff.phase === "settle") {
+          // Wait until the tempo has arrived, then start on a 2-bar line
+          if (Math.abs(b0 - riff.bpm) / riff.bpm < 0.004 && beatBar % RIFF_BARS === 0) riff.phase = "play";
+          else { if (Date.now() > riff.giveUp) riffDone(); return; }
+        }
+        if (riff.bar % RIFF_BARS === 0) {
+          if (riff.left === 0) { riffDone(); return; }
+          const src = ac.createBufferSource(), g = ac.createGain();
+          src.buffer = riff.buf; src.playbackRate.value = riff.rate; g.gain.value = RIFF_GAIN;
+          src.connect(g); g.connect(k.vol);
+          src.start(Math.max(ac.currentTime, t - RIFF_PRE / riff.rate));
+          src.onended = () => { try { g.disconnect(); } catch {} };
+          riff.left--;
+        }
+        riff.bar++;
+        return;
+      }
+      const J = journeyRef.current;
+      if (!JOURNEYS[J?.id]?.epic || !autoOnRef.current) return;
+      const bufs = loadRiffs(ac);
+      if (!bufs || beatBar % 4 !== 0) return;
+      if (!riffForce && ((J.vals?.e ?? 0) < 0.6 || Date.now() < riffNext || Math.random() > 0.35)) return;
+      riffForce = false;
+      const semi = Math.max(-5, Math.min(5, Math.round(12 * Math.log2(b0 / RIFF_BPM))));
+      const bpm = Math.round(RIFF_BPM * 2 ** (semi / 12));
+      riff = { buf: bufs[Math.floor(Math.random() * bufs.length)], rate: bpm / RIFF_BPM, bpm, phase: "settle", bar: 0,
+               left: 2 + (Math.random() < 0.4 ? 1 : 0), giveUp: Date.now() + 20000 };
+      riffHoldRef.current = Date.now() + 60000;
+      setBpm(bpm);
+      setRootIdx((RIFF_ROOT + semi + 12) % 12);
+    };
+    // Console: __chloeRiff() brings one in at the next 4-bar line (Rise, kit beat); __chloeRiff(false) shows the state
+    window.__chloeRiff = (go = true) => { if (go) { riffForce = true; riffNext = 0; } return riff && { phase: riff.phase, bpm: riff.bpm, left: riff.left, bar: riff.bar }; };
     let beatFadeTo = null, beatFadeEnd = 0, beatFadeAc = null, beatAc = null, beatNoCrash = false;
     // A rainstick fall through the kit's volume, distance and fade
     const rainstick = (k, ac, t, level) => {
@@ -2971,6 +3031,7 @@ export default function Chloe() {
             hit("hhopen", P.o[i]);
             if (i === 0 && beatBar % 16 === 0 && !beatNoCrash) hit("crash", 90);
             if (i === 0 && beatBar > 0) beatNoCrash = false;
+            if (i === 0) riffBar(K0, ac, t, b0);
             beatNext += 60 / bb / 4;
             beatStep = (beatStep + 1) % 16;
             if (beatStep === 0) beatBar++;
@@ -3299,7 +3360,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     const doBurst = () => {
       if (cancelled) return;
       const st = stRef.current;
-      if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm || JOURNEYS[journeyRef.current?.id]?.endless) { scheduleBurst(); return; }
+      if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm || JOURNEYS[journeyRef.current?.id]?.endless || riffHoldRef.current > Date.now()) { scheduleBurst(); return; }
       // Rise only ever pushes forward
       const fwd = JOURNEYS[journeyRef.current?.id]?.epic ? BURSTS.filter(x => x.f > 1) : BURSTS;
       const pool = smoothRef.current >= 0.5 ? fwd.filter(x => !x.snap) : fwd;
@@ -3312,6 +3373,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       setBpm(to);
       burstT = setTimeout(() => {
         if (cancelled) return;
+        // A Rise riff took the tempo over mid-burst: leave it there
+        if (riffHoldRef.current > Date.now()) { burstHome = null; scheduleBurst(); return; }
         tempoSnapRef.current = b.snap;
         setBpm(burstHome); burstHome = null;
         scheduleBurst();
@@ -3434,7 +3497,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // A journey sets tempo, reverb and sustain from its shape (a little wobble
       // around it) instead of picking them at random
       const J = journeyRef.current;
-      if (_al.bpm && J?.vals) {
+      if (_al.bpm && J?.vals && riffHoldRef.current > Date.now()) { /* a Rise riff owns the tempo */ }
+      else if (_al.bpm && J?.vals) {
         const jb = J.homeBpm * J.vals.t;
         const to = Math.round(Math.min(240, Math.max(40, stRef.current.autoTempo === "drift" ? jb * (0.95 + Math.random() * 0.1) : jb)));
         bpm = to;

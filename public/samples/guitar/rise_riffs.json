@@ -1,0 +1,25 @@
+{
+ "source": "riffs_20261018-024257.wav",
+ "riffs": [
+  {
+   "file": "rise_riff_1.wav",
+   "from_take_s": 13.943,
+   "bars": 2,
+   "bpm": 116,
+   "root": "E",
+   "tail_s": 0.25,
+   "phase": "even",
+   "repeat_sim": -0.01
+  },
+  {
+   "file": "rise_riff_2.wav",
+   "from_take_s": 57.391,
+   "bars": 2,
+   "bpm": 116,
+   "root": "E",
+   "tail_s": 0.25,
+   "phase": "odd",
+   "repeat_sim": -0.0
+  }
+ ]
+}
