@@ -467,19 +467,29 @@ const WORLD = {
 const WORLD_FILL = ["conga-h", "conga-h", "conga-m", "conga-l"];   // last beat of every 4th bar
 
 // Rainstick, synthesized (the LM-2 kit has none): pebbles falling past pins =
-// thousands of tiny pings (a 1.5-5 kHz sine dying in 2-6 ms), dense at first then
-// thinning out, each panned at random, softened by a one-pole low-pass ~3.5 kHz.
-// A few takes per context so no two falls sound alike.
-function makeRainstick(ac, dur) {
+// thousands of tiny pings (a short sine dying in a few ms), dense at first then
+// thinning out, softened by a one-pole low-pass. Three sticks: deep wood, the
+// middle one, and bright glass. The fall drifts across the stereo field, as if
+// the stick were tilted past you. A few takes per context so no two sound alike.
+const RAIN_STICKS = {
+  wood:  { f: [600, 2000],  tau: [0.004, 0.009], rate: [220, 320], lp: 2200 },
+  mid:   { f: [1500, 5000], tau: [0.002, 0.006], rate: [380, 540], lp: 3500 },
+  glass: { f: [2800, 7000], tau: [0.001, 0.003], rate: [420, 600], lp: 6000 },
+};
+function makeRainstick(ac, dur, stick = RAIN_STICKS.mid) {
   const sr = ac.sampleRate, n = Math.floor(sr * dur), buf = ac.createBuffer(2, n, sr);
   const L = buf.getChannelData(0), R = buf.getChannelData(1);
-  const peakRate = 380 + Math.random() * 160;   // pings per second at the densest
+  const peakRate = stick.rate[0] + Math.random() * (stick.rate[1] - stick.rate[0]);   // pings per second at the densest
+  const rise = Math.min(0.18, dur * 0.08);   // a quick shake gets dense fast
+  // Pan drift: a sweep of 30-80% of the field, either way, around a centre near the middle
+  const mid = 0.35 + Math.random() * 0.3, sweep = (0.3 + Math.random() * 0.5) * (Math.random() < 0.5 ? -1 : 1);
   for (let t = 0; t < dur;) {
-    const dens = peakRate * (1 - Math.exp(-t / 0.18)) * Math.exp(-t / (dur * 0.42)) + 6;
+    const dens = peakRate * (1 - Math.exp(-t / rise)) * Math.exp(-t / (dur * 0.42)) + 6;
     t += -Math.log(1 - Math.random()) / dens;
     if (t >= dur) break;
-    const f = 1500 + Math.random() * 3500, tau = 0.002 + Math.random() * 0.004;
-    const a = Math.pow(Math.random(), 2) * (0.5 + 0.5 * Math.exp(-t / dur)), pan = Math.random();
+    const f = stick.f[0] + Math.random() * (stick.f[1] - stick.f[0]), tau = stick.tau[0] + Math.random() * (stick.tau[1] - stick.tau[0]);
+    const a = Math.pow(Math.random(), 2) * (0.5 + 0.5 * Math.exp(-t / dur));
+    const pan = Math.min(1, Math.max(0, mid + sweep * (t / dur - 0.5) + (Math.random() - 0.5) * 0.35));
     const s0 = Math.floor(t * sr), len = Math.min(n - s0, Math.floor(tau * 5 * sr));
     const w = 2 * Math.PI * f / sr, d = Math.exp(-1 / (tau * sr));
     for (let k = 0, e = a; k < len; k++, e *= d) {
@@ -487,13 +497,13 @@ function makeRainstick(ac, dur) {
       L[s0 + k] += v * (1 - pan); R[s0 + k] += v * pan;
     }
   }
-  const c = Math.exp(-2 * Math.PI * 3500 / sr);
+  const c = Math.exp(-2 * Math.PI * stick.lp / sr);
   let peak = 0;
   for (const ch of [L, R]) {
     let y = 0;
     for (let k = 0; k < n; k++) { y = (1 - c) * ch[k] + c * y; ch[k] = y; peak = Math.max(peak, Math.abs(y)); }
   }
-  const fadeN = Math.floor(0.4 * sr);   // no click at the tail
+  const fadeN = Math.floor(Math.min(0.4, dur * 0.25) * sr);   // no click at the tail
   for (const ch of [L, R]) for (let k = 0; k < n; k++) ch[k] *= (k > n - fadeN ? (n - k) / fadeN : 1) / (peak || 1);
   return buf;
 }
@@ -2883,13 +2893,25 @@ export default function Chloe() {
     // Console: __chloeRiff() brings one in at the next 4-bar line (Rise, kit beat); __chloeRiff(false) shows the state
     window.__chloeRiff = (go = true) => { if (go) { riffForce = true; riffNext = 0; } return riff && { phase: riff.phase, bpm: riff.bpm, left: riff.left, bar: riff.bar }; };
     let beatFadeTo = null, beatFadeEnd = 0, beatFadeAc = null, beatAc = null, beatNoCrash = false, beatSwapTo = null;
-    // A rainstick fall through the kit's volume, distance and fade
-    const rainstick = (k, ac, t, level) => {
-      if (!k.rain) k.rain = [2.6, 3.6, 4.8].map(d => makeRainstick(ac, d));
+    // A rainstick through the kit's volume, distance and fade. kind: shake
+    // (1-1.5 s accent), fall (2.5-5 s) or pour (6-8 s, slow). The stick is
+    // picked each time; never glass in Endless (nothing shrill for sleep).
+    // Takes are made on first use, two per stick and kind.
+    const RAIN_LEN = { shake: [1, 1.5], fall: [2.5, 5], pour: [6, 8] };
+    const rainstick = (k, ac, t, level, kind = "fall") => {
+      const sleep = !!JOURNEYS[journeyRef.current?.id]?.endless;
+      const r = Math.random();
+      const stick = sleep ? (r < 0.6 ? "wood" : "mid") : r < 0.35 ? "wood" : r < 0.75 ? "mid" : "glass";
+      if (!k.rain) k.rain = {};
+      const key = stick + "-" + kind, takes = k.rain[key] || (k.rain[key] = []);
+      if (takes.length < 2) {
+        const [lo, hi] = RAIN_LEN[kind];
+        takes.push(makeRainstick(ac, lo + Math.random() * (hi - lo), RAIN_STICKS[stick]));
+      }
       const src = ac.createBufferSource(), g = ac.createGain();
-      src.buffer = k.rain[Math.floor(Math.random() * k.rain.length)];
+      src.buffer = takes[Math.floor(Math.random() * takes.length)];
       src.playbackRate.value = 0.85 + Math.random() * 0.3;
-      g.gain.value = level;
+      g.gain.value = level * (kind === "shake" ? 0.75 : 1) * (stick === "glass" ? 0.8 : 1);
       src.connect(g); g.connect(k.vol); src.start(t);
     };
     // A synthesized hand drum through the kit's volume, distance and fade; to
@@ -2908,7 +2930,7 @@ export default function Chloe() {
       src.start(Math.max(t, ac.currentTime));
       src.onended = () => { try { p.disconnect(); } catch {} };
     };
-    window.__chloeRain = () => { const ac = getCtx(); rainstick(getKit(ac), ac, ac.currentTime + 0.05, 0.32); };
+    window.__chloeRain = (kind) => { const ac = getCtx(); rainstick(getKit(ac), ac, ac.currentTime + 0.05, 0.32, kind); };
     const rampBeat = (k, ac, v, sec) => {
       for (const g of [k.fade, k.fadeRoom]) {
         const p = g.gain;
@@ -3023,9 +3045,15 @@ export default function Chloe() {
             if (WORLD[beatStyleNow]) {
               const lb = b0 > 120 ? b0 / 2 : b0, sd = 60 / lb / 4;   // laid back: half-time above 120
               worldStep(K0, ac, beatStyleNow, beatStep, beatBar, beatNext, sd, beatNoCrash);
-              // Now and then a rainstick falls across the bar (about one in every 16 bars)
-              if (beatStep === 0 && beatBar % 8 === 4 && Math.random() < 0.5)
-                rainstick(K0, ac, beatNext, beatStyleNow === "brushes" ? 0.26 : 0.32);
+              // Now and then a rainstick falls across the bar (about one in every 16
+              // bars; in calm stretches, Endless or brushes about one in 8, often a
+              // long pour), and now and then a quick shake leads into a 4-bar line
+              const calm = JOURNEYS[journeyRef.current?.id]?.endless || beatStyleNow === "brushes" || energy < 0.3;
+              const rl = beatStyleNow === "brushes" ? 0.26 : 0.32;
+              if (beatStep === 0 && (calm ? beatBar % 4 === 0 && Math.random() < 0.5 : beatBar % 8 === 4 && Math.random() < 0.5))
+                rainstick(K0, ac, beatNext, rl, calm && Math.random() < 0.4 ? "pour" : "fall");
+              else if (beatStep === 8 && beatBar % 4 === 3 && Math.random() < 0.2)
+                rainstick(K0, ac, beatNext, rl, "shake");
               if (beatStep === 0 && beatBar > 0) beatNoCrash = false;
               beatNext += sd;
               beatStep = (beatStep + 1) % 16;
