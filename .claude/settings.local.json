@@ -10,7 +10,30 @@
       "Bash(export:*)",
       "Bash(grep -v \"cannot move ''.*\\\\.\\\\.'' \")",
       "Bash(grep -v \"cannot move ''.*\\\\.'' \")",
-      "Bash(rm -rf /home/rnorth/chloe3/tmp)"
+      "Bash(rm -rf /home/rnorth/chloe3/tmp)",
+      "Bash(git branch:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh api:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh run:*)",
+      "Bash(git remote:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(~/.nvm/nvm.sh:*)",
+      "Bash(.:*)",
+      "Bash(cat:*)",
+      "Bash(cp:*)",
+      "Bash(/home/rnorth/chloe3/README.md:*)",
+      "Read(//home/rnorth/**)",
+      "Bash(git:*)",
+      "Bash(file:*)",
+      "Bash(. ~/.nvm/nvm.sh && nvm use v20 --silent && npm run build 2>&1 | tail -20)",
+      "Bash(which python3:*)",
+      "Bash(python3 -c \"\nimport docx\ndoc = docx.Document\\('/home/rnorth/chloe3/docs/provenance/chloe_scale_explorer_provenance.docx'\\)\nfor p in doc.paragraphs:\n    print\\(p.text\\)\n\")",
+      "WebFetch(domain:www.goatcounter.com)"
     ]
   }
 }
