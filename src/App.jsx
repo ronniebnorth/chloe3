@@ -131,6 +131,68 @@ const KNOWN = {
   1843: "Coltrane Dominant", // 0 1 4 5 8 9 10 — augmented hexatonic + ♭7
 };
 
+// New wave. Gated reverb (the 1980s snare): a burst of dense noise that holds
+// flat for ~230 ms and then is cut off dead, darkened a little.
+function gatedIR(ac) {
+  const sr = ac.sampleRate, n = Math.floor(sr * 0.26), buf = ac.createBuffer(2, n, sr);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c); let lp = 0;
+    for (let i = 0; i < n; i++) { lp += 0.45 * ((Math.random() * 2 - 1) - lp); d[i] = lp * (i < sr * 0.005 ? i / (sr * 0.005) : i > n - sr * 0.012 ? (n - i) / (sr * 0.012) : 1) * 0.5; }
+  }
+  return buf;
+}
+// Synth bass, one note: two detuned saws and a square an octave down through a
+// resonant low-pass whose cutoff snaps open and closes (the pulsing 8ths)
+function neonBass(ac, dest, freq, t, dur, vel) {
+  const g = ac.createGain(), f = ac.createBiquadFilter();
+  f.type = "lowpass"; f.Q.value = 7;
+  f.frequency.setValueAtTime(380 + 2400 * vel, t); f.frequency.setTargetAtTime(260, t + 0.005, 0.07);
+  const os = [["sawtooth", freq, -6], ["sawtooth", freq, 6], ["square", freq / 2, 0]].map(([w, fr, dt]) => {
+    const o = ac.createOscillator(); o.type = w; o.frequency.value = fr; o.detune.value = dt; o.connect(f); return o; });
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.16 * vel, t + 0.004);
+  g.gain.setValueAtTime(0.16 * vel, t + dur * 0.8); g.gain.linearRampToValueAtTime(0, t + dur);
+  f.connect(g); g.connect(dest);
+  os.forEach(o => { o.start(t); o.stop(t + dur + 0.02); });
+  os[0].onended = () => { try { g.disconnect(); f.disconnect(); } catch {} };
+}
+// New wave chord roots, as scale degrees, two bars each: I-vi-IV-V, I-V-vi-IV,
+// vi-IV-I-V, I-IV-vi-V
+const NEON_PROGS = [[0, 5, 3, 4], [0, 4, 5, 3], [5, 3, 0, 4], [0, 3, 5, 4]];
+const NEON_BASS = [0, 0, 12, 0, 0, 0, 12, 0];   // octave pops in the 8th-note pulse
+
+// Juno-style pad: root, fifth, octave and high fifth (plus the 9th when the
+// scale has it, the suspended 80s shimmer), two detuned saws each, softened,
+// then the Juno's chorus: two short modulated delays spread left and right
+function synthJuno(ac, freq, opts) {
+  let F = fold(freq, 65, 131);
+  const master = ac.createGain(); master.gain.value = 0.11;   // level with the tanpura
+  const sum = ac.createGain(); sum.gain.value = 1;
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2600; lp.Q.value = 0.6;
+  const semis = opts?.scale?.() ?? [0, 7];
+  const ratios = [1, 1.5, 2, 3].concat(semis.some(x => ((x % 12) + 12) % 12 === 2) ? [2.25] : []);
+  const oscs = [], lfos = [];
+  ratios.forEach(r => [-9, 9].forEach(dt => {
+    const o = ac.createOscillator(); o.type = "sawtooth"; o.frequency.value = F * r; o.detune.value = dt;
+    const g = ac.createGain(); g.gain.value = r === 1 ? 0.3 : r >= 2.25 ? 0.12 : 0.2; o.connect(g); g.connect(sum); oscs.push(o);
+  }));
+  sum.connect(lp); lp.connect(master);
+  [[0.007, 0.5, -0.7], [0.011, 0.83, 0.7]].forEach(([d, rate, pan]) => {
+    const dl = ac.createDelay(0.05); dl.delayTime.value = d;
+    const l = ac.createOscillator(), lg = ac.createGain(); l.frequency.value = rate; lg.gain.value = 0.0025; l.connect(lg); lg.connect(dl.delayTime); lfos.push(l);
+    const p = ac.createStereoPanner(); p.pan.value = pan;
+    lp.connect(dl); dl.connect(p); p.connect(master);
+  });
+  [...oscs, ...lfos].forEach(o => o.start());
+  return {
+    node: master, oscs, baseFreq: freq,
+    setFreq: (ratio, glide) => {
+      const now = ac.currentTime; F *= ratio;
+      for (const o of oscs) { o.frequency.cancelScheduledValues(now); o.frequency.setValueAtTime(o.frequency.value, now); o.frequency.exponentialRampToValueAtTime(o.frequency.value * ratio, now + glide); }
+    },
+    stop: () => { [...oscs, ...lfos].forEach(o => { try { o.stop(); } catch {} }); setTimeout(() => { try { master.disconnect(); } catch {} }, 150); },
+  };
+}
+
 // Overtone voices (throat singing, jaw harp) play the drone root's own
 // harmonic series; these are the harmonics they sing, kept to the ones whose
 // pitch is in the scale (6, 8, 12, 16 = fifth and root, always safe).
@@ -309,6 +371,7 @@ function synthJawHarp(ac, freq, opts) {
 function synthDrone(ac, freq, type, opts) {
   if (type === "throat") return synthThroat(ac, freq, opts);
   if (type === "jawharp") return synthJawHarp(ac, freq, opts);
+  if (type === "juno") return synthJuno(ac, freq, opts);
   const oscs = [];
   const mk = (f, wt, detune = 0) => {
     const o = ac.createOscillator();
@@ -624,6 +687,10 @@ const tensionOf = (semis) => {
 // Breakbeat patterns for the sampled LinnDrum (LM-2) kit: 16 steps per bar,
 // step → velocity. k kick, s snare, g ghost snare, h closed hat, o open hat.
 const BREAKS = {
+  // New wave (1980-86): kick on 1 and 3 with a push before 3, a huge gated
+  // snare + clap on 2 and 4, driving 16th hats, an open hat into the bar
+  newwave: { k: { 0: 118, 8: 112, 10: 78 }, s: { 4: 120, 12: 124 }, g: {},
+             h: Object.fromEntries([...Array(16).keys()].map(i => [i, i % 2 ? 40 : 70])), o: { 14: 52 } },
   // Big-beat break: kick on 1 and the "and" of 3, ghosted snares between
   break: { k: { 0: 120, 10: 110 }, s: { 4: 115, 12: 118 }, g: { 7: 34, 9: 30, 15: 40 },
            h: { 0: 72, 2: 48, 4: 66, 6: 48, 8: 72, 10: 48, 12: 66 }, o: { 14: 70 } },
@@ -769,7 +836,7 @@ function makeHandDrum(ac, d) {
   return buf;
 }
 
-const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes", shaman: "shaman" };
+const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes", shaman: "shaman", newwave: "neon" };
 
 // Linear fills for fusion: one drum per 16th. Short = the last beat of every
 // 4th bar; long = the last two beats of every 8th, phrased in 3s across the beat.
@@ -796,7 +863,7 @@ const tunedRatio = (semi, tuning) => {
 
 // Per-sound gain so every instrument/wave plays at about the same loudness
 // (measured K-weighted, eighth-note runs C3-C5, levelled to -28 LUFS).
-const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, lute: 1.88, fiddle: 0.78, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
+const SOUND_GAIN = { piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, lute: 1.88, fiddle: 0.78, dx7: 0.52, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
 
 // Steppe strings slide into a note from the one before (within a 4th, not
 // across a rest, not between the notes of one chord)
@@ -898,6 +965,30 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     connectOut(g);
     src2.start(now); src2.stop(now + 0.05);
     o.start(now); o.stop(now + dur);
+    cleanup(dur);
+    return { start: now, stop: now + dur };
+  }
+
+  if (instrument === "dx7") {
+    // DX7 electric piano: a 1:1 FM pair whose brightness (index) falls after
+    // the strike, a second carrier a few cents up for the chorus, and the
+    // "tine": a 14:1 pair that only clicks for the first few ms
+    const dur = Math.min(Math.max(beatDur * 2.4, 0.6), 3.5), g = mkG();
+    const pair = (ratio, idx0, idx1, tau, cents, lvl) => {
+      const c = mkO("sine"), m = mkO("sine"), mg = mkG(), cg = mkG();
+      c.frequency.value = freq; c.detune.value = cents; m.frequency.value = freq * ratio;
+      mg.gain.setValueAtTime(idx0 * freq, now); mg.gain.setTargetAtTime(idx1 * freq, now + 0.002, tau);
+      m.connect(mg); mg.connect(c.frequency); cg.gain.value = lvl; c.connect(cg); cg.connect(g);
+      for (const o of [c, m]) { o.start(now); o.stop(now + dur + 0.02); }
+    };
+    pair(1, 2.4, 0.35, 0.25, 0, 0.55);
+    pair(1, 2, 0.3, 0.3, 7, 0.35);
+    pair(14, 1.6, 0, 0.012, 0, 0.18);
+    g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(vel * 0.8, now + 0.003);
+    g.gain.setTargetAtTime(vel * 0.35, now + 0.01, 0.35);
+    g.gain.setValueAtTime(vel * 0.35 * Math.exp(-(dur - 0.09) / 0.35) + 0.0001, now + dur - 0.08);
+    g.gain.linearRampToValueAtTime(0, now + dur);
+    connectOut(g);
     cleanup(dur);
     return { start: now, stop: now + dur };
   }
@@ -1120,12 +1211,15 @@ function Piano({ active, playing, K }) {
 const ROOTS = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
 const OFFS  = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const TIMBRES = ["sine", "triangle", "square", "sawtooth"];
-const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle"];
+const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7"];
 // Steppe: with the throat-singing or jaw-harp drone, or the shaman beat, the
 // lead becomes Mongolian strings: the horsehead fiddle at slow tempos (90 BPM
 // and under), the plucked lute at faster ones (100 and up; between, it keeps
 // whichever it had). The chosen instrument comes back when the steppe sounds go.
-const isSteppe = st => (st.droneOn && (st.droneWave === "throat" || st.droneWave === "jawharp")) || st.beatStyle === "shaman";
+const isSteppe = st => st.beatStyle === "shaman" || (st.beatStyle !== "newwave" && st.droneOn && (st.droneWave === "throat" || st.droneWave === "jawharp"));
+// Neon (new wave): the new wave beat or the Juno pad makes the lead a DX7
+// electric piano and lifts the scale picks toward bright major colours
+const isNeon = st => st.beatStyle === "newwave" || (st.beatStyle !== "shaman" && st.droneOn && st.droneWave === "juno");
 const GRP_NAME = { 3: "Tritonic", 4: "Tetratonic", 5: "Pentatonic", 6: "Hexatonic", 7: "Heptatonic", 8: "Octatonic" };
 const GRP_PFX  = { 3: "tri", 4: "tet", 5: "pen", 6: "hex", 7: "hep", 8: "oct" };
 // Sidebar group key — outside families get their own groups below the main ones
@@ -1785,7 +1879,7 @@ export default function Chloe() {
       return {
         rootIdx:    parseInt(p.get("r") ?? "0"),
         timbre:     ["sine","triangle","square","sawtooth"].includes(p.get("t")) ? p.get("t") : "sine",
-        instrument: ["piano","guitar","xylo","space","lute","fiddle"].includes(p.get("i")) ? p.get("i") : null,
+        instrument: ["piano","guitar","xylo","space","lute","fiddle","dx7"].includes(p.get("i")) ? p.get("i") : null,
         noteVol:    Number.isFinite(parseFloat(p.get("v"))) ? parseFloat(p.get("v")) : 0.7,
         reverbAmt:  parseFloat(p.get("rv") ?? "0.75"),
         delayAmt:   parseFloat(p.get("dl") ?? "0.15"),
@@ -1795,7 +1889,7 @@ export default function Chloe() {
         aRef:       parseInt(p.get("a") ?? "440"),
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         droneOn:    p.get("dr") === "1",
-        droneWave:  ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp"].includes(p.get("dw")) ? p.get("dw") : undefined,
+        droneWave:  ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno"].includes(p.get("dw")) ? p.get("dw") : undefined,
         melMode:    p.get("m") === "1",
         autoOff:    p.get("al") ?? "",
         autoOn:     p.get("an") ?? "",
@@ -1810,7 +1904,7 @@ export default function Chloe() {
         sleepMins:  SLEEP_MINS.includes(parseInt(p.get("sl"))) ? parseInt(p.get("sl")) : undefined,
         symphonic:  p.get("sy") === "1",
         beatWander: p.get("bw") === "1",
-        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman"].includes(p.get("bt")) ? p.get("bt") : "off",
+        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
         sidebarW:   parseInt(p.get("sw") ?? "520"),
       };
@@ -2901,7 +2995,7 @@ export default function Chloe() {
       if (isSteppe(stRef.current)) {
         if (b <= 90) steppeInst = "fiddle"; else if (b >= 100) steppeInst = "lute";
         inst = steppeInst;
-      }
+      } else if (isNeon(stRef.current)) inst = "dx7";
       const ac = getCtx();
       const rev = getOrCreateReverb(ac);
       const del = getOrCreateDelay(ac);
@@ -3335,6 +3429,30 @@ export default function Chloe() {
       if (tense && i === 14) hit(style === "hand" ? "tom-l" : "kick", 76);
       if (i === 0 && bar % 16 === 0 && !noBoom) { hit("kick-alt", 110); hit("tom-ll", 90); }
     };
+    // New wave extras on top of the kit pattern: the snare also through the
+    // gated reverb (its own LM-2 instance), a clap on it, a tom run down the
+    // last two beats of every 8th bar, and the synth bass pulsing 8ths on the
+    // chord root (NEON_PROGS over the scale, two bars a chord, octave pops)
+    let neonProg = NEON_PROGS[0];
+    const neonStep = (K0, ac, i, bar, t, sd, st) => {
+      if (!K0.gate) {
+        const conv = ac.createConvolver(); conv.buffer = gatedIR(ac);
+        const gg = ac.createGain(); gg.gain.value = 0.9; conv.connect(gg); gg.connect(K0.vol);
+        K0.gate = DrumMachine(ac, { instrument: "LM-2", destination: conv });
+        K0.bass = ac.createGain(); K0.bass.gain.value = 1; K0.bass.connect(K0.fade);
+      }
+      if (BREAKS.newwave.s[i]) { K0.gate.start({ note: "snare-m", velocity: 120, time: t }); K0.kit.start({ note: "clap", velocity: 72, time: t }); }
+      if (bar % 8 === 7 && i >= 8) K0.kit.start({ note: ["tom-hh", "tom-hh", "tom-h", "tom-h", "tom-m", "tom-m", "tom-l", "tom-ll"][i - 8], velocity: 96 + (i - 8) * 3, time: t });
+      if (i % 2 === 0 && lastBase && lastBase.length) {
+        if (i === 0 && bar % 8 === 0) neonProg = NEON_PROGS[Math.floor(Math.random() * NEON_PROGS.length)];
+        const L = lastBase.length, deg = neonProg[Math.floor(bar / 2) % 4] % L;
+        let m = 36 + OFFS[st.rootIdx] + lastBase[deg];
+        while (m > 47) m -= 12;
+        m += NEON_BASS[(i / 2) % 8];
+        const fr = st.aRef * 2 ** ((m - 69) / 12);
+        neonBass(ac, K0.bass, fr, t, sd * 1.7, i % 8 === 0 ? 1 : 0.75);
+      }
+    };
     const beatLoop = () => {
       try {
         const st = stRef.current, sm = smoothRef.current, F = 1 + 7 * sm;
@@ -3412,7 +3530,8 @@ export default function Chloe() {
               continue;
             }
             const P = BREAKS[beatStyleNow] || BREAKS.break, i = beatStep, t = beatNext;
-            const fill = beatBar % 4 === 3 && i >= 12;
+            if (beatStyleNow === "newwave") neonStep(K0, ac, i, beatBar, t, 60 / bb / 4, st);
+            const fill = beatBar % 4 === 3 && i >= 12 && beatStyleNow !== "newwave";
             const hit = (note, v, k2 = kit) => v && k2.start({ note, velocity: Math.min(127, Math.round(v)), time: t });
             // Tension thickens each style without turning it into another one:
             // an extra kick on the last 16th, quiet ghost hats on the off-16ths
@@ -3677,7 +3796,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (AL.droneOn   && choice.droneOn   != null) setDroneOn(!!choice.droneOn);
       if (AL.droneVol  && choice.droneVol  != null) setDroneVol(Math.max(0, Math.min(2, choice.droneVol)));
       if (AL.droneOct  && choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
-      if (AL.droneWave && choice.droneWave != null && ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
+      if (AL.droneWave && choice.droneWave != null && ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
       setArpOn(true);
       // Commentary and requests go to chat panel; banner shows parameter summary only
       const chatParts = [choice.commentary, choice.request ? `✦ ${choice.request}` : null].filter(Boolean);
@@ -3808,7 +3927,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // ♥ likes bend every brightness target toward the liked brightness, and
       // now and then bring back a liked scale outright
       const likes = likesRef.current, likeB = likes.length ? likedMean(likes, "b") : null;
-      const bend = b => (likeB && b !== null ? b + likeB.k * 0.6 * (likeB.v - b) : b);
+      const neon = isNeon(stRef.current);
+      const bend = b => { if (b === null) return b; if (likeB) b += likeB.k * 0.6 * (likeB.v - b); return neon ? b + 0.35 * (0.7 - b) : b; };
       const jv = journeyRef.current?.vals, jb = jv ? bend(jv.b) : null;
       // (in a journey, only a liked scale near where the journey is heading)
       if (!entry && likes.length) {
@@ -3830,7 +3950,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const override = overrideTargetRef.current;
       const brainTarget = eegBrainTarget(eegDataRef.current, BRIGHTNESS_CONFIG);
       if (brainTarget !== null) setEegTarget(brainTarget);
-      const brightTarget = bend(override !== null ? override : brainTarget ?? (likeB && Math.random() < likeB.k ? likeB.v : null));
+      const brightTarget = bend(override !== null ? override : brainTarget ?? (likeB && Math.random() < likeB.k ? likeB.v : neon ? 0.7 : null));
       if (!entry && brightTarget !== null) {
         const catFlat = catalogue.map(e => ({ familyId: e.fam.id, modeIdx: e.modeIdx, pattern: e.fam.modes[e.modeIdx] }));
         // A set target (slider, lock, arc) is held tighter than EEG wandering
@@ -3903,9 +4023,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         const fam = BEAT_FAMILY[stRef.current.beatStyle];
         const w = stRef.current.beatWander
           ? (sleepJ ? { brushes: 1, hand: 0.7, shaman: 0.8 }
-            : epicJ ? { break: 0.6, drive: 1, heavy: 0.6, shaman: 0.5 }
+            : epicJ ? { break: 0.6, drive: 1, heavy: 0.6, shaman: 0.5, newwave: 0.7 }
             : { brushes: 0.8 * (1 - e) ** 2, downtempo: 0.9, hand: 1 - 0.6 * e, shaman: 1,
-                break: 0.3 + 0.8 * e, drive: 0.1 + 1.2 * e, heavy: 0.6 * e, fusion: 0.35 })
+                break: 0.3 + 0.8 * e, drive: 0.1 + 1.2 * e, heavy: 0.6 * e, fusion: 0.35, newwave: 0.5 + 0.6 * e })
           : fam === "world" ? { downtempo: 0.4 + e, hand: 1.1 - e }
                 : fam === "kit" ? { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 } : null;
         if (w && stRef.current.beatWander) delete w[stRef.current.beatStyle];
@@ -3918,6 +4038,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           // Wandering into shaman brings the steppe with it now and then: a throat or jaw-harp drone
           if (pickB === "shaman" && stRef.current.beatWander && stRef.current.droneOn && _al.droneWave && Math.random() < 0.5)
             later(() => setDroneWave(Math.random() < 0.6 ? "throat" : "jawharp"));
+          // ...and into new wave, now and then the Juno pad
+          if (pickB === "newwave" && stRef.current.beatWander && stRef.current.droneOn && _al.droneWave && Math.random() < 0.5)
+            later(() => setDroneWave("juno"));
         }
       }
       // Smooth: the beat sometimes rests for 1-3 picks, fading out and back in
@@ -3948,7 +4071,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.sustain && J?.vals) { const su = parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)); later(() => setSustainMult(su)); }
       else if (_al.sustain && maybe()) { const su = [0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]; later(() => setSustainMult(su)); }
       if (_al.droneOn && maybe())   { const on = likedPick(likes, "droneOn") ?? Math.random() > (epicJ ? 0.15 : 0.35); later(() => setDroneOn(on)); }
-      const drones = sleepJ ? ["sine", "pad"] : epicJ ? ["organ", "strings"] : ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp"];
+      const drones = sleepJ ? ["sine", "pad"] : epicJ ? ["organ", "strings"] : ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno"];
       if (_al.droneWave && (sleepJ || epicJ) && !drones.includes(stRef.current.droneWave)) later(() => setDroneWave(sleepJ ? "pad" : "organ"));
       else if (_al.droneWave && maybe()) { const w = likedPick(likes, "drone", drones) ?? drones[Math.floor(Math.random() * drones.length)]; later(() => setDroneWave(w)); }
       if (_al.droneOct && maybe())  { const o = [-12, -24, -36][Math.floor(Math.random() * 3)]; later(() => setDroneOct(o)); }
@@ -4443,7 +4566,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         {beatStyle !== "off" && (
           <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
             <button onClick={() => setBeatWander(w => !w)} title="Wander: the drums roam across every style as the music goes, from brushes and shaman drums to breakbeats" style={{ ...chip(beatWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
-            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
+            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["newwave", "new wave"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
               <button key={v} onClick={() => { setBeatStyle(v); setBeatWander(false); }} style={{ ...chip(beatStyle === v && !beatWander), fontSize: 10, padding: "4px 11px", ...(beatWander && beatStyle === v ? { borderStyle: "dashed" } : {}) }}>{l}</button>
             ))}
           </div>
@@ -5280,13 +5403,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Drone type */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude. throat: Mongolian throat singing, a buzzing voice with a whistled overtone melody on the root's own harmonics (only those in the scale), a growl an octave under, breathing every 15-25 s. jaw harp: a plucked reed in a gallop or straight rhythm, the mouth jumping between its harmonics; plucks on the beat when drums play." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
+              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude. throat: Mongolian throat singing, a buzzing voice with a whistled overtone melody on the root's own harmonics (only those in the scale), a growl an octave under, breathing every 15-25 s. jaw harp: a plucked reed in a gallop or straight rhythm, the mouth jumping between its harmonics; plucks on the beat when drums play. juno: an 80s polysynth pad, root/fifth/octave (+9th) detuned saws through a stereo chorus." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
               <select value={droneWave} onChange={e => setDroneWave(e.target.value)} style={{
                 marginLeft: "auto", background: K.bg3, color: K.txt, border: `1px solid ${K.br}`,
                 borderRadius: 3, padding: "3px 6px", fontSize: 9, fontFamily: "inherit",
                 cursor: "pointer", letterSpacing: 1,
               }}>
-                {["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp"].map(w => (
+                {["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno"].map(w => (
                   <option key={w} value={w}>{w === "jawharp" ? "jaw harp" : w}</option>
                 ))}
               </select>
@@ -5654,9 +5777,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves), and wandering into shaman sometimes brings a throat-singing or jaw-harp drone. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends); it makes the lead a DX7 electric piano and lifts the scales bright. Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves), and wandering into shaman sometimes brings a throat-singing or jaw-harp drone. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman"].map(v => (
+                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
                     background: beatStyle === v ? K.a : K.bg3,
                     color: beatStyle === v ? "#000" : K.txt,
