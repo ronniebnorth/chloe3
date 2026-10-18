@@ -940,9 +940,10 @@ const JOURNEY_MINS  = [5, 15, 30, 60];
 const SLEEP_MINS = [15, 30, 60, 90], SLEEP_FADE = 90;
 const JOURNEY_COLOR = "#e8b04a";
 // Rise: Ronnie's own riffs (recorded 2026-10-18 over a 116 BPM gallop beat;
-// tools/riffrec). Each is 2 bars at 116 BPM with E as its root, plus a 250 ms
-// tail, and starts 4 ms before its downbeat.
-const RISE_RIFFS = ["rise_riff_1.wav", "rise_riff_2.wav"];
+// tools/riffrec). Each is 2 bars with E as its root, plus a 250 ms tail, and
+// starts 4 ms before its downbeat. bpm = the tempo he actually played it at
+// (the beat was 116); playback rate corrects for it.
+const RISE_RIFFS = [{ f: "rise_riff_1.wav", bpm: 114.8 }, { f: "rise_riff_2.wav", bpm: 116.6 }];
 const RIFF_BPM = 116, RIFF_ROOT = 4, RIFF_BARS = 2, RIFF_GAIN = 0.6, RIFF_PRE = 0.004;
 const journeyAt = (j, f) => {
   if (j.endless) return j.at(f * ENDLESS_WINDOW);
@@ -2820,7 +2821,7 @@ export default function Chloe() {
       const R = riffBufsRef.current;
       if (R) return R.ready ? R.bufs : null;
       riffBufsRef.current = { ready: false, bufs: [] };
-      Promise.all(RISE_RIFFS.map(f => fetch(import.meta.env.BASE_URL + "samples/guitar/" + f)
+      Promise.all(RISE_RIFFS.map(({ f }) => fetch(import.meta.env.BASE_URL + "samples/guitar/" + f)
         .then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b))))
         .then(bufs => { riffBufsRef.current = { ready: true, bufs }; })
         .catch(e => { console.error("riffs:", e); });
@@ -2854,7 +2855,8 @@ export default function Chloe() {
       riffForce = false;
       const semi = Math.max(-5, Math.min(5, Math.round(12 * Math.log2(b0 / RIFF_BPM))));
       const bpm = Math.round(RIFF_BPM * 2 ** (semi / 12));
-      riff = { buf: bufs[Math.floor(Math.random() * bufs.length)], rate: bpm / RIFF_BPM, bpm, phase: "settle", bar: 0,
+      const which = Math.floor(Math.random() * bufs.length);
+      riff = { buf: bufs[which], rate: bpm / RISE_RIFFS[which].bpm, bpm, phase: "settle", bar: 0,
                left: 2 + (Math.random() < 0.4 ? 1 : 0), giveUp: Date.now() + 20000 };
       riffHoldRef.current = Date.now() + 60000;
       setBpm(bpm);
