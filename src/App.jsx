@@ -927,6 +927,8 @@ JOURNEYS.endless = { label: "endless", home: 1453, endless: true,
   } };
 const ENDLESS_WINDOW = 40 * 60000;   // how much of Endless a card or the stage draws
 const JOURNEY_MINS  = [5, 15, 30, 60];
+// Sleep timer: stop after this many minutes, fading out over the last SLEEP_FADE seconds
+const SLEEP_MINS = [15, 30, 60, 90], SLEEP_FADE = 90;
 const JOURNEY_COLOR = "#e8b04a";
 const journeyAt = (j, f) => {
   if (j.endless) return j.at(f * ENDLESS_WINDOW);
@@ -1459,6 +1461,7 @@ export default function Chloe() {
         journey:    Object.hasOwn(JOURNEYS, p.get("jo") ?? "") ? p.get("jo") : "off",
         smooth:     Math.min(100, Math.max(0, parseInt(p.get("sm") ?? "0") || 0)) / 100,
         journeyMins: JOURNEY_MINS.includes(parseInt(p.get("jm"))) ? parseInt(p.get("jm")) : 15,
+        sleepMins:  SLEEP_MINS.includes(parseInt(p.get("sl"))) ? parseInt(p.get("sl")) : undefined,
         symphonic:  p.get("sy") === "1",
         beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes"].includes(p.get("bt")) ? p.get("bt") : "off",
         grouping:   p.get("g") === "mix" ? "mix" : [3, 5, 6, 7].includes(parseInt(p.get("g"))) ? parseInt(p.get("g")) : 0,
@@ -1516,6 +1519,13 @@ export default function Chloe() {
   // Journey — see JOURNEYS above. journeyRef holds the live run while Auto plays one
   const [journey,     setJourney]     = useState(_u.journey ?? "off");
   const [journeyMins, setJourneyMins] = useState(_u.journeyMins ?? 15);
+  // 0 = off. Remembered between visits; a link can set it with sl=
+  const [sleepMins, setSleepMins] = useState(() => {
+    if (_u.sleepMins) return _u.sleepMins;
+    try { const v = parseInt(localStorage.getItem("chloe-sleep")); return SLEEP_MINS.includes(v) ? v : 0; } catch { return 0; }
+  });
+  const [sleepLeft, setSleepLeft] = useState(null);   // ms left while the timer runs
+  useEffect(() => { try { localStorage.setItem("chloe-sleep", String(sleepMins)); } catch {} }, [sleepMins]);
   const [journeyNow,  setJourneyNow]  = useState(null); // { el, f, arrived, ending } for the display
   const journeyRef = useRef(null);  // { id, mins, startMs, homeBpm, vals, arrived, ending }
   // Smooth (0-1): hides where Auto's changes happen. Staggers them across the
@@ -1791,6 +1801,47 @@ export default function Chloe() {
     }, settle * 1000));
     setJourneyNow(p => p && { ...p, ending: true });
   };
+
+  // Sleep timer: counts from ▶ (or from changing it while playing). Over the
+  // last SLEEP_FADE s the master eases down to silence, then everything stops
+  // (a running recording is saved). The ending timer in endTimersRef holds
+  // off the context swap so the fresh context doesn't come back at full level.
+  useEffect(() => {
+    if (!autoOn || !sleepMins || journey === "off") { setSleepLeft(null); return; }
+    const end = Date.now() + sleepMins * 60000;
+    let fading = null;
+    const tick = () => {
+      const left = end - Date.now();
+      setSleepLeft(Math.max(0, left));
+      if (left <= SLEEP_FADE * 1000 && !fading) {
+        const ac = getCtx(), g = ac.__masterTap?.gain;
+        fading = { ac, g, id: setTimeout(() => {}, left + 5000) };
+        endTimersRef.current.push(fading.id);
+        if (g) { g.cancelScheduledValues(ac.currentTime); g.setValueAtTime(g.value, ac.currentTime); g.setTargetAtTime(0, ac.currentTime, Math.max(1, left / 1000) / 4); }
+      }
+      if (left <= 0) {
+        clearInterval(id);
+        endTimersRef.current = [];
+        if (recordingRef.current) toggleRecRef.current?.();
+        stopAuto(); setDroneOn(false);
+        const g = fading?.g, ac = fading?.ac;
+        fading = null;
+        if (g) setTimeout(() => { g.cancelScheduledValues(ac.currentTime); g.setValueAtTime(0, ac.currentTime); g.linearRampToValueAtTime(0.82, ac.currentTime + 0.5); }, 10000);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => {
+      clearInterval(id);
+      // Changed or stopped mid-fade: bring the level back
+      if (fading) {
+        endTimersRef.current = endTimersRef.current.filter(t => t !== fading.id);
+        const { g, ac } = fading;
+        if (g) { g.cancelScheduledValues(ac.currentTime); g.setValueAtTime(g.value, ac.currentTime); g.linearRampToValueAtTime(0.82, ac.currentTime + 2); }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOn, sleepMins, journey]);
 
   // Stopping Auto / Claude ends the session and saves its log
   useEffect(() => { if (!autoOn && !demoOn && arcRef.current) stopArc(); }, [autoOn, demoOn]);
@@ -3652,7 +3703,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (autoTempo !== "bursts") p.set("at", autoTempo);
     if (symphonic) p.set("sy", "1");
     if (beatStyle !== "off") p.set("bt", beatStyle);
-    if (journey !== "off") { p.set("jo", journey); if (journeyMins !== 15) p.set("jm", journeyMins); }
+    if (journey !== "off") { p.set("jo", journey); if (journeyMins !== 15) p.set("jm", journeyMins); if (sleepMins) p.set("sl", sleepMins); }
     if (smooth) p.set("sm", Math.round(smooth * 100));
     // Only differences from the defaults travel: al = unticked, an = ticked-but-off-by-default
     const autoOff = Object.keys(AUTO_LOCKS_DEFAULT).filter(k => AUTO_LOCKS_DEFAULT[k] && !autoLocks[k]);
@@ -3662,7 +3713,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, journey, journeyMins, smooth, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
 
   // Record button: start tapping the master output; stop → download the WAV
   const toggleRec = useCallback(async () => {
@@ -3809,6 +3860,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             <span>{playingNow && sel ? (selName || sel.id) : ""}</span>
             <span style={{ color: JOURNEY_COLOR, fontVariantNumeric: "tabular-nums" }}>
               {journeyNow ? (journeyNow.endless ? `${mmss(journeyNow.el)} · endless` : journeyNow.ending ? "ending…" : journeyNow.arrived ? "arrived" : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : ""}
+              {sleepLeft !== null && (sleepLeft <= SLEEP_FADE * 1000 ? " · fading out…" : ` · sleep in ${mmss(sleepLeft)}`)}
             </span>
           </div>
         </div>
@@ -3852,6 +3904,15 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             ))}
           </div>
         )}
+
+        {/* Sleep timer */}
+        <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 14 }}>
+          <span title={`Stop after this long, fading out gently over the last ${SLEEP_FADE} seconds. Counts from when you press play.`} style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>sleep timer</span>
+          {[0, ...SLEEP_MINS].map(m => (
+            <button key={m} onClick={() => setSleepMins(m)} style={{ ...chip(sleepMins === m), fontSize: 10, padding: "4px 11px" }}>{m ? `${m} min` : "off"}</button>
+          ))}
+          {sleepLeft !== null && <span style={{ color: JOURNEY_COLOR, fontSize: 11, marginLeft: 4, fontVariantNumeric: "tabular-nums" }}>{sleepLeft <= SLEEP_FADE * 1000 ? "fading out…" : `stops in ${mmss(sleepLeft)}`}</span>}
+        </div>
 
         {/* Play */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginTop: 30 }}>
