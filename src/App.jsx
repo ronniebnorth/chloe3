@@ -910,6 +910,15 @@ const JOURNEYS = {
   storm: { label: "storm", home: 2741, tip: "Calm, storm, calm: tension and tempo build to a peak about 60% of the way in (clashing scales, faster, the orchestra at full energy if it's on), then it clears.",
     pts: [{ at: 0, b: 0.55, t: 0.85, rv: 0.8, su: 1.3, e: 0, tn: 0 }, { at: 0.6, b: 0.45, t: 1.35, rv: 0.5, su: 0.7, e: 0.8, tn: 1 },
           { at: 0.8, b: 0.5, t: 1, rv: 0.7, su: 1, e: 0.3, tn: 0.4 }, { at: 1, b: 0.6, t: 0.8, rv: 0.85, su: 1.3, e: 0, tn: 0 }] },
+  // Rise: epic and energizing. Starts from its own driving tempo (not whatever
+  // the last one was), climbs brighter, faster and drier with the orchestra
+  // pushing, takes one breath at ~60%, then a second, bigger climb it holds to the
+  // end. Bold sounds, organ/strings drone, only forward tempo pushes, more marches.
+  rise: { label: "rise", home: 2741, epic: true, bpm: 116,
+    tip: "Epic and energizing: a steady build to a big, bright peak. Faster, drier and louder, the orchestra driving and marching, one breath at about 60%, then a second climb that holds to the end.",
+    pts: [{ at: 0, b: 0.55, t: 1, rv: 0.5, su: 0.9, e: 0.35, tn: 0.1 }, { at: 0.45, b: 0.67, t: 1.2, rv: 0.42, su: 0.8, e: 0.75, tn: 0.2 },
+          { at: 0.6, b: 0.62, t: 1.1, rv: 0.55, su: 1, e: 0.45, tn: 0.1 }, { at: 0.88, b: 0.74, t: 1.35, rv: 0.38, su: 0.7, e: 1, tn: 0.25 },
+          { at: 1, b: 0.74, t: 1.35, rv: 0.4, su: 0.75, e: 1, tn: 0.2 }] },
 };
 // Endless: no destination. Overlapping slow waves (17, 6.3 and 11 minutes, so
 // the pattern never lines up the same way twice) keep it wandering, dark-leaning,
@@ -1020,7 +1029,7 @@ const HELP_SECTIONS = [
   { title: "SOUND", body: "All instruments are synthesised in the browser using Web Audio. piano = detuned triangle oscillators with harmonic decay. guitar = Karplus-Strong style noise burst. xylo = marimba-ratio harmonic partials. space = detuned sines with LFO vibrato. VOL sets note volume. REV adds convolution reverb. DEL sets delay wet level. D.T sets delay time in seconds (try 0.125, 0.25, 0.375, 0.5 for rhythmic values). A= sets concert pitch (432–440 Hz). BPM sets tempo." },
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
   { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from all named scales, varying root note, rhythm, arpeggio direction, chord voicing, BPM, reverb, delay level, and delay time every 12–16 seconds. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
-  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm. LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
+  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
   { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
   { title: "EEG MODE", body: "When a FlowTime headband is connected via the EEG proxy (localhost:8520), a coloured dot appears in the Demo controls showing your dominant brainwave band (excluding delta, which is always high at forehead sites and not meaningful). In Demo mode with EEG active, a brightness-matching algorithm runs before each Claude call: a high theta/alpha ratio pushes the target darker (deep meditation, drowsiness); a high beta/alpha ratio pushes it brighter (focus, engagement); alpha dominance pulls 50% toward neutral (0.5 = Dorian). The system then finds the scale in the catalogue whose normalized brightness is closest to the target — scales of any size (pentatonic, heptatonic, etc.) are equally reachable at any brightness level. A scale only changes if the target shifts by more than 5% from the current scale's brightness. Claude receives the pre-selected scale and its normalized brightness, and focuses on choosing BPM, voicing, and effects to complement it. The brightness bar lets you override the EEG target manually with the slider, lock the current zone, or explore random scales at similar brightness. If a heart rate sensor is also active, the live BPM appears in the playback controls — Claude can read and track it each cycle when you ask it to sync BPM to your pulse." },
@@ -1754,7 +1763,7 @@ export default function Chloe() {
     const j = JOURNEYS[journey];
     // Changing only the length keeps the clock running; a new journey starts over
     if (!journeyRef.current || journeyRef.current.id !== journey)
-      journeyRef.current = { id: journey, startMs: Date.now(), homeBpm: stRef.current.bpm, arrived: false, ending: false };
+      journeyRef.current = { id: journey, startMs: Date.now(), homeBpm: j.bpm ?? stRef.current.bpm, arrived: false, ending: false };
     const J = journeyRef.current;
     J.mins = journeyMins;
     const tick = () => {
@@ -2402,8 +2411,10 @@ export default function Chloe() {
           const ac = getCtx();
           const o = getOrchestra(ac);
           const L = lastBase.length;
-          const marchNow = o.brass && ac.currentTime - lastMarch > 45 && !JOURNEYS[journeyRef.current?.id]?.endless &&
-            ((energy > 0.6 && Math.random() < 0.35) || Math.random() < 0.07);
+          // Rise marches more: every 30 s at most, likelier when the energy is up
+          const epic = !!JOURNEYS[journeyRef.current?.id]?.epic;
+          const marchNow = o.brass && ac.currentTime - lastMarch > (epic ? 30 : 45) && !JOURNEYS[journeyRef.current?.id]?.endless &&
+            ((energy > 0.6 && Math.random() < (epic ? 0.5 : 0.35)) || Math.random() < 0.07);
           const moves = [[0, 1], [3, 3], [4, 3], [5, 1.5], [1, 1], [L - 1, 1]];
           let r = Math.random() * moves.reduce((a, m) => a + m[1], 0), next = orchDeg;
           for (const [d, w] of moves) { if ((r -= w) < 0) { next = d === 0 ? 0 : (orchDeg + d) % L; break; } }
@@ -3289,7 +3300,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (cancelled) return;
       const st = stRef.current;
       if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm || JOURNEYS[journeyRef.current?.id]?.endless) { scheduleBurst(); return; }
-      const pool = smoothRef.current >= 0.5 ? BURSTS.filter(x => !x.snap) : BURSTS;
+      // Rise only ever pushes forward
+      const fwd = JOURNEYS[journeyRef.current?.id]?.epic ? BURSTS.filter(x => x.f > 1) : BURSTS;
+      const pool = smoothRef.current >= 0.5 ? fwd.filter(x => !x.snap) : fwd;
       let r = Math.random() * pool.reduce((a, x) => a + x.w, 0), b = pool[0];
       for (const x of pool) { if ((r -= x.w) < 0) { b = x; break; } }
       burstHome = st.bpm;
@@ -3380,14 +3393,18 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.chordVoice && maybe()) later(() => setChordVoice(chordVoice));
       // Sound changes on ~40% of picks so it doesn't jump every time; instruments favoured over raw waves
       // Endless: soft sounds only, and a harsh one playing now is swapped out right away
+      // Rise: bold sounds only, the same way
       const sleepJ = !!J0?.vals && JOURNEYS[J0.id]?.endless;
+      const epicJ = !!J0?.vals && JOURNEYS[J0.id]?.epic;
       const SOFT = ["space", "space", "sine", "piano", "triangle"];
+      const BOLD = ["guitar", "guitar", "sawtooth", "sawtooth", "piano", "square", "xylo"];
+      const only = sleepJ ? SOFT : epicJ ? BOLD : null;
       const curSnd = stRef.current.instrument || stRef.current.timbre;
-      if (_al.sound && sleepJ && !SOFT.includes(curSnd)) {
-        const s = SOFT[Math.floor(Math.random() * SOFT.length)];
+      if (_al.sound && only && !only.includes(curSnd)) {
+        const s = only[Math.floor(Math.random() * only.length)];
         if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); }
       } else if (_al.sound && Math.random() < 0.4 && maybe()) {
-        const s = sleepJ ? SOFT[Math.floor(Math.random() * SOFT.length)]
+        const s = only ? only[Math.floor(Math.random() * only.length)]
           : ["piano","piano","guitar","guitar","xylo","space","space","sine","triangle","sawtooth"][Math.floor(Math.random() * 10)];
         later(() => { if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); } });
       }
@@ -3434,9 +3451,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (delayRef.current) { const fb = J?.vals?.fb ?? 0.4; later(() => glideParam(delayRef.current?.feedbackGain.gain, fb)); }
       if (_al.sustain && J?.vals) { const su = parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)); later(() => setSustainMult(su)); }
       else if (_al.sustain && maybe()) { const su = [0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]; later(() => setSustainMult(su)); }
-      if (_al.droneOn && maybe())   { const on = Math.random() > 0.35; later(() => setDroneOn(on)); }
-      if (_al.droneWave && sleepJ && !["sine", "pad"].includes(stRef.current.droneWave)) later(() => setDroneWave("pad"));
-      else if (_al.droneWave && maybe()) { const w = (sleepJ ? ["sine", "pad"] : ["sine","organ","pad","strings","tanpura"])[Math.floor(Math.random() * (sleepJ ? 2 : 5))]; later(() => setDroneWave(w)); }
+      if (_al.droneOn && maybe())   { const on = Math.random() > (epicJ ? 0.15 : 0.35); later(() => setDroneOn(on)); }
+      const drones = sleepJ ? ["sine", "pad"] : epicJ ? ["organ", "strings"] : ["sine","organ","pad","strings","tanpura"];
+      if (_al.droneWave && (sleepJ || epicJ) && !drones.includes(stRef.current.droneWave)) later(() => setDroneWave(sleepJ ? "pad" : "organ"));
+      else if (_al.droneWave && maybe()) { const w = drones[Math.floor(Math.random() * drones.length)]; later(() => setDroneWave(w)); }
       if (_al.droneOct && maybe())  { const o = [-12, -24, -36][Math.floor(Math.random() * 3)]; later(() => setDroneOct(o)); }
       if (_al.droneVol && maybe())  { const v = parseFloat((0.3 + Math.random() * 0.7).toFixed(2)); later(() => setDroneVol(v)); }
       setArpOn(true);
@@ -3803,7 +3821,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     const W = 600, H = 120;
     // A journey's shape: brightness as a line (up = bright), Storm's intensity as a shaded hill
     const curve = (id, w, h, pad = 6) => {
-      const pts = [...Array(61).keys()].map(i => { const v = journeyAt(JOURNEYS[id], i / 60); return { x: pad + (w - 2 * pad) * i / 60, b: v.b, tn: v.tn }; });
+      // (the hill is the bigger of tension and orchestra energy, so Rise shows its build)
+      const pts = [...Array(61).keys()].map(i => { const v = journeyAt(JOURNEYS[id], i / 60); return { x: pad + (w - 2 * pad) * i / 60, b: v.b, tn: v.tn === undefined ? undefined : Math.max(v.tn, v.e ?? 0) }; });
       const y = b => pad + (h - 2 * pad) * (1 - (b - 0.25) / 0.5);
       const line = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${y(p.b).toFixed(1)}`).join(" ");
       const hill = pts[0].tn === undefined ? null
@@ -3815,6 +3834,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       dusk: "Bright to dark. For winding down.",
       descent: "Down into the dark, and back up into the light.",
       storm: "Calm, a gathering storm, calm again.",
+      rise: "Builds and builds: bright, driving and big. For energy.",
       endless: "Never ends. A slow, calm wander, for sleep.",
     };
     const play = () => {
@@ -3824,6 +3844,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         setSmooth(Math.max(smooth, 0.9));   // sleep: hide every seam
         if (!["sine", "pad"].includes(droneWave)) setDroneWave("pad");   // no tanpura buzz
       }
+      else if (JOURNEYS[J].epic) setSmooth(0.5);   // lively, but no double/half-time snaps
       else if (!smooth) setSmooth(0.7);
       setDemoOn(false); setAutoOn(true);
     };
@@ -3873,7 +3894,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           {Object.keys(JOURNEYS).map(id => {
             const on = J === id, c = curve(id, 140, 40, 3);
             return (
-              <button key={id} onClick={() => setJourney(id)} style={{
+              <button key={id} onClick={() => {
+                setJourney(id);
+                // Rise wants the whole band: orchestra on, and a kit beat (drive)
+                if (JOURNEYS[id].epic) {
+                  if (!symphonic) { setSymphonic(true); getOrchestra(getCtx()); }
+                  if (BEAT_FAMILY[beatStyle] !== "kit") { setBeatStyle("drive"); getKit(getCtx()); }
+                }
+              }} style={{
                 background: on ? K.bg3 : K.bg2, border: `1px solid ${on ? JOURNEY_COLOR : K.br}`, borderRadius: 8,
                 padding: "12px 12px 10px", textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: K.t1,
                 display: "flex", flexDirection: "column", justifyContent: "flex-start",
@@ -3895,7 +3923,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             : JOURNEY_MINS.map(m => <button key={m} onClick={() => setJourneyMins(m)} style={chip(journeyMins === m)}>{m} min</button>)}
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSymphonic(v => !v); if (!symphonic) getOrchestra(getCtx()); }} style={chip(symphonic)}>orchestra</button>
-          <button onClick={() => { const v = beatStyle === "off" ? (J === "endless" ? "brushes" : "downtempo") : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
+          <button onClick={() => { const v = beatStyle === "off" ? (J === "endless" ? "brushes" : JOURNEYS[J].epic ? "drive" : "downtempo") : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
           <button onClick={() => { wake(); setDroneOn(v => !v); }} style={chip(droneOn)}>drone</button>
         </div>
 
@@ -4990,7 +5018,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Journey — a shape over time that steers Auto (brightness, tempo, reverb, tension) */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: journey === "off" ? 8 : 4 }}>
-              <span title="Pick a journey and Auto travels it over the length you choose: Dawn = dark to bright, Dusk = bright to dark, Descent = bright, down into the dark and back up, Storm = calm, a building storm, calm again. Scales move one note at a time so the change is gradual, and the tempo, reverb and note length follow the shape. Choosing one starts Auto. When it arrives it keeps playing at the destination; if you're recording, it settles on a home scale, fades out and saves the WAV, a finished piece." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>JOURNEY</span>
+              <span title="Pick a journey and Auto travels it over the length you choose: Dawn = dark to bright, Dusk = bright to dark, Descent = bright, down into the dark and back up, Storm = calm, a building storm, calm again, Rise = an epic, energizing build to a bright peak. Scales move one note at a time so the change is gradual, and the tempo, reverb and note length follow the shape. Choosing one starts Auto. When it arrives it keeps playing at the destination; if you're recording, it settles on a home scale, fades out and saves the WAV, a finished piece." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>JOURNEY</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                 {["off", ...Object.keys(JOURNEYS)].map(v => (
                   <button key={v} title={JOURNEYS[v]?.tip} onClick={() => {
@@ -5357,7 +5385,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>
-              <div title="Give Auto a destination: dawn = dark to bright, dusk = bright to dark, descent = down into the dark and back up, storm = calm, storm, calm. Starts when Auto starts (or right away if it's running)." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, marginBottom: 6, cursor: "help" }}>JOURNEY</div>
+              <div title="Give Auto a destination: dawn = dark to bright, dusk = bright to dark, descent = down into the dark and back up, storm = calm, storm, calm, rise = an epic build to a bright peak. Starts when Auto starts (or right away if it's running)." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, marginBottom: 6, cursor: "help" }}>JOURNEY</div>
               <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 6 }}>
                 {["off", ...Object.keys(JOURNEYS)].map(v => (
                   <button key={v} title={JOURNEYS[v]?.tip} onClick={() => setJourney(v)} style={{
