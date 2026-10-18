@@ -2383,7 +2383,7 @@ export default function Chloe() {
     // March: 2-4 bars of dark martial orchestra (in the spirit of a film-score
     // villain march, not any actual tune). Low strings + tuba chug 8ths on the
     // root, brass stabs the scale's home triad with a pickup into each bar,
-    // orchestra hits and drums on the downbeats, and a final crunch stab that
+    // drums on the downbeats, and a final crunch stab (with a soft orchestra hit) that
     // adds the note a half step above the root when the scale has one.
     const playMarch = (o, ac, st, b, semiOf, rootMidi, tune) => {
       const beat = 60 / b, barSec = 4 * beat;
@@ -2413,8 +2413,8 @@ export default function Chloe() {
         o.timpani.start({ note: Math.min(57, Math.max(38, rootMidi + R - 24)), velocity: 95, time: tb + 2 * beat, detune: tune(R - 24) });
         o.taiko.start({ note: 40, velocity: 115, time: tb });
       }
-      o.hit.start({ note: rootMidi + R - 12, velocity: 115, time: t0, detune: tune(R - 12) });
-      o.hit.start({ note: rootMidi + R - 12, velocity: 120, time: t0 + (bars - 1) * barSec + 3 * beat, detune: tune(R - 12) });
+      // One soft orchestra hit under the final crunch (two loud ones were too much)
+      o.hit.start({ note: rootMidi + R - 12, velocity: 64, time: t0 + (bars - 1) * barSec + 3 * beat, detune: tune(R - 12) });
       o.swell.gain.linearRampToValueAtTime(0.4, end);
       return end - t0;
     };
