@@ -2447,9 +2447,11 @@ export default function Chloe() {
           const ac = getCtx();
           const o = getOrchestra(ac);
           const L = lastBase.length;
-          // Rise marches more: every 30 s at most, likelier when the energy is up
-          const epic = !!JOURNEYS[journeyRef.current?.id]?.epic;
-          const marchNow = o.brass && ac.currentTime - lastMarch > (epic ? 30 : 45) && !JOURNEYS[journeyRef.current?.id]?.endless &&
+          // Rise marches more: every 30 s at most, likelier when the energy is up.
+          // The calm journeys (dawn, dusk, descent, endless) never march: its
+          // brass stabs and hits jar out of a wind-down; storm and free play can
+          const jid = journeyRef.current?.id, epic = !!JOURNEYS[jid]?.epic;
+          const marchNow = o.brass && ac.currentTime - lastMarch > (epic ? 30 : 45) && (!jid || epic || jid === "storm") &&
             ((energy > 0.6 && Math.random() < (epic ? 0.5 : 0.35)) || Math.random() < 0.07);
           const moves = [[0, 1], [3, 3], [4, 3], [5, 1.5], [1, 1], [L - 1, 1]];
           let r = Math.random() * moves.reduce((a, m) => a + m[1], 0), next = orchDeg;
