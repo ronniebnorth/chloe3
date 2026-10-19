@@ -1816,7 +1816,7 @@ const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7"
 //     taking turns; a circle of hand drums (dunun, two djembes, an udu on
 //     the scale, clap sticks, a shaker, hand claps), players joining and
 //     dropping out as the tension goes, a shout of "hey!" at the peaks; the
-//     didgeridoo drone; the fire crackling and popping, crickets tuned to
+//     didgeridoo drone; the fire's roar and a pop now and then, crickets tuned to
 //     the scale, the circle humming along at the strong moments; minor and
 //     major pentatonic, Dorian, Mixolydian, ~100 BPM
 // key: the world's place among Wander's beat weights
@@ -5088,44 +5088,18 @@ export default function Chloe() {
       if (!mt.wood) mt.wood = t + 25 + Math.random() * 30;
       else if (t >= mt.wood) { woodpecker(bus, ac, t); mt.wood = t + 45 + Math.random() * 60; }
     };
-    // Fire circle (its world): the fire (the flames' low roar, breathing, over a
-    // bed of small crackles), pops now and then, a log settling (a thud, a
-    // burst of crackle, a hiss of sap); crickets around the circle, each on
+    // Fire circle (its world): the fire only hinted at (synthesized crackle
+    // reads as clicks or a rainstick): the flames' low roar, breathing, a
+    // single pop now and then, a log settling (a thud, a pop or two, a hiss
+    // of sap); crickets around the circle, each on
     // its own steady chirp, tuned to a high scale note (the third one only in
     // the quiet); at the strong moments (tension > 0.5) the circle hums
     // along: a few voices on the root and the fifth, swelling and fading.
     const fr = { bed: null, pop: 0, log: 0, hum: 0, crick: [] };
-    const crackleBuf = ac => ac.__crackle || (ac.__crackle = (() => {
-      const sr = ac.sampleRate, n = sr * 5, b = ac.createBuffer(2, n, sr);
-      for (let c = 0; c < 2; c++) {
-        const d = b.getChannelData(c);
-        // Each snap: a tiny burst ringing a little resonance (the wood's pitch,
-        // 1.2-5 kHz), eased in, not a bare click (bare clicks = a bad speaker)
-        for (let k = 0; k < 90; k++) {
-          const at = Math.floor(Math.random() * (n - sr * 0.03)), a = 0.04 + 0.5 * Math.random() ** 5, len = Math.floor(sr * 0.025);
-          const w = 2 * Math.PI * (1200 + Math.random() * 3800) / sr, r = Math.exp(-1 / (sr * (0.0015 + Math.random() * 0.003))), c1 = 2 * r * Math.cos(w), c2 = -r * r;
-          let y1 = 0, y2 = 0;
-          for (let j = 0; j < len; j++) {
-            const x = j < sr * 0.002 ? (Math.random() * 2 - 1) * Math.sin(Math.PI * j / (sr * 0.002)) : 0, y = x + c1 * y1 + c2 * y2;
-            y2 = y1; y1 = y; d[at + j] += a * y * 0.15;
-          }
-        }
-        let pk = 0; for (let j = 0; j < n; j++) pk = Math.max(pk, Math.abs(d[j]));
-        for (let j = 0; j < n; j++) d[j] *= 0.6 / (pk || 1);
-      }
-      return b;
-    })());
     const fireBedStart = (bus, ac) => {
       const out = ac.createGain(), t = ac.currentTime, nodes = [];
       out.gain.setValueAtTime(0, t); out.gain.linearRampToValueAtTime(1, t + 4); out.connect(bus.vol);
       const lfo = (f, depth, param) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = f; g.gain.value = depth; o.connect(g); g.connect(param); nodes.push(o); return o; };
-      const c = ac.createBufferSource(), hp = ac.createBiquadFilter(), cg = ac.createGain();
-      c.buffer = crackleBuf(ac); c.loop = true; hp.type = "highpass"; hp.frequency.value = 600; cg.gain.value = 0.25; lfo(0.07, 0.1, cg.gain);
-      c.connect(hp); hp.connect(cg); cg.connect(out); nodes.push(c);
-      const z = ac.createBufferSource(), zb = ac.createBiquadFilter(), zg = ac.createGain();   // the soft hiss of burning wood
-      z.buffer = noiseBuf(ac); z.loop = true; z.loopStart = Math.random(); zb.type = "bandpass"; zb.frequency.value = 2500; zb.Q.value = 0.6;
-      zg.gain.value = 0.006; lfo(0.09, 0.003, zg.gain);
-      z.connect(zb); zb.connect(zg); zg.connect(out); nodes.push(z);
       const r = ac.createBufferSource(), lp = ac.createBiquadFilter(), rg = ac.createGain();   // the roar, breathing
       r.buffer = noiseBuf(ac); r.loop = true; r.loopStart = Math.random(); lp.type = "lowpass"; lp.frequency.value = 350;
       rg.gain.value = 0.05; lfo(0.13, 0.025, rg.gain); lfo(0.31, 0.012, rg.gain);
@@ -5143,9 +5117,8 @@ export default function Chloe() {
     };
     const firePop = (bus, ac, t, big) => {
       const n = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(), p = ac.createStereoPanner();
-      // a pop rings the wood's pitch (a resonant band, eased in) rather than a bare click
-      n.buffer = noiseBuf(ac); bp.type = "bandpass"; bp.frequency.value = 900 + Math.random() * 2500; bp.Q.value = 6; p.pan.value = (Math.random() * 2 - 1) * 0.4;
-      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(big ? 0.7 : 0.35, t + 0.0015); g.gain.setTargetAtTime(0, t + 0.0015, big ? 0.012 : 0.007);
+      n.buffer = noiseBuf(ac); bp.type = "bandpass"; bp.frequency.value = 900 + Math.random() * 2500; bp.Q.value = 1.5; p.pan.value = (Math.random() * 2 - 1) * 0.4;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(big ? 0.3 : 0.18, t + 0.001); g.gain.setTargetAtTime(0, t + 0.001, big ? 0.01 : 0.006);
       n.connect(bp); bp.connect(g); g.connect(p); p.connect(bus.vol); p.connect(bus.roomSend);
       n.start(t, Math.random() * 1.5, 0.08);
       n.onended = () => { try { p.disconnect(); } catch {} };
@@ -5156,7 +5129,7 @@ export default function Chloe() {
       g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.12, t + 0.01); g.gain.setTargetAtTime(0, t + 0.02, 0.1);
       o.connect(g); g.connect(bus.vol); o.start(t); o.stop(t + 0.6);
       o.onended = () => { try { g.disconnect(); } catch {} };
-      for (let k = 0, a = t + 0.05; k < 8 + Math.floor(Math.random() * 8); k++, a += Math.random() * 0.2) firePop(bus, ac, a, Math.random() < 0.3);
+      for (let k = 0, a = t + 0.05; k < 1 + Math.floor(Math.random() * 2); k++, a += 0.3 + Math.random() * 0.6) firePop(bus, ac, a, k === 0);
       const n = ac.createBufferSource(), hp = ac.createBiquadFilter(), hg = ac.createGain();   // the sap hissing
       n.buffer = noiseBuf(ac); n.loop = true; hp.type = "highpass"; hp.frequency.value = 4000;
       hg.gain.setValueAtTime(0, t + 0.5); hg.gain.linearRampToValueAtTime(0.015, t + 1); hg.gain.linearRampToValueAtTime(0, t + 2.5);
@@ -5194,10 +5167,10 @@ export default function Chloe() {
         if (calm || k < 2) chirp(bus, ac, c.next, scaleHz(st, c.deg, 84), c.pan, c.v * (1 - 0.4 * energy), c.n);
         c.next = t - c.next > 1 ? t + c.per : c.next + c.per;
       });
-      if (!fr.pop) fr.pop = t + 1 + Math.random() * 3;
+      if (!fr.pop) fr.pop = t + 3 + Math.random() * 5;
       else if (t >= fr.pop) {
-        for (let k = 0, a = t; k < 1 + Math.floor(Math.random() * 3); k++, a += 0.05 + Math.random() * 0.15) firePop(bus, ac, a, k === 0 && Math.random() < 0.3);
-        fr.pop = t + 2 + Math.random() * 6;
+        firePop(bus, ac, t, Math.random() < 0.3);
+        fr.pop = t + 6 + Math.random() * 10;
       }
       if (!fr.log) fr.log = t + 30 + Math.random() * 40;
       else if (t >= fr.log) { logSettle(bus, ac, t); fr.log = t + 50 + Math.random() * 60; }
@@ -6547,7 +6520,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
         {/* World */}
         <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 14 }}>
-          <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together. Steppe: Mongolian fiddle and lute, shaman drums, throat singing. Desert: the duduk, a daf, the dam drone, Hijaz and friends. Ocean: whale song over waves, gulls and a buoy bell, no drums. Jungle: a kalimba over tuned log drums, insects, howler monkeys, whooping gibbon songs, birds and frogs. Thunderstorm: a felt piano indoors while it rains; the storm builds with the music's tension, thunder closer at the peak, brighter scales once it passes. Cave: a handpan, water drips tuned to the scale echoing, the wind's breath at the mouth, no drums. Temple: a bamboo flute in long breaths, the wooden fish, monks chanting, singing bowls, the great bell, wind chimes. Arctic: a glass harmonica over wind across the ice, singing ice, wolves howling a chord now and then. Mountain: a summer day: a hammered dulcimer, birds everywhere, leaves rustling, a brook, cowbells and an alphorn. Carnival: a steel pan over a samba drum section, the whistle and the crowd. Celtic: tin whistle and fiddle reels in 6/8 over a bodhrán. Night drive: synthwave, a big saw lead, arpeggios, four on the floor. Fire circle: kalimba and a wooden flute around a fire at night, a circle of hand drums (players joining as it builds), the didgeridoo, crackling fire, crickets, the circle humming along. New wave: a DX7 electric piano, 1980s LinnDrum and synth bass, the Juno pad. Change the drums or drone after and the world keeps its lead. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>world</span>
+          <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together. Steppe: Mongolian fiddle and lute, shaman drums, throat singing. Desert: the duduk, a daf, the dam drone, Hijaz and friends. Ocean: whale song over waves, gulls and a buoy bell, no drums. Jungle: a kalimba over tuned log drums, insects, howler monkeys, whooping gibbon songs, birds and frogs. Thunderstorm: a felt piano indoors while it rains; the storm builds with the music's tension, thunder closer at the peak, brighter scales once it passes. Cave: a handpan, water drips tuned to the scale echoing, the wind's breath at the mouth, no drums. Temple: a bamboo flute in long breaths, the wooden fish, monks chanting, singing bowls, the great bell, wind chimes. Arctic: a glass harmonica over wind across the ice, singing ice, wolves howling a chord now and then. Mountain: a summer day: a hammered dulcimer, birds everywhere, leaves rustling, a brook, cowbells and an alphorn. Carnival: a steel pan over a samba drum section, the whistle and the crowd. Celtic: tin whistle and fiddle reels in 6/8 over a bodhrán. Night drive: synthwave, a big saw lead, arpeggios, four on the floor. Fire circle: kalimba and a wooden flute around a fire at night, a circle of hand drums (players joining as it builds), the didgeridoo, the fire, crickets, the circle humming along. New wave: a DX7 electric piano, 1980s LinnDrum and synth bass, the Juno pad. Change the drums or drone after and the world keeps its lead. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>world</span>
           <button onClick={() => { const on = !worldWander; setWorldWander(on); if (on && world === "off") { const ks = Object.keys(WORLDS); chooseWorld(ks[Math.floor(Math.random() * ks.length)]); } if (on) setWorldWander(true); }} title="Wander: Chloe drifts from world to world as the music goes, a few minutes in each (calm leans to the ocean and the desert, livelier to new wave)" style={{ ...chip(worldWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
           {[["off", "none"], ...Object.entries(WORLDS).map(([w, d]) => [w, d.label])].map(([w, l]) => (
             <button key={w} onClick={() => chooseWorld(w)} style={{ ...chip(world === w && !worldWander), fontSize: 10, padding: "4px 11px", ...(worldWander && world === w ? { borderStyle: "dashed" } : {}) }}>{l}</button>
@@ -7782,7 +7755,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* World — lead, beat, drone and leanings that belong together */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together, and owns the lead while it's on. Steppe: horsehead fiddle (slow) or lute (fast), shaman drums, throat singing or jaw harp. Desert: the duduk in phrases, harmonized now and then, a daf, the dam drone, Hijaz and friends, slow, long reverb. Ocean: whale song over waves, tuned gulls and a buoy bell, no drums, calm open scales. Jungle: kalimba, log drums tuned to the scale, an insect bed, howler monkeys on the root, gibbon-style songs climbing the scale, birds, frogs (more of them, and fewer monkeys, when calm). Thunderstorm: felt piano, rain, close drops, wind whistling on scale notes, thunder rumbling on the root; the storm follows tension (heavier rain, closer thunder, at the peak a crack and a hush), darker scales while it rages, brighter after; gentle rain only in Endless. Cave: handpan, drips tuned to the scale from a few sources at their own steady rates (they phase into a slow melody), the cave's echo, the wind's low breath on the root, a faint stream, a far boom now and then; handpan scales (Kurd, Celtic minor, Pygmy), slow, deep reverb. Temple: shakuhachi-style flute (breaths of 1-3 long notes, bends up into pitch, head-shake vibrato), the wooden fish on the beat, the chant drone (monks on a low om), singing bowls struck and sung on scale notes, the great bell on the root, far wind chimes; In, Yo and Hirajoshi scales, ~60 BPM, a long reverb. Arctic: glass harmonica, wind across the ice with a thin whistle on a scale note, lake ice singing as it cracks (falling chirps landing on scale notes, echoing), deep booms of the ice settling, wolves now and then howling a chord in the scale; Lydian, pentatonic, whole tone, slow, vast reverb. Mountain: hammered dulcimer; birds all the time on scale notes (chickadees, a cuckoo, warblers, robins, a woodpecker now and then), aspen leaves rustling, a brook, cowbells on the pasture, an alphorn on the root's overtones echoing off the peaks; bright summer scales, ~88 BPM, open air. Carnival: steel pan (long notes rolled) over the samba beat (surdos, caixa, tamborim, agogô bells on the scale, ganzá, the whistle and repique call every 8 bars, the crowd cheering at the peaks); bright major scales, ~120 BPM, a dry room. Celtic: tin whistle (cuts and slides) and fiddle taking turns, the melody in jig triplets over a bodhrán in 6/8; major, Mixolydian, Dorian, ~116 BPM, the key lifting a step now and then. Night drive: a big saw lead with a fifth riding on it, gliding; the synthwave beat (four on the floor, gated snare, 16th arpeggios of the chord into the echo, pumping bass), the Juno pad; minor colours, ~112 BPM. New wave: DX7 electric piano, the new wave beat with synth bass, the Juno pad, bright scales. Fire circle: kalimba and a wooden flute taking turns; the circle beat (dunun, two djembes, an udu on the scale, clap sticks, shaker, claps; players join and drop out every 4 bars, more as tension rises, a lead djembe roll into every 4th bar, “hey!” at the peaks); the didgeridoo drone; the fire crackling and popping, a log settling now and then, crickets chirping on high scale notes, the circle humming the root and fifth at the strong moments; pentatonics, Dorian, Mixolydian, ~100 BPM, an outdoor room. Picking one sets its beat and drone; change them after and the world stays. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WORLD</span>
+              <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together, and owns the lead while it's on. Steppe: horsehead fiddle (slow) or lute (fast), shaman drums, throat singing or jaw harp. Desert: the duduk in phrases, harmonized now and then, a daf, the dam drone, Hijaz and friends, slow, long reverb. Ocean: whale song over waves, tuned gulls and a buoy bell, no drums, calm open scales. Jungle: kalimba, log drums tuned to the scale, an insect bed, howler monkeys on the root, gibbon-style songs climbing the scale, birds, frogs (more of them, and fewer monkeys, when calm). Thunderstorm: felt piano, rain, close drops, wind whistling on scale notes, thunder rumbling on the root; the storm follows tension (heavier rain, closer thunder, at the peak a crack and a hush), darker scales while it rages, brighter after; gentle rain only in Endless. Cave: handpan, drips tuned to the scale from a few sources at their own steady rates (they phase into a slow melody), the cave's echo, the wind's low breath on the root, a faint stream, a far boom now and then; handpan scales (Kurd, Celtic minor, Pygmy), slow, deep reverb. Temple: shakuhachi-style flute (breaths of 1-3 long notes, bends up into pitch, head-shake vibrato), the wooden fish on the beat, the chant drone (monks on a low om), singing bowls struck and sung on scale notes, the great bell on the root, far wind chimes; In, Yo and Hirajoshi scales, ~60 BPM, a long reverb. Arctic: glass harmonica, wind across the ice with a thin whistle on a scale note, lake ice singing as it cracks (falling chirps landing on scale notes, echoing), deep booms of the ice settling, wolves now and then howling a chord in the scale; Lydian, pentatonic, whole tone, slow, vast reverb. Mountain: hammered dulcimer; birds all the time on scale notes (chickadees, a cuckoo, warblers, robins, a woodpecker now and then), aspen leaves rustling, a brook, cowbells on the pasture, an alphorn on the root's overtones echoing off the peaks; bright summer scales, ~88 BPM, open air. Carnival: steel pan (long notes rolled) over the samba beat (surdos, caixa, tamborim, agogô bells on the scale, ganzá, the whistle and repique call every 8 bars, the crowd cheering at the peaks); bright major scales, ~120 BPM, a dry room. Celtic: tin whistle (cuts and slides) and fiddle taking turns, the melody in jig triplets over a bodhrán in 6/8; major, Mixolydian, Dorian, ~116 BPM, the key lifting a step now and then. Night drive: a big saw lead with a fifth riding on it, gliding; the synthwave beat (four on the floor, gated snare, 16th arpeggios of the chord into the echo, pumping bass), the Juno pad; minor colours, ~112 BPM. New wave: DX7 electric piano, the new wave beat with synth bass, the Juno pad, bright scales. Fire circle: kalimba and a wooden flute taking turns; the circle beat (dunun, two djembes, an udu on the scale, clap sticks, shaker, claps; players join and drop out every 4 bars, more as tension rises, a lead djembe roll into every 4th bar, “hey!” at the peaks); the didgeridoo drone; the fire's low roar, a pop now and then, a log settling, crickets chirping on high scale notes, the circle humming the root and fifth at the strong moments; pentatonics, Dorian, Mixolydian, ~100 BPM, an outdoor room. Picking one sets its beat and drone; change them after and the world stays. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WORLD</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {[["off", "off"], ...Object.entries(WORLDS).map(([w, d]) => [w, d.label])].map(([v, l]) => (
                   <button key={v} onClick={() => chooseWorld(v)} style={{
