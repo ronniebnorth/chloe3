@@ -1578,6 +1578,18 @@ function eegBrainTarget(eeg, config) {
   );
 }
 
+// Brain weather: how busy the mind is, raw: fast bands (beta + gamma) over
+// slow (alpha + theta), as a log ratio. Scaled to the listener's own range in
+// the component (brainWxRef). null = no headband.
+const brainBusyRaw = eeg => {
+  if (!eeg || !eeg.connected || !eeg.bands) return null;
+  const b = eeg.bands, avg = k => ((b[k]?.left_pct || 0) + (b[k]?.right_pct || 0)) / 2;
+  const fast = avg("beta") + avg("gamma"), slow = avg("alpha") + avg("theta");
+  return fast + slow > 0.5 ? Math.log((fast + 1) / (slow + 1)) : null;
+};
+const WEATHER_BRAIN = [["off", "music"], ["calm", "calm it"], ["ride", "ride it"]];
+const WEATHER_TIP = "What drives the storm. Music: the music's tension. Calm it (with a headband, like the Muse app): a busy mind brings the storm on; settling clears it, and staying settled brightens the scales and brings a bird now and then. Ride it: the reverse, the deeper you settle, the bigger the storm grows. Busy = beta + gamma against alpha + theta, scaled to your own range over the last 5 minutes (it needs ~20 s to learn you; until then it sits in the middle). No headband: it follows the music.";
+
 /* ── Session arc ──
    Lead: 1 min baseline (no steering), then the brightness target glides from
    the baseline brain average to baseline ± amount over the chosen minutes,
@@ -2199,6 +2211,7 @@ export default function Chloe() {
         symphonic:  p.get("sy") === "1",
         beatWander: p.get("bw") === "1",
         worldWander: p.get("ww") === "1",
+        weatherBrain: ["calm", "ride"].includes(p.get("wb")) ? p.get("wb") : undefined,
         beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave", "desert", "jungle"].includes(p.get("bt")) ? p.get("bt") : "off",
         // Links from before the World row: the beat or drone that used to bring a world in still does
         world: Object.hasOwn(WORLDS, p.get("wo") ?? "") ? p.get("wo") : p.has("wo") ? "off"
@@ -2299,7 +2312,12 @@ export default function Chloe() {
   const [likeFlash, setLikeFlash] = useState(0);   // Date.now() of the last ♥, for the "more like this" note
   const kitRef = useRef(null);
   const beatRestRef = useRef(0);   // Smooth: Date.now() until which Auto rests the beat (0 = playing)
-  const stormRef = useRef({ I: 0, peakAt: 0 });   // the thunderstorm's intensity 0-1, and when it last raged (Date.now())
+  const stormRef = useRef({ I: 0, peakAt: 0 });
+  // Brain weather (thunderstorm): off = the music drives the storm | calm | ride
+  const [weatherBrain, setWeatherBrain] = useState(_u.weatherBrain ?? "off");
+  // busy 0-1: the brain's busyness in its own range (last 5 min, 10th-90th
+  // percentile), the last 5 s averaged; null = no headband for 10 s
+  const brainWxRef = useRef({ hist: [], busy: null, at: 0 });   // the thunderstorm's intensity 0-1, and when it last raged (Date.now())
   const beatPhraseRef = useRef(false);   // Auto's style change waits for the end of the 4-bar phrase
   const riffHoldRef = useRef(0);   // Rise: Date.now() until which a riff owns the tempo (Auto and bursts leave it alone)
   const riffBufsRef = useRef(null); // Rise riffs: { ready, bufs } once fetched (AudioBuffers work in any context)
@@ -2404,6 +2422,18 @@ export default function Chloe() {
   const [eegData,    setEegData]    = useState(null);  // live EEG from proxy
   const eegDataRef = useRef(null);
   useEffect(() => { eegDataRef.current = eegData; }, [eegData]);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const r = brainBusyRaw(eegDataRef.current), w = brainWxRef.current;
+      if (r === null) { if (Date.now() - w.at > 10000) w.busy = null; return; }
+      w.at = Date.now(); w.hist.push(r); if (w.hist.length > 300) w.hist.shift();
+      if (w.hist.length < 20) { w.busy = 0.5; return; }
+      const srt = [...w.hist].sort((a, b) => a - b), lo = srt[Math.floor(srt.length * 0.1)], hi = srt[Math.floor(srt.length * 0.9)];
+      const rec = w.hist.slice(-5), now = rec.reduce((a, b) => a + b, 0) / rec.length;
+      w.busy = hi > lo ? Math.min(1, Math.max(0, (now - lo) / (hi - lo))) : 0.5;
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
   // Session arc — see ARC_* above
   const [arc,      setArc]      = useState(null); // { mode, mins, dir, amount, startMs, from, to, rows } while running
   const arcRef = useRef(null);
@@ -2736,7 +2766,7 @@ export default function Chloe() {
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
   const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol, droneWave });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander, world, worldWander }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander, world, worldWander]);
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander, world, worldWander, weatherBrain }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander, world, worldWander, weatherBrain]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -4007,7 +4037,7 @@ export default function Chloe() {
     // more drops and gusts, thunder more often and closer; past ~0.75 a close
     // crack now and then, and the lead hushes for a breath after it. Endless
     // keeps it a gentle rain: no cracks, intensity held under 0.55.
-    const th = { bed: null, I: 0.3, last: 0, thunder: 0, gust: 0, drop: 0, force: null };
+    const th = { bed: null, I: 0.3, last: 0, thunder: 0, gust: 0, drop: 0, bird: 0, force: null };
     window.__chloeStorm = (I = null) => { th.force = I; return th.I; };   // console: hold the intensity (null = follow the music)
     const thunderBedStart = (bus, ac) => {
       const out = ac.createGain(), t = ac.currentTime, nodes = [];
@@ -4074,7 +4104,9 @@ export default function Chloe() {
       if (!th.bed || th.bed.ac !== ac) { thunderBedStop(); th.bed = thunderBedStart(bus, ac); }
       // Intensity: tension 0.15 → 0, 0.75 → 1, eased over ~20 s
       const dt = th.last && t > th.last ? Math.min(1, t - th.last) : 0; th.last = t;
-      const target = th.force ?? Math.min(sleep ? 0.55 : 1, Math.max(0.15, (energy - 0.15) / 0.6));
+      // Brain weather: calm = the busy mind is the storm; ride = the settled one is
+      const bw = brainWxRef.current.busy, brain = st.weatherBrain !== "off" && bw != null ? (st.weatherBrain === "calm" ? bw : 1 - bw) : null;
+      const target = th.force ?? Math.min(sleep ? 0.55 : 1, Math.max(brain != null ? 0.08 : 0.15, brain ?? (energy - 0.15) / 0.6));
       th.I += (target - th.I) * dt / (th.force != null ? 2 : 20);
       stormRef.current.I = th.I;
       if (th.I > 0.7) stormRef.current.peakAt = Date.now();
@@ -4088,6 +4120,11 @@ export default function Chloe() {
       }
       if (!th.gust) th.gust = t + 2 + Math.random() * 5;
       else if (t >= th.gust) { gust(bus, ac, t, st); th.gust = t + (25 - 15 * I) * (0.6 + Math.random() * 0.8); }
+      // Calm it, and staying settled: a bird now and then, the storm passing
+      if (brain != null && st.weatherBrain === "calm" && I < 0.25) {
+        if (!th.bird || th.bird - t > 60) th.bird = t + 8 + Math.random() * 10;
+        else if (t >= th.bird) { bird(bus, ac, t, st); th.bird = t + 12 + Math.random() * 18; }
+      } else th.bird = 0;
       if (!th.drop) th.drop = t;
       while (th.drop <= t + 0.1) { drop(bus, ac, Math.max(t, th.drop)); th.drop += -Math.log(1 - Math.random()) / (2 + 10 * I); }
     };
@@ -5124,6 +5161,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (beatStyle !== "off") p.set("bt", beatStyle);
     if (beatWander) p.set("bw", "1");
     if (worldWander) p.set("ww", "1");
+    if (weatherBrain !== "off") p.set("wb", weatherBrain);
     if (world !== "off" || ["shaman", "desert", "newwave", "jungle"].includes(beatStyle) || ["throat", "jawharp", "juno", "dam"].includes(droneWave)) p.set("wo", world);
     if (journey !== "off") { p.set("jo", journey); if (journeyMins !== 15) p.set("jm", journeyMins); if (sleepMins) p.set("sl", sleepMins); }
     if (smooth) p.set("sm", Math.round(smooth * 100));
@@ -5135,7 +5173,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, beatWander, world, worldWander, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, beatWander, world, worldWander, weatherBrain, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
 
   // Record button: start tapping the master output; stop → download the WAV
   const toggleRec = useCallback(async () => {
@@ -5353,6 +5391,16 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             <button key={w} onClick={() => chooseWorld(w)} style={{ ...chip(world === w && !worldWander), fontSize: 10, padding: "4px 11px", ...(worldWander && world === w ? { borderStyle: "dashed" } : {}) }}>{l}</button>
           ))}
         </div>
+        {/* Thunderstorm: what drives the weather */}
+        {world === "thunder" && (
+          <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "flex-end", marginTop: 10 }}>
+            <span title={WEATHER_TIP} style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>weather</span>
+            {WEATHER_BRAIN.map(([v, l]) => (
+              <button key={v} onClick={() => { setWeatherBrain(v); track(`weather/${v}`); }} title={WEATHER_TIP} style={{ ...chip(weatherBrain === v), fontSize: 10, padding: "4px 11px" }}>{l}</button>
+            ))}
+            {weatherBrain !== "off" && <span style={{ color: eegData?.connected ? "#5fd08a" : K.t2, fontSize: 10 }}>{eegData?.connected ? "headband on" : "no headband: following the music"}</span>}
+          </div>
+        )}
 
         {/* Length + extras */}
         <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 18 }}>
@@ -6598,6 +6646,21 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 }}>wander</button>
               </div>
             </div>
+            {world === "thunder" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <span title={WEATHER_TIP} style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WEATHER</span>
+                {weatherBrain !== "off" && <span style={{ color: eegData?.connected ? "#5fd08a" : K.t2, fontSize: 9 }}>{eegData?.connected ? "headband on" : "no headband"}</span>}
+                <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
+                  {WEATHER_BRAIN.map(([v, l]) => (
+                    <button key={v} onClick={() => setWeatherBrain(v)} title={WEATHER_TIP} style={{
+                      background: weatherBrain === v ? K.a : K.bg3, color: weatherBrain === v ? "#000" : K.txt,
+                      border: `1px solid ${weatherBrain === v ? K.a : K.br}`, borderRadius: 3, padding: "3px 8px",
+                      fontSize: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: weatherBrain === v ? 600 : 400,
+                    }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
               <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends). Desert = a sparse daf/bendir: a deep dum, crisp rim teks, barely-there jingles. Jungle = log drums tuned to the scale in a 3-3-2, shaker, deep congas. (New wave, desert, jungle and shaman are the beats of their WORLDs, but play under anything.) Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves); the WORLD, if one is on, keeps its lead. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
