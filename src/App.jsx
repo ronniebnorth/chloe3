@@ -1712,7 +1712,7 @@ const brainBusyRaw = eeg => {
   return fast + slow > 0.5 ? Math.log((fast + 1) / (slow + 1)) : null;
 };
 const WEATHER_BRAIN = [["off", "music"], ["calm", "calm it"], ["ride", "ride it"]];
-const WEATHER_TIP = "What drives the storm. Music: the music's tension. Calm it (with a headband, like the Muse app): a busy mind brings the storm on; settling clears it, and staying settled brightens the scales and brings a bird now and then. Ride it: the reverse, the deeper you settle, the bigger the storm grows. Busy = beta + gamma against alpha + theta, scaled to your own range over the last 5 minutes (it needs ~20 s to learn you; until then it sits in the middle). No headband: it follows the music.";
+const WEATHER_TIP = "What drives the storm. Music: the music's tension. Calm it (with an EEG headband): a busy mind brings the storm on; settling clears it, and staying settled brightens the scales and brings a bird now and then. Ride it: the reverse, the deeper you settle, the bigger the storm grows. Busy = beta + gamma against alpha + theta, scaled to your own range over the last 5 minutes (it needs ~20 s to learn you; until then it sits in the middle). No headband: it follows the music.";
 
 /* ── Session arc ──
    Lead: 1 min baseline (no steering), then the brightness target glides from
