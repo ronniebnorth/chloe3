@@ -992,6 +992,9 @@ const HAND_DRUMS = {
   "surdo-hi": { f: 76,  decay: 0.45, slap: 0.2,  pan: 0.15, g: 0.8 },
   "tamborim": { f: 820, decay: 0.05, slap: 0.9,  pan: 0.35, g: 0.45 },
   "repique":  { f: 420, decay: 0.12, slap: 0.7,  pan: -0.3, g: 0.55 },
+  // Bodhrán: the open skin, and the top hand pressing it higher and shorter
+  "bodhran":  { f: 95,  decay: 0.25, slap: 0.35, pan: 0, g: 0.85 },
+  "bodhran-hi": { f: 165, decay: 0.12, slap: 0.5, pan: 0.1, g: 0.5 },
 };
 const HAND_MODES = [[1, 1], [1.52, 0.42], [1.98, 0.22], [2.44, 0.12], [3.02, 0.06]];   // ratio, level
 function makeHandDrum(ac, d) {
@@ -1023,7 +1026,7 @@ function makeHandDrum(ac, d) {
   return buf;
 }
 
-const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes", shaman: "shaman", newwave: "neon", desert: "desert", jungle: "jungle", temple: "temple", samba: "carnival" };
+const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes", shaman: "shaman", newwave: "neon", desert: "desert", jungle: "jungle", temple: "temple", samba: "carnival", jig: "celtic" };
 
 // Linear fills for fusion: one drum per 16th. Short = the last beat of every
 // 4th bar; long = the last two beats of every 8th, phrased in 3s across the beat.
@@ -1050,7 +1053,7 @@ const tunedRatio = (semi, tuning) => {
 
 // Per-sound gain so every instrument/wave plays at about the same loudness
 // (measured K-weighted, eighth-note runs C3-C5, levelled to -28 LUFS).
-const SOUND_GAIN = { pan: 0.8, dulcimer: 1, glass: 0.4, shaku: 0.56, hang: 0.5, felt: 0.44, kalimba: 0.33, piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, lute: 1.88, fiddle: 0.78, dx7: 0.52, duduk: 0.36, whale: 0.8, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
+const SOUND_GAIN = { whistle: 0.4, pan: 0.8, dulcimer: 1, glass: 0.4, shaku: 0.56, hang: 0.5, felt: 0.44, kalimba: 0.33, piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, lute: 1.88, fiddle: 0.78, dx7: 0.52, duduk: 0.36, whale: 0.8, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
 
 // Steppe strings slide into a note from the one before (within a 4th, not
 // across a rest, not between the notes of one chord)
@@ -1066,6 +1069,7 @@ const slideFrom = (ac, freq, chance) => {
 // and up to an octave away
 let lastWhale = { freq: 0, start: -9, end: -9 };
 const shakuWave = ac => ac.__shaku || (ac.__shaku = ac.createPeriodicWave(new Float32Array([0, 0, 0, 0, 0]), new Float32Array([0, 1, 0.25, 0.12, 0.05])));
+const whistleWave = ac => ac.__tinw || (ac.__tinw = ac.createPeriodicWave(new Float32Array(6), new Float32Array([0, 1, 0.3, 0.15, 0.06, 0.03])));
 const whaleWave = ac => ac.__whale || (ac.__whale = ac.createPeriodicWave(new Float32Array([0, 0, 0, 0, 0, 0]), new Float32Array([0, 1, 0.45, 0.2, 0.1, 0.05])));
 
 // Plucked lute (tovshuur / dombra, the oud family): a Karplus-Strong gut
@@ -1305,6 +1309,37 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     mixG.connect(f1); f1.connect(dip); dip.connect(f2); f2.connect(lp); lp.connect(g); connectOut(g);
     for (const o of [o1, o2, vib]) { o.start(now); o.stop(now + dur + 0.02); }
     nb.start(now); nb.stop(now + dur + 0.02);
+    cleanup(dur);
+    return { start: now, stop: now + dur };
+  }
+
+  if (instrument === "whistle") {
+    // Tin whistle (in the low register, mellow): quick to speak with a little
+    // chiff of air, a breath under it; ornaments: a cut (a flick to the note
+    // above for ~25 ms) on some notes, a slide up into others; a light
+    // vibrato only on long notes
+    const dur = Math.max(0.12, Math.min(beatDur * 0.95, 2.5));
+    const o = mkO("sine"); o.setPeriodicWave(whistleWave(ac));
+    const r = Math.random();
+    if (r < 0.3) { o.frequency.setValueAtTime(freq * 2 ** (3 / 12), now); o.frequency.setValueAtTime(freq, now + 0.025); }
+    else if (r < 0.45) { o.frequency.setValueAtTime(freq * 2 ** (-1 / 12), now); o.frequency.exponentialRampToValueAtTime(freq, now + 0.06); }
+    else o.frequency.setValueAtTime(freq, now);
+    if (dur > 0.6) {
+      const vib = mkO("sine"), vibG = mkG(); vib.frequency.value = 5.5;
+      vibG.gain.setValueAtTime(0, now); vibG.gain.setValueAtTime(0, now + 0.3); vibG.gain.linearRampToValueAtTime(10, now + Math.min(dur, 0.8));
+      vib.connect(vibG); vibG.connect(o.detune); vib.start(now); vib.stop(now + dur + 0.02);
+    }
+    const tone = mkG(); tone.gain.value = 1; o.connect(tone);
+    const nb = mkB(); nb.buffer = (ac.__noise1 || (ac.__noise1 = (() => { const b = ac.createBuffer(1, ac.sampleRate, ac.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return b; })()));
+    nb.loop = true;
+    const nf = mkF("bandpass", 3000), ng = mkG(); nf.Q.value = 0.8;
+    ng.gain.setValueAtTime(0.15, now); ng.gain.setTargetAtTime(0.035, now + 0.01, 0.03);
+    nb.connect(nf); nf.connect(ng); ng.connect(tone);
+    const lp = mkF("lowpass", 4500), g = mkG();
+    g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(vel, now + 0.012);
+    g.gain.setValueAtTime(vel * 0.85, now + Math.max(0.02, dur - 0.04)); g.gain.linearRampToValueAtTime(0, now + dur);
+    tone.connect(lp); lp.connect(g); connectOut(g);
+    o.start(now); o.stop(now + dur + 0.02); nb.start(now); nb.stop(now + dur + 0.02);
     cleanup(dur);
     return { start: now, stop: now + dur };
   }
@@ -1645,7 +1680,7 @@ function Piano({ active, playing, K }) {
 const ROOTS = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
 const OFFS  = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const TIMBRES = ["sine", "triangle", "square", "sawtooth"];
-const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7", "duduk", "whale", "kalimba", "felt", "hang", "shaku", "glass", "dulcimer", "pan"];
+const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7", "duduk", "whale", "kalimba", "felt", "hang", "shaku", "glass", "dulcimer", "pan", "whistle"];
 // Worlds: a lead, a rhythm, a drone and leanings (scales, tempo, reverb) that
 // belong together, picked on the World row. Picking one brings in its beat and
 // drone (both can be changed after); while it's on, it owns the lead.
@@ -1690,6 +1725,9 @@ const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7"
 //     surdos, caixa, tamborim, agogô bells tuned to the scale, ganzá, the
 //     repique's call and the whistle every 8 bars, the crowd cheering at the
 //     peaks; bright major scales, ~120 BPM, a dry room
+//   celtic: a session in 6/8: tin whistle and fiddle taking turns (cuts and
+//     slides on the whistle), the melody in jig triplets, a bodhrán; major,
+//     Mixolydian and Dorian, ~116 BPM, the key climbing a step now and then
 // key: the world's place among Wander's beat weights
 const WORLDS = {
   steppe: { label: "steppe",   beat: "shaman",  drone: "throat", drones: ["throat", "jawharp"], key: "shaman" },
@@ -1703,6 +1741,7 @@ const WORLDS = {
   arctic: { label: "arctic",   beat: "off",     drone: "sine",   drones: ["sine", "pad", "strings"], key: "arctic" },
   mountain: { label: "mountain", beat: "off",   drone: "pad",    drones: ["pad", "sine", "organ"], key: "mountain" },
   carnival: { label: "carnival", beat: "samba", drone: "pad",    drones: ["pad", "organ", "sine"], key: "carnival" },
+  celtic: { label: "celtic",   beat: "jig",     drone: "organ",  drones: ["organ", "pad", "tanpura"], key: "celtic" },
 };
 const WORLD_BY_KEY = Object.fromEntries(Object.entries(WORLDS).map(([w, d]) => [d.key, w]));
 const isSteppe = st => st.world === "steppe";
@@ -1716,6 +1755,7 @@ const isTemple = st => st.world === "temple";
 const isArctic = st => st.world === "arctic";
 const isMountain = st => st.world === "mountain";
 const isCarnival = st => st.world === "carnival";
+const isCeltic = st => st.world === "celtic";
 // Hijaz (Phrygian dominant), Hijaz Kar (double harmonic), harmonic minor,
 // Nikriz (Ukrainian Dorian), Kurd (Phrygian), Neapolitan minor, Nahawand
 // (Aeolian), Bayati without its quarter tone (Dorian), with weights
@@ -1734,6 +1774,8 @@ const ARCTIC_SCALES = [[2773, 3], [661, 2], [1453, 2], [1709, 1], [1365, 1], [27
 const MOUNTAIN_SCALES = [[661, 3], [2741, 3], [2773, 2], [1717, 2]];
 // Carnival: Ionian, Mixolydian, major pentatonic, Lydian
 const CARNIVAL_SCALES = [[2741, 3], [1717, 2], [661, 2], [2773, 1]];
+// Celtic: Ionian, Mixolydian, Dorian, Aeolian, major pentatonic
+const CELTIC_SCALES = [[2741, 3], [1717, 3], [1709, 2], [1453, 1], [661, 1]];
 // Jungle: the pentatonics mostly, then Dorian, Mixolydian, Ionian
 const JUNGLE_SCALES = [[661, 3], [1193, 3], [1709, 1], [1717, 1], [2741, 1]];
 const GRP_NAME = { 3: "Tritonic", 4: "Tetratonic", 5: "Pentatonic", 6: "Hexatonic", 7: "Heptatonic", 8: "Octatonic" };
@@ -2407,7 +2449,7 @@ export default function Chloe() {
       return {
         rootIdx:    parseInt(p.get("r") ?? "0"),
         timbre:     ["sine","triangle","square","sawtooth"].includes(p.get("t")) ? p.get("t") : "sine",
-        instrument: ["piano","guitar","xylo","space","lute","fiddle","dx7","duduk","whale","kalimba","felt","hang","shaku","glass","dulcimer","pan"].includes(p.get("i")) ? p.get("i") : null,
+        instrument: ["piano","guitar","xylo","space","lute","fiddle","dx7","duduk","whale","kalimba","felt","hang","shaku","glass","dulcimer","pan","whistle"].includes(p.get("i")) ? p.get("i") : null,
         noteVol:    Number.isFinite(parseFloat(p.get("v"))) ? parseFloat(p.get("v")) : 0.7,
         reverbAmt:  parseFloat(p.get("rv") ?? "0.75"),
         delayAmt:   parseFloat(p.get("dl") ?? "0.15"),
@@ -2434,7 +2476,7 @@ export default function Chloe() {
         beatWander: p.get("bw") === "1",
         worldWander: p.get("ww") === "1",
         weatherBrain: ["calm", "ride"].includes(p.get("wb")) ? p.get("wb") : undefined,
-        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave", "desert", "jungle", "temple", "samba"].includes(p.get("bt")) ? p.get("bt") : "off",
+        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave", "desert", "jungle", "temple", "samba", "jig"].includes(p.get("bt")) ? p.get("bt") : "off",
         // Links from before the World row: the beat or drone that used to bring a world in still does
         world: Object.hasOwn(WORLDS, p.get("wo") ?? "") ? p.get("wo") : p.has("wo") ? "off"
           : { shaman: "steppe", desert: "desert", newwave: "neon", ocean: "ocean", jungle: "jungle" }[p.get("bt")]
@@ -3558,7 +3600,7 @@ export default function Chloe() {
       orchT = setTimeout(orchTick, hold * 1000);
     };
 
-    let steppeInst = "lute";
+    let steppeInst = "lute", celticInst = "whistle", celticLeft = 32;
     const playNote = (semi, dur, vel) => {
       const { rootIdx: ri, timbre: t, noteVol: nv, aRef: ar, tuning: tu } = stRef.current;
       const b = tg.cur ?? stRef.current.bpm;
@@ -3571,6 +3613,10 @@ export default function Chloe() {
       else if (isArctic(stRef.current)) inst = "glass";
       else if (isMountain(stRef.current)) inst = "dulcimer";
       else if (isCarnival(stRef.current)) inst = "pan";
+      else if (isCeltic(stRef.current)) {   // whistle and fiddle take turns, a tune (24-48 notes) each
+        if (--celticLeft < 0) { celticInst = celticInst === "whistle" ? "fiddle" : "whistle"; celticLeft = 24 + Math.floor(Math.random() * 24); }
+        inst = celticInst;
+      }
       else if (isSteppe(stRef.current)) {
         if (b <= 90) steppeInst = "fiddle"; else if (b >= 100) steppeInst = "lute";
         inst = steppeInst;
@@ -3718,7 +3764,8 @@ export default function Chloe() {
       const notes = [];
       for (let o = 0; o < aOct; o++) baseNotes.forEach(n => notes.push(n + o * 12));
       melPrevRef.current = Math.min(melPrevRef.current, notes.length - 1);
-      const eighth = 60000 / (playBpm() * leadTempoRef.current) / 2;
+      // Celtic: the melody runs in jig triplets (three to the beat)
+      const eighth = 60000 / (playBpm() * leadTempoRef.current) / (isCeltic(stRef.current) ? 3 : 2);
       const isChord = cv !== "off";  // "rand" also counts as chord
       const G = stRef.current.grouping || 0;
       // Group size changed mid-group (Auto or a click): start a fresh group,
@@ -4064,6 +4111,19 @@ export default function Chloe() {
           agogo(K0, ac, tt(), scaleHz(st, AGOGO[i] ? Math.min(lastBase.length - 1, Math.round(lastBase.length * 4 / 7)) : 0, 72), AGOGO[i] ? 1 : 0.85);
       }
       if (i === 0 && bar % 16 === 0 && bar > 0 && energy > 0.65) crowd(K0, ac, t);
+    };
+    // Jig (6/8), one triplet 8th of 12 (two 6/8 bars to the 4/4 bar): the
+    // bodhrán on every 8th, the open skin on each dotted beat (strongest on
+    // the 1s), the pressed, higher skin between; tension adds ghost rolls,
+    // calm drops the middle of each triplet; a crescendo rolling into every
+    // 4th bar, alternating high and low. ±10 velocity, ±4 ms.
+    const jigStep = (K0, ac, i, bar, t) => {
+      const vv = v => v + (Math.random() - 0.5) * 20, tt = () => t + (Math.random() - 0.5) * 0.008, calm = energy < 0.25, tense = energy > 0.6;
+      const hd = (note, v) => handDrum(K0, ac, note, vv(v), tt(), false);
+      if (bar % 4 === 3 && i >= 6) { hd(i % 2 ? "bodhran-hi" : "bodhran", 60 + (i - 6) * 10); return; }
+      if (i % 3 === 0) hd("bodhran", i % 6 === 0 ? 112 : 88);
+      else if (!(calm && i % 3 === 1)) hd("bodhran-hi", i % 3 === 2 ? 64 : 50);
+      if (tense && i % 3 === 2 && Math.random() < 0.4) handDrum(K0, ac, "bodhran-hi", 40, t + 0.5 * (60 / ((tg.cur ?? stRef.current.bpm)) / 3), false);
     };
     // A synthesized hand drum through the kit's volume, distance and fade; to
     // the room too (like the snare) when it's played hard
@@ -5022,6 +5082,14 @@ export default function Chloe() {
               if (beatStep === 0) beatBar++;
               continue;
             }
+            if (beatStyleNow === "jig") {
+              jigStep(K0, ac, beatStep % 12, beatBar, beatNext);
+              if (beatStep === 0 && beatBar > 0) beatNoCrash = false;
+              beatNext += 60 / bb / 3;
+              beatStep = (beatStep + 1) % 12;
+              if (beatStep === 0) beatBar++;
+              continue;
+            }
             if (beatStyleNow === "samba") {
               sambaStep(K0, ac, beatStep, beatBar, beatNext, st);
               if (beatStep === 0 && beatBar > 0) beatNoCrash = false;
@@ -5439,14 +5507,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // ♥ likes bend every brightness target toward the liked brightness, and
       // now and then bring back a liked scale outright
       const likes = likesRef.current, likeB = likes.length ? likedMean(likes, "b") : null;
-      const neon = isNeon(stRef.current), desert = isDesert(stRef.current), ocean = isOcean(stRef.current), jungle = isJungle(stRef.current), thunder = isThunder(stRef.current), cave = isCave(stRef.current), temple = isTemple(stRef.current), arctic = isArctic(stRef.current), mountain = isMountain(stRef.current), carnival = isCarnival(stRef.current);
+      const neon = isNeon(stRef.current), desert = isDesert(stRef.current), ocean = isOcean(stRef.current), jungle = isJungle(stRef.current), thunder = isThunder(stRef.current), cave = isCave(stRef.current), temple = isTemple(stRef.current), arctic = isArctic(stRef.current), mountain = isMountain(stRef.current), carnival = isCarnival(stRef.current), celtic = isCeltic(stRef.current);
       // The storm passing: its last peak within 3 minutes and quieter now = lighter scales
       const afterStorm = thunder && Date.now() - stormRef.current.peakAt < 180000 && stormRef.current.I < 0.4;
       const bend = b => { if (b === null) return b; if (likeB) b += likeB.k * 0.6 * (likeB.v - b); return neon ? b + 0.35 * (0.7 - b) : b; };
       const jv = journeyRef.current?.vals, jb = jv ? bend(jv.b) : null;
       // Desert: mostly a Middle Eastern scale (in a journey, one near its brightness)
-      if (!entry && (desert || ocean || jungle || thunder || cave || temple || arctic || mountain || carnival) && Math.random() < 0.7) {
-        const cands = (ocean || afterStorm ? OCEAN_SCALES : jungle ? JUNGLE_SCALES : thunder ? THUNDER_SCALES : cave ? CAVE_SCALES : temple ? TEMPLE_SCALES : arctic ? ARCTIC_SCALES : mountain ? MOUNTAIN_SCALES : carnival ? CARNIVAL_SCALES : DESERT_SCALES).map(([pat, w]) => ({ e: catalogue.find(e => e.pat === pat), w }))
+      if (!entry && (desert || ocean || jungle || thunder || cave || temple || arctic || mountain || carnival || celtic) && Math.random() < 0.7) {
+        const cands = (ocean || afterStorm ? OCEAN_SCALES : jungle ? JUNGLE_SCALES : thunder ? THUNDER_SCALES : cave ? CAVE_SCALES : temple ? TEMPLE_SCALES : arctic ? ARCTIC_SCALES : mountain ? MOUNTAIN_SCALES : carnival ? CARNIVAL_SCALES : celtic ? CELTIC_SCALES : DESERT_SCALES).map(([pat, w]) => ({ e: catalogue.find(e => e.pat === pat), w }))
           .filter(c => c.e && c.e.pat !== cur?.pattern && (jb === null || Math.abs(normalizedBrightness(c.e.pat) - jb) <= 0.2));
         let r = Math.random() * cands.reduce((a, c) => a + c.w, 0);
         for (const c of cands) if ((r -= c.w) < 0) { entry = c.e; break; }
@@ -5491,7 +5559,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
       const chordVoice = VOICES[Math.floor(Math.random() * VOICES.length)];
       const likeT = likes.length ? likedMean(likes, "bpm", true) : null;
-      const bendT = b => { if (likeT) b *= Math.pow(likeT.v / b, likeT.k * 0.5); return desert ? b * Math.pow(66 / b, 0.5) : ocean ? b * Math.pow(60 / b, 0.5) : jungle ? b * Math.pow(96 / b, 0.5) : thunder ? b * Math.pow(72 / b, 0.5) : cave ? b * Math.pow(68 / b, 0.5) : temple ? b * Math.pow(60 / b, 0.5) : arctic ? b * Math.pow(64 / b, 0.5) : mountain ? b * Math.pow(88 / b, 0.5) : carnival ? b * Math.pow(120 / b, 0.6) : b; };
+      const bendT = b => { if (likeT) b *= Math.pow(likeT.v / b, likeT.k * 0.5); return desert ? b * Math.pow(66 / b, 0.5) : ocean ? b * Math.pow(60 / b, 0.5) : jungle ? b * Math.pow(96 / b, 0.5) : thunder ? b * Math.pow(72 / b, 0.5) : cave ? b * Math.pow(68 / b, 0.5) : temple ? b * Math.pow(60 / b, 0.5) : arctic ? b * Math.pow(64 / b, 0.5) : mountain ? b * Math.pow(88 / b, 0.5) : carnival ? b * Math.pow(120 / b, 0.6) : celtic ? b * Math.pow(116 / b, 0.6) : b; };
       let bpm          = Math.round(bendT(driftBpm(stRef.current.bpm)));
 
       const ac = getCtx();
@@ -5539,8 +5607,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const e = energyRef.current;
       if (_al.beat && stRef.current.worldWander && Math.random() < 0.2 && maybe()) {
         const w = sleepJ ? { ocean: 1, desert: 0.8, steppe: 0.5, thunder: 0.7, cave: 0.9, temple: 0.9, arctic: 0.6, mountain: 0.4 }
-          : epicJ ? { neon: 1, steppe: 0.6, jungle: 0.5, thunder: 0.8, mountain: 0.5, carnival: 1 }
-          : { steppe: 0.8, desert: 0.9 * (1 - 0.5 * e), ocean: 0.1 + 0.9 * (1 - e) ** 2, jungle: 0.8, neon: 0.4 + 0.7 * e, thunder: 0.4 + 0.6 * e, cave: 0.8 * (1 - 0.5 * e), temple: 0.8 * (1 - 0.6 * e), arctic: 0.7 * (1 - 0.5 * e), mountain: 0.9, carnival: 0.2 + 0.9 * e };
+          : epicJ ? { neon: 1, steppe: 0.6, jungle: 0.5, thunder: 0.8, mountain: 0.5, carnival: 1, celtic: 0.8 }
+          : { steppe: 0.8, desert: 0.9 * (1 - 0.5 * e), ocean: 0.1 + 0.9 * (1 - e) ** 2, jungle: 0.8, neon: 0.4 + 0.7 * e, thunder: 0.4 + 0.6 * e, cave: 0.8 * (1 - 0.5 * e), temple: 0.8 * (1 - 0.6 * e), arctic: 0.7 * (1 - 0.5 * e), mountain: 0.9, carnival: 0.2 + 0.9 * e, celtic: 0.3 + 0.7 * e };
         delete w[stRef.current.world];
         const ks = Object.keys(w);
         let r = Math.random() * ks.reduce((a, k) => a + w[k], 0), nw = ks[ks.length - 1];
@@ -5595,6 +5663,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       } else if (_al.bpm && stRef.current.autoTempo === "drift" && maybe()) later(() => setBpm(bpm));
       if (_al.reverb && J?.vals) { const rv = parseFloat(Math.min(1, Math.max(0, J.vals.rv + (Math.random() - 0.5) * 0.08)).toFixed(2)); later(() => setReverbAmt(rv)); }
       else if (_al.reverb && maybe()) { const rv = parseFloat((0.3 + Math.random() * 0.65).toFixed(2)); later(() => setReverbAmt(rv)); }
+      if (_al.reverb && celtic) { const rv = parseFloat((0.35 + Math.random() * 0.15).toFixed(2)); later(() => setReverbAmt(rv)); }   // the session
+      // ...and now and then the tune lifts a whole step
+      if (_al.rootNote && celtic && Math.random() < 0.15) later(() => setRootIdx(r => (r + 2) % 12));
       if (_al.reverb && carnival) { const rv = parseFloat((0.3 + Math.random() * 0.15).toFixed(2)); later(() => setReverbAmt(rv)); }   // in the street
       if (_al.reverb && mountain) { const rv = parseFloat((0.45 + Math.random() * 0.15).toFixed(2)); later(() => setReverbAmt(rv)); }   // open air
       if (_al.reverb && arctic) { const rv = parseFloat((0.88 + Math.random() * 0.1).toFixed(2)); later(() => setReverbAmt(rv)); }   // the open ice
@@ -6112,7 +6183,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
         {/* World */}
         <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 14 }}>
-          <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together. Steppe: Mongolian fiddle and lute, shaman drums, throat singing. Desert: the duduk, a daf, the dam drone, Hijaz and friends. Ocean: whale song over waves, gulls and a buoy bell, no drums. Jungle: a kalimba over tuned log drums, insects, howler monkeys, whooping gibbon songs, birds and frogs. Thunderstorm: a felt piano indoors while it rains; the storm builds with the music's tension, thunder closer at the peak, brighter scales once it passes. Cave: a handpan, water drips tuned to the scale echoing, the wind's breath at the mouth, no drums. Temple: a bamboo flute in long breaths, the wooden fish, monks chanting, singing bowls, the great bell, wind chimes. Arctic: a glass harmonica over wind across the ice, singing ice, wolves howling a chord now and then. Mountain: a summer day: a hammered dulcimer, birds everywhere, leaves rustling, a brook, cowbells and an alphorn. Carnival: a steel pan over a samba drum section, the whistle and the crowd. New wave: a DX7 electric piano, 1980s LinnDrum and synth bass, the Juno pad. Change the drums or drone after and the world keeps its lead. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>world</span>
+          <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together. Steppe: Mongolian fiddle and lute, shaman drums, throat singing. Desert: the duduk, a daf, the dam drone, Hijaz and friends. Ocean: whale song over waves, gulls and a buoy bell, no drums. Jungle: a kalimba over tuned log drums, insects, howler monkeys, whooping gibbon songs, birds and frogs. Thunderstorm: a felt piano indoors while it rains; the storm builds with the music's tension, thunder closer at the peak, brighter scales once it passes. Cave: a handpan, water drips tuned to the scale echoing, the wind's breath at the mouth, no drums. Temple: a bamboo flute in long breaths, the wooden fish, monks chanting, singing bowls, the great bell, wind chimes. Arctic: a glass harmonica over wind across the ice, singing ice, wolves howling a chord now and then. Mountain: a summer day: a hammered dulcimer, birds everywhere, leaves rustling, a brook, cowbells and an alphorn. Carnival: a steel pan over a samba drum section, the whistle and the crowd. Celtic: tin whistle and fiddle reels in 6/8 over a bodhrán. New wave: a DX7 electric piano, 1980s LinnDrum and synth bass, the Juno pad. Change the drums or drone after and the world keeps its lead. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>world</span>
           <button onClick={() => { const on = !worldWander; setWorldWander(on); if (on && world === "off") { const ks = Object.keys(WORLDS); chooseWorld(ks[Math.floor(Math.random() * ks.length)]); } if (on) setWorldWander(true); }} title="Wander: Chloe drifts from world to world as the music goes, a few minutes in each (calm leans to the ocean and the desert, livelier to new wave)" style={{ ...chip(worldWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
           {[["off", "none"], ...Object.entries(WORLDS).map(([w, d]) => [w, d.label])].map(([w, l]) => (
             <button key={w} onClick={() => chooseWorld(w)} style={{ ...chip(world === w && !worldWander), fontSize: 10, padding: "4px 11px", ...(worldWander && world === w ? { borderStyle: "dashed" } : {}) }}>{l}</button>
@@ -6143,7 +6214,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         {beatStyle !== "off" && (
           <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
             <button onClick={() => setBeatWander(w => !w)} title="Wander: the drums roam across every style as the music goes, from brushes to breakbeats (the world, if one is on, keeps its lead)" style={{ ...chip(beatWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
-            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["desert", "desert"], ["jungle", "jungle"], ["temple", "temple"], ["samba", "samba"], ["newwave", "new wave"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
+            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["desert", "desert"], ["jungle", "jungle"], ["temple", "temple"], ["samba", "samba"], ["jig", "jig"], ["newwave", "new wave"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
               <button key={v} onClick={() => { setBeatStyle(v); setBeatWander(false); }} style={{ ...chip(beatStyle === v && !beatWander), fontSize: 10, padding: "4px 11px", ...(beatWander && beatStyle === v ? { borderStyle: "dashed" } : {}) }}>{l}</button>
             ))}
           </div>
@@ -7347,7 +7418,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* World — lead, beat, drone and leanings that belong together */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together, and owns the lead while it's on. Steppe: horsehead fiddle (slow) or lute (fast), shaman drums, throat singing or jaw harp. Desert: the duduk in phrases, harmonized now and then, a daf, the dam drone, Hijaz and friends, slow, long reverb. Ocean: whale song over waves, tuned gulls and a buoy bell, no drums, calm open scales. Jungle: kalimba, log drums tuned to the scale, an insect bed, howler monkeys on the root, gibbon-style songs climbing the scale, birds, frogs (more of them, and fewer monkeys, when calm). Thunderstorm: felt piano, rain, close drops, wind whistling on scale notes, thunder rumbling on the root; the storm follows tension (heavier rain, closer thunder, at the peak a crack and a hush), darker scales while it rages, brighter after; gentle rain only in Endless. Cave: handpan, drips tuned to the scale from a few sources at their own steady rates (they phase into a slow melody), the cave's echo, the wind's low breath on the root, a faint stream, a far boom now and then; handpan scales (Kurd, Celtic minor, Pygmy), slow, deep reverb. Temple: shakuhachi-style flute (breaths of 1-3 long notes, bends up into pitch, head-shake vibrato), the wooden fish on the beat, the chant drone (monks on a low om), singing bowls struck and sung on scale notes, the great bell on the root, far wind chimes; In, Yo and Hirajoshi scales, ~60 BPM, a long reverb. Arctic: glass harmonica, wind across the ice with a thin whistle on a scale note, lake ice singing as it cracks (falling chirps landing on scale notes, echoing), deep booms of the ice settling, wolves now and then howling a chord in the scale; Lydian, pentatonic, whole tone, slow, vast reverb. Mountain: hammered dulcimer; birds all the time on scale notes (chickadees, a cuckoo, warblers, robins, a woodpecker now and then), aspen leaves rustling, a brook, cowbells on the pasture, an alphorn on the root's overtones echoing off the peaks; bright summer scales, ~88 BPM, open air. Carnival: steel pan (long notes rolled) over the samba beat (surdos, caixa, tamborim, agogô bells on the scale, ganzá, the whistle and repique call every 8 bars, the crowd cheering at the peaks); bright major scales, ~120 BPM, a dry room. New wave: DX7 electric piano, the new wave beat with synth bass, the Juno pad, bright scales. Picking one sets its beat and drone; change them after and the world stays. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WORLD</span>
+              <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together, and owns the lead while it's on. Steppe: horsehead fiddle (slow) or lute (fast), shaman drums, throat singing or jaw harp. Desert: the duduk in phrases, harmonized now and then, a daf, the dam drone, Hijaz and friends, slow, long reverb. Ocean: whale song over waves, tuned gulls and a buoy bell, no drums, calm open scales. Jungle: kalimba, log drums tuned to the scale, an insect bed, howler monkeys on the root, gibbon-style songs climbing the scale, birds, frogs (more of them, and fewer monkeys, when calm). Thunderstorm: felt piano, rain, close drops, wind whistling on scale notes, thunder rumbling on the root; the storm follows tension (heavier rain, closer thunder, at the peak a crack and a hush), darker scales while it rages, brighter after; gentle rain only in Endless. Cave: handpan, drips tuned to the scale from a few sources at their own steady rates (they phase into a slow melody), the cave's echo, the wind's low breath on the root, a faint stream, a far boom now and then; handpan scales (Kurd, Celtic minor, Pygmy), slow, deep reverb. Temple: shakuhachi-style flute (breaths of 1-3 long notes, bends up into pitch, head-shake vibrato), the wooden fish on the beat, the chant drone (monks on a low om), singing bowls struck and sung on scale notes, the great bell on the root, far wind chimes; In, Yo and Hirajoshi scales, ~60 BPM, a long reverb. Arctic: glass harmonica, wind across the ice with a thin whistle on a scale note, lake ice singing as it cracks (falling chirps landing on scale notes, echoing), deep booms of the ice settling, wolves now and then howling a chord in the scale; Lydian, pentatonic, whole tone, slow, vast reverb. Mountain: hammered dulcimer; birds all the time on scale notes (chickadees, a cuckoo, warblers, robins, a woodpecker now and then), aspen leaves rustling, a brook, cowbells on the pasture, an alphorn on the root's overtones echoing off the peaks; bright summer scales, ~88 BPM, open air. Carnival: steel pan (long notes rolled) over the samba beat (surdos, caixa, tamborim, agogô bells on the scale, ganzá, the whistle and repique call every 8 bars, the crowd cheering at the peaks); bright major scales, ~120 BPM, a dry room. Celtic: tin whistle (cuts and slides) and fiddle taking turns, the melody in jig triplets over a bodhrán in 6/8; major, Mixolydian, Dorian, ~116 BPM, the key lifting a step now and then. New wave: DX7 electric piano, the new wave beat with synth bass, the Juno pad, bright scales. Picking one sets its beat and drone; change them after and the world stays. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WORLD</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {[["off", "off"], ...Object.entries(WORLDS).map(([w, d]) => [w, d.label])].map(([v, l]) => (
                   <button key={v} onClick={() => chooseWorld(v)} style={{
@@ -7383,9 +7454,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             )}
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends). Desert = a sparse daf/bendir: a deep dum, crisp rim teks, barely-there jingles. Jungle = log drums tuned to the scale in a 3-3-2, shaker, deep congas. Temple = the wooden fish on the beat, a small bowl every 8 bars. Samba = surdos, caixa, tamborim, agogô bells tuned to the scale, ganzá, the whistle and repique every 8 bars. (New wave, desert, jungle and shaman are the beats of their WORLDs, but play under anything.) Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves); the WORLD, if one is on, keeps its lead. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends). Desert = a sparse daf/bendir: a deep dum, crisp rim teks, barely-there jingles. Jungle = log drums tuned to the scale in a 3-3-2, shaker, deep congas. Temple = the wooden fish on the beat, a small bowl every 8 bars. Samba = surdos, caixa, tamborim, agogô bells tuned to the scale, ganzá, the whistle and repique every 8 bars. Jig = a bodhrán in 6/8. (New wave, desert, jungle and shaman are the beats of their WORLDs, but play under anything.) Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves); the WORLD, if one is on, keeps its lead. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "desert", "jungle", "temple", "samba", "newwave"].map(v => (
+                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "desert", "jungle", "temple", "samba", "jig", "newwave"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
                     background: beatStyle === v ? K.a : K.bg3,
                     color: beatStyle === v ? "#000" : K.txt,
