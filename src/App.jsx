@@ -2133,6 +2133,7 @@ export default function Chloe() {
         sleepMins:  SLEEP_MINS.includes(parseInt(p.get("sl"))) ? parseInt(p.get("sl")) : undefined,
         symphonic:  p.get("sy") === "1",
         beatWander: p.get("bw") === "1",
+        worldWander: p.get("ww") === "1",
         beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave", "desert", "jungle"].includes(p.get("bt")) ? p.get("bt") : "off",
         // Links from before the World row: the beat or drone that used to bring a world in still does
         world: Object.hasOwn(WORLDS, p.get("wo") ?? "") ? p.get("wo") : p.has("wo") ? "off"
@@ -2227,6 +2228,8 @@ export default function Chloe() {
   const [beatWander, setBeatWander] = useState(_u.beatWander ?? false);
   // World: off | steppe | desert | ocean | neon (WORLDS)
   const [world, setWorld] = useState(_u.world ?? "off");
+  // World wander: Auto drifts from world to world
+  const [worldWander, setWorldWander] = useState(_u.worldWander ?? false);
   const likesRef = useRef(loadLikes());
   const [likeFlash, setLikeFlash] = useState(0);   // Date.now() of the last ♥, for the "more like this" note
   const kitRef = useRef(null);
@@ -2667,7 +2670,7 @@ export default function Chloe() {
   const pendingSelRef = useRef(null);  // pending scale transition
   const pendingSelTimeRef = useRef(0); // when the pending scale was requested
   const stRef      = useRef({ rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, sustainMult, aRef, beatVol, droneWave });
-  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander, world }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander, world]);
+  useEffect(() => { stRef.current = { rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander, world, worldWander }; }, [rootIdx, timbre, bpm, sel, melMode, arpDir, arpOct, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, rhythm, chordVoice, instrument, noteVol, reverbAmt, delayAmt, delayTime, sustainMult, aRef, beatVol, droneWave, droneOn, beatWander, world, worldWander]);
   useEffect(() => { try { localStorage.setItem("chloe-saved-moments", JSON.stringify(savedMoments)); } catch {} }, [savedMoments]);
   useEffect(() => { try { localStorage.setItem("chloe-custom-names", JSON.stringify(customNames)); } catch {} }, [customNames]);
 
@@ -4607,39 +4610,49 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         later(() => { if (INSTRUMENTS.includes(s)) setInstrument(s); else { setTimbre(s); setInstrument(null); } });
       }
       // Tuning changes on ~30% of picks; equal stays the most common
+      // World wander: on ~20% of picks Auto drifts to another world, bringing
+      // its lead, beat and drone (a world wants a few minutes). Calm leans to
+      // the ocean and the desert, tension to new wave; Endless keeps to the calm
+      // worlds, Rise to the lively ones.
+      const e = energyRef.current;
+      if (_al.beat && stRef.current.worldWander && Math.random() < 0.2 && maybe()) {
+        const w = sleepJ ? { ocean: 1, desert: 0.8, steppe: 0.5 }
+          : epicJ ? { neon: 1, steppe: 0.6, jungle: 0.5 }
+          : { steppe: 0.8, desert: 0.9 * (1 - 0.5 * e), ocean: 0.1 + 0.9 * (1 - e) ** 2, jungle: 0.8, neon: 0.4 + 0.7 * e };
+        delete w[stRef.current.world];
+        const ks = Object.keys(w);
+        let r = Math.random() * ks.reduce((a, k) => a + w[k], 0), nw = ks[ks.length - 1];
+        for (const k of ks) { if ((r -= w[k]) < 0) { nw = k; break; } }
+        nw = likedPick(likes, "world", ks) ?? nw;
+        later(() => {
+          beatPhraseRef.current = true; setWorld(nw); setBeatStyle(WORLDS[nw].beat);
+          if (stRef.current.droneOn && _al.droneWave) setDroneWave(WORLDS[nw].drone);
+        });
+      }
       // Beat style changes on ~30% of picks, only when a beat is on (never
-      // switches it on or off); drive likelier when tense, break when calm.
-      // Wander also moves between worlds (the ocean's has no beat)
-      const wander = stRef.current.beatWander, curW = stRef.current.world;
-      if (_al.beat && (stRef.current.beatStyle !== "off" || (wander && curW !== "off")) && Math.random() < 0.3 && maybe()) {
-        const e = energyRef.current;
+      // switches it on or off); drive likelier when tense, break when calm
+      else if (_al.beat && stRef.current.beatStyle !== "off" && Math.random() < 0.3 && maybe()) {
         // Switches only within a family, so the feel holds: kit = break/drive/heavy,
         // world = downtempo/hand (hand likelier when calm). Fusion stays put.
         // Wander roams every style instead: soft and earthy when calm (brushes,
         // hand, shaman), kit grooves when tense; Endless keeps to the soft ones,
-        // Rise to the kit and shaman. A world's beat (WORLDS key) stands for
-        // the world: wandering there brings in its lead, beat and drone.
+        // Rise to the kit and shaman. (The worlds' beats are plain beats here:
+        // the world stays.)
         const fam = BEAT_FAMILY[stRef.current.beatStyle];
         const w = stRef.current.beatWander
-          ? (sleepJ ? { brushes: 1, hand: 0.7, shaman: 0.8, desert: 0.8, ocean: 1 }
+          ? (sleepJ ? { brushes: 1, hand: 0.7, shaman: 0.8, desert: 0.8 }
             : epicJ ? { break: 0.6, drive: 1, heavy: 0.6, shaman: 0.5, newwave: 0.7 }
-            : { brushes: 0.8 * (1 - e) ** 2, downtempo: 0.9, hand: 1 - 0.6 * e, shaman: 1, desert: 0.9 * (1 - 0.5 * e), ocean: 0.9 * (1 - e) ** 2, jungle: 0.8,
+            : { brushes: 0.8 * (1 - e) ** 2, downtempo: 0.9, hand: 1 - 0.6 * e, shaman: 1, desert: 0.9 * (1 - 0.5 * e), jungle: 0.8,
                 break: 0.3 + 0.8 * e, drive: 0.1 + 1.2 * e, heavy: 0.6 * e, fusion: 0.35, newwave: 0.5 + 0.6 * e })
           : fam === "world" ? { downtempo: 0.4 + e, hand: 1.1 - e }
                 : fam === "kit" ? { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 } : null;
-        if (w && wander) delete w[curW !== "off" ? WORLDS[curW].key : stRef.current.beatStyle];
+        if (w && stRef.current.beatWander) delete w[stRef.current.beatStyle];
         if (w) {
           const ks = Object.keys(w);
           let r = Math.random() * ks.reduce((a, k) => a + w[k], 0), pickB = ks[ks.length - 1];
           for (const k of ks) { if ((r -= w[k]) < 0) { pickB = k; break; } }
-          pickB = likedPick(likes, "wk", ks) ?? likedPick(likes, "beat", ks) ?? pickB;
-          if (wander) {
-            const nw = WORLD_BY_KEY[pickB] ?? "off";
-            later(() => {
-              beatPhraseRef.current = true; setWorld(nw); setBeatStyle(nw !== "off" ? WORLDS[nw].beat : pickB);
-              if (nw !== "off" && stRef.current.droneOn && _al.droneWave) setDroneWave(WORLDS[nw].drone);
-            });
-          } else if (pickB !== stRef.current.beatStyle) later(() => { beatPhraseRef.current = true; setBeatStyle(pickB); });
+          pickB = likedPick(likes, "beat", ks) ?? pickB;
+          if (pickB !== stRef.current.beatStyle) later(() => { beatPhraseRef.current = true; setBeatStyle(pickB); });
         }
       }
       // Smooth: the beat sometimes rests for 1-3 picks, fading out and back in
@@ -4946,6 +4959,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (symphonic) p.set("sy", "1");
     if (beatStyle !== "off") p.set("bt", beatStyle);
     if (beatWander) p.set("bw", "1");
+    if (worldWander) p.set("ww", "1");
     if (world !== "off" || ["shaman", "desert", "newwave", "jungle"].includes(beatStyle) || ["throat", "jawharp", "juno", "dam"].includes(droneWave)) p.set("wo", world);
     if (journey !== "off") { p.set("jo", journey); if (journeyMins !== 15) p.set("jm", journeyMins); if (sleepMins) p.set("sl", sleepMins); }
     if (smooth) p.set("sm", Math.round(smooth * 100));
@@ -4957,7 +4971,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, beatWander, world, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
+  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, beatWander, world, worldWander, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
 
   // Record button: start tapping the master output; stop → download the WAV
   const toggleRec = useCallback(async () => {
@@ -5044,7 +5058,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       t: Date.now(), pat: st.sel?.pattern ?? null, b: st.sel ? normalizedBrightness(st.sel.pattern) : null,
       bpm: st.bpm, beat: st.beatStyle, droneOn: !!st.droneOn, drone: st.droneOn ? st.droneWave : null,
       snd: st.instrument || st.timbre, steppe: isSteppe(st),
-      world: st.world, wk: st.world !== "off" ? WORLDS[st.world].key : st.beatStyle,
+      world: st.world,
     };
     likesRef.current = [...likesRef.current, l].slice(-LIKE_KEEP);
     try { localStorage.setItem("chloe-likes", JSON.stringify(likesRef.current)); } catch {}
@@ -5053,7 +5067,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
   };
   // World row: the world, with its beat and drone (Wander off: this is a choice)
   const chooseWorld = (w) => {
-    setWorld(w);
+    setWorld(w); setWorldWander(false);
     track(`world/${w}`);
     if (w === "off") return;
     const d = WORLDS[w];
@@ -5169,9 +5183,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
         {/* World */}
         <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 14 }}>
-          <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together. Steppe: Mongolian fiddle and lute, shaman drums, throat singing. Desert: the duduk, a daf, the dam drone, Hijaz and friends. Ocean: whale song over waves, gulls and a buoy bell, no drums. Jungle: a kalimba over tuned log drums, insects, howler monkeys, whooping gibbon songs, birds and frogs. New wave: a DX7 electric piano, 1980s LinnDrum and synth bass, the Juno pad. Change the drums or drone after and the world keeps its lead. With drums on WANDER, Chloe drifts between worlds too." style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>world</span>
+          <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together. Steppe: Mongolian fiddle and lute, shaman drums, throat singing. Desert: the duduk, a daf, the dam drone, Hijaz and friends. Ocean: whale song over waves, gulls and a buoy bell, no drums. Jungle: a kalimba over tuned log drums, insects, howler monkeys, whooping gibbon songs, birds and frogs. New wave: a DX7 electric piano, 1980s LinnDrum and synth bass, the Juno pad. Change the drums or drone after and the world keeps its lead. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>world</span>
+          <button onClick={() => { const on = !worldWander; setWorldWander(on); if (on && world === "off") { const ks = Object.keys(WORLDS); chooseWorld(ks[Math.floor(Math.random() * ks.length)]); } if (on) setWorldWander(true); }} title="Wander: Chloe drifts from world to world as the music goes, a few minutes in each (calm leans to the ocean and the desert, livelier to new wave)" style={{ ...chip(worldWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
           {[["off", "none"], ...Object.entries(WORLDS).map(([w, d]) => [w, d.label])].map(([w, l]) => (
-            <button key={w} onClick={() => chooseWorld(w)} style={{ ...chip(world === w), fontSize: 10, padding: "4px 11px" }}>{l}</button>
+            <button key={w} onClick={() => chooseWorld(w)} style={{ ...chip(world === w && !worldWander), fontSize: 10, padding: "4px 11px", ...(worldWander && world === w ? { borderStyle: "dashed" } : {}) }}>{l}</button>
           ))}
         </div>
 
@@ -5188,7 +5203,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         {/* Drum feel, while drums are on */}
         {beatStyle !== "off" && (
           <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
-            <button onClick={() => setBeatWander(w => !w)} title="Wander: the drums roam across every style as the music goes, from brushes to breakbeats, and drift between the worlds too (steppe, desert, ocean, new wave)" style={{ ...chip(beatWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
+            <button onClick={() => setBeatWander(w => !w)} title="Wander: the drums roam across every style as the music goes, from brushes to breakbeats (the world, if one is on, keeps its lead)" style={{ ...chip(beatWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
             {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["desert", "desert"], ["jungle", "jungle"], ["newwave", "new wave"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
               <button key={v} onClick={() => { setBeatStyle(v); setBeatWander(false); }} style={{ ...chip(beatStyle === v && !beatWander), fontSize: 10, padding: "4px 11px", ...(beatWander && beatStyle === v ? { borderStyle: "dashed" } : {}) }}>{l}</button>
             ))}
@@ -6400,7 +6415,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* World — lead, beat, drone and leanings that belong together */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together, and owns the lead while it's on. Steppe: horsehead fiddle (slow) or lute (fast), shaman drums, throat singing or jaw harp. Desert: the duduk in phrases, harmonized now and then, a daf, the dam drone, Hijaz and friends, slow, long reverb. Ocean: whale song over waves, tuned gulls and a buoy bell, no drums, calm open scales. Jungle: kalimba, log drums tuned to the scale, an insect bed, howler monkeys on the root, gibbon-style songs climbing the scale, birds, frogs (more of them, and fewer monkeys, when calm). New wave: DX7 electric piano, the new wave beat with synth bass, the Juno pad, bright scales. Picking one sets its beat and drone; change them after and the world stays. With BEAT wander on, Auto drifts between worlds too." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WORLD</span>
+              <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together, and owns the lead while it's on. Steppe: horsehead fiddle (slow) or lute (fast), shaman drums, throat singing or jaw harp. Desert: the duduk in phrases, harmonized now and then, a daf, the dam drone, Hijaz and friends, slow, long reverb. Ocean: whale song over waves, tuned gulls and a buoy bell, no drums, calm open scales. Jungle: kalimba, log drums tuned to the scale, an insect bed, howler monkeys on the root, gibbon-style songs climbing the scale, birds, frogs (more of them, and fewer monkeys, when calm). New wave: DX7 electric piano, the new wave beat with synth bass, the Juno pad, bright scales. Picking one sets its beat and drone; change them after and the world stays. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WORLD</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {[["off", "off"], ...Object.entries(WORLDS).map(([w, d]) => [w, d.label])].map(([v, l]) => (
                   <button key={v} onClick={() => chooseWorld(v)} style={{
@@ -6412,11 +6427,16 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                     fontWeight: world === v ? 600 : 400,
                   }}>{l}</button>
                 ))}
+                <button onClick={() => { const on = !worldWander; setWorldWander(on); if (on && world === "off") { const ks = Object.keys(WORLDS); chooseWorld(ks[Math.floor(Math.random() * ks.length)]); } if (on) setWorldWander(true); }} title="Wander: under Auto, drift from world to world, a few minutes in each. Calm leans to the ocean and the desert, tension to new wave." style={{
+                  background: worldWander ? K.a : K.bg3, color: worldWander ? "#000" : K.txt,
+                  border: `1px solid ${worldWander ? K.a : K.br}`, borderRadius: 3, padding: "3px 8px",
+                  fontSize: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: worldWander ? 600 : 400,
+                }}>wander</button>
               </div>
             </div>
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends). Desert = a sparse daf/bendir: a deep dum, crisp rim teks, barely-there jingles. Jungle = log drums tuned to the scale in a 3-3-2, shaker, deep congas. (New wave, desert, jungle and shaman are the beats of their WORLDs, but play under anything.) Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves) and drifts between the WORLDs too, bringing each one's lead and drone. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends). Desert = a sparse daf/bendir: a deep dum, crisp rim teks, barely-there jingles. Jungle = log drums tuned to the scale in a 3-3-2, shaker, deep congas. (New wave, desert, jungle and shaman are the beats of their WORLDs, but play under anything.) Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves); the WORLD, if one is on, keeps its lead. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "desert", "jungle", "newwave"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
