@@ -5514,13 +5514,6 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           )}
         </div>
 
-        <a href="https://ko-fi.com/ronnienorth" target="_blank" rel="noreferrer" style={{
-          background: K.bg3, color: K.txt,
-          border: `1px solid ${K.br}`,
-          borderRadius: 3, padding: "5px 12px",
-          fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1,
-          flexShrink: 0, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5,
-        }}><span style={{color:"#e03030", fontSize:16, lineHeight:1}}>♥</span> tip</a>
         {(autoOn || demoOn) && <button onClick={likeNow} title="More of this: Auto leans toward what's playing now (the scale's brightness, tempo, drums, drone and sound). Each like's pull halves every 15 minutes." style={{
           background: Date.now() - likeFlash < 2500 ? "#ff8a96" : K.bg3, color: Date.now() - likeFlash < 2500 ? "#000" : "#ff8a96",
           border: "1px solid #e05a6a", borderRadius: 3, padding: "5px 12px",
