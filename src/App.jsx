@@ -1044,7 +1044,7 @@ const tunedRatio = (semi, tuning) => {
 
 // Per-sound gain so every instrument/wave plays at about the same loudness
 // (measured K-weighted, eighth-note runs C3-C5, levelled to -28 LUFS).
-const SOUND_GAIN = { glass: 0.4, shaku: 0.56, hang: 0.5, felt: 0.44, kalimba: 0.33, piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, lute: 1.88, fiddle: 0.78, dx7: 0.52, duduk: 0.36, whale: 0.8, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
+const SOUND_GAIN = { dulcimer: 1, glass: 0.4, shaku: 0.56, hang: 0.5, felt: 0.44, kalimba: 0.33, piano: 0.55, guitar: 5.37, xylo: 3.05, space: 0.8, lute: 1.88, fiddle: 0.78, dx7: 0.52, duduk: 0.36, whale: 0.8, sine: 1.4, triangle: 1.72, square: 1.14, sawtooth: 1.93 };
 
 // Steppe strings slide into a note from the one before (within a 4th, not
 // across a rest, not between the notes of one chord)
@@ -1299,6 +1299,24 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     mixG.connect(f1); f1.connect(dip); dip.connect(f2); f2.connect(lp); lp.connect(g); connectOut(g);
     for (const o of [o1, o2, vib]) { o.start(now); o.stop(now + dur + 0.02); }
     nb.start(now); nb.stop(now + dur + 0.02);
+    cleanup(dur);
+    return { start: now, stop: now + dur };
+  }
+
+  if (instrument === "dulcimer") {
+    // Hammered dulcimer: each course is two strings a few cents apart (the
+    // shimmer), struck with a light hammer (a short bright tick), ringing
+    // long through an open, bright body
+    const dur = Math.max(1.2, Math.min(3, beatDur * 4)), g = mkG();
+    for (const c of [-4, 4]) { const b = mkB(); b.buffer = luteBuffer(ac, freq); b.detune.value = c; b.connect(g); b.start(now); b.stop(now + dur); }
+    const nb = mkB(), nbuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.02), ac.sampleRate), nd = nbuf.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ac.sampleRate * 0.003));
+    nb.buffer = nbuf; const nf = mkF("bandpass", 2500), ng = mkG(); ng.gain.value = 0.15;
+    nb.connect(nf); nf.connect(ng); ng.connect(g); nb.start(now);
+    const shelf = mkF("highshelf", 2000), body = mkF("peaking", 450), v = mkG();
+    shelf.gain.value = 3; body.Q.value = 1; body.gain.value = 2;
+    v.gain.setValueAtTime(vel, now); v.gain.setValueAtTime(vel, now + dur - 0.1); v.gain.linearRampToValueAtTime(0, now + dur);
+    g.connect(body); body.connect(shelf); shelf.connect(v); connectOut(v);
     cleanup(dur);
     return { start: now, stop: now + dur };
   }
@@ -1597,7 +1615,7 @@ function Piano({ active, playing, K }) {
 const ROOTS = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
 const OFFS  = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const TIMBRES = ["sine", "triangle", "square", "sawtooth"];
-const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7", "duduk", "whale", "kalimba", "felt", "hang", "shaku", "glass"];
+const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7", "duduk", "whale", "kalimba", "felt", "hang", "shaku", "glass", "dulcimer"];
 // Worlds: a lead, a rhythm, a drone and leanings (scales, tempo, reverb) that
 // belong together, picked on the World row. Picking one brings in its beat and
 // drone (both can be changed after); while it's on, it owns the lead.
@@ -1632,6 +1650,12 @@ const INSTRUMENTS = ["piano", "guitar", "xylo", "space", "lute", "fiddle", "dx7"
 //     landing on scale notes, echoing off the sheet), deep booms of the ice
 //     settling, wolves now and then howling a chord; Lydian, pentatonic and
 //     whole-tone colours, slow, a vast reverb
+//   mountain: a summer day in the high meadows. A hammered dulcimer; no
+//     drums: birds everywhere (chickadees, a cuckoo, warblers, robins, a
+//     woodpecker now and then), every call on scale notes; aspen leaves
+//     rustling, a brook; cowbells far off on the pasture and an alphorn
+//     calling the root's natural overtones, echoing off the peaks; bright
+//     summer scales, an easy ~88 BPM, open-air reverb
 // key: the world's place among Wander's beat weights
 const WORLDS = {
   steppe: { label: "steppe",   beat: "shaman",  drone: "throat", drones: ["throat", "jawharp"], key: "shaman" },
@@ -1643,6 +1667,7 @@ const WORLDS = {
   cave:   { label: "cave",     beat: "off",     drone: "sine",   drones: ["sine", "pad", "tanpura"], key: "cave" },
   temple: { label: "temple",   beat: "temple",  drone: "chant",  drones: ["chant", "sine", "pad"], key: "temple" },
   arctic: { label: "arctic",   beat: "off",     drone: "sine",   drones: ["sine", "pad", "strings"], key: "arctic" },
+  mountain: { label: "mountain", beat: "off",   drone: "pad",    drones: ["pad", "sine", "organ"], key: "mountain" },
 };
 const WORLD_BY_KEY = Object.fromEntries(Object.entries(WORLDS).map(([w, d]) => [d.key, w]));
 const isSteppe = st => st.world === "steppe";
@@ -1654,6 +1679,7 @@ const isThunder = st => st.world === "thunder";
 const isCave = st => st.world === "cave";
 const isTemple = st => st.world === "temple";
 const isArctic = st => st.world === "arctic";
+const isMountain = st => st.world === "mountain";
 // Hijaz (Phrygian dominant), Hijaz Kar (double harmonic), harmonic minor,
 // Nikriz (Ukrainian Dorian), Kurd (Phrygian), Neapolitan minor, Nahawand
 // (Aeolian), Bayati without its quarter tone (Dorian), with weights
@@ -1668,6 +1694,8 @@ const CAVE_SCALES = [[1453, 3], [1197, 2], [1165, 2], [397, 1], [1193, 2], [1709
 const TEMPLE_SCALES = [[419, 3], [677, 3], [397, 2], [1193, 2], [661, 1], [1123, 1]];
 // Arctic: Lydian, major pentatonic, Aeolian, Dorian, whole tone, Ionian
 const ARCTIC_SCALES = [[2773, 3], [661, 2], [1453, 2], [1709, 1], [1365, 1], [2741, 1]];
+// Mountain: major pentatonic, Ionian, Lydian, Mixolydian
+const MOUNTAIN_SCALES = [[661, 3], [2741, 3], [2773, 2], [1717, 2]];
 // Jungle: the pentatonics mostly, then Dorian, Mixolydian, Ionian
 const JUNGLE_SCALES = [[661, 3], [1193, 3], [1709, 1], [1717, 1], [2741, 1]];
 const GRP_NAME = { 3: "Tritonic", 4: "Tetratonic", 5: "Pentatonic", 6: "Hexatonic", 7: "Heptatonic", 8: "Octatonic" };
@@ -2341,7 +2369,7 @@ export default function Chloe() {
       return {
         rootIdx:    parseInt(p.get("r") ?? "0"),
         timbre:     ["sine","triangle","square","sawtooth"].includes(p.get("t")) ? p.get("t") : "sine",
-        instrument: ["piano","guitar","xylo","space","lute","fiddle","dx7","duduk","whale","kalimba","felt","hang","shaku","glass"].includes(p.get("i")) ? p.get("i") : null,
+        instrument: ["piano","guitar","xylo","space","lute","fiddle","dx7","duduk","whale","kalimba","felt","hang","shaku","glass","dulcimer"].includes(p.get("i")) ? p.get("i") : null,
         noteVol:    Number.isFinite(parseFloat(p.get("v"))) ? parseFloat(p.get("v")) : 0.7,
         reverbAmt:  parseFloat(p.get("rv") ?? "0.75"),
         delayAmt:   parseFloat(p.get("dl") ?? "0.15"),
@@ -3503,6 +3531,7 @@ export default function Chloe() {
       else if (isCave(stRef.current)) inst = "hang";
       else if (isTemple(stRef.current)) inst = "shaku";
       else if (isArctic(stRef.current)) inst = "glass";
+      else if (isMountain(stRef.current)) inst = "dulcimer";
       else if (isSteppe(stRef.current)) {
         if (b <= 90) steppeInst = "fiddle"; else if (b >= 100) steppeInst = "lute";
         inst = steppeInst;
@@ -3976,7 +4005,8 @@ export default function Chloe() {
     let oceanAc = null;
     const oceanLoop = () => {
       try {
-        const ocean = isOcean(stRef.current), jungle = isJungle(stRef.current), thunder = isThunder(stRef.current), cave = isCave(stRef.current), temple = isTemple(stRef.current), arctic = isArctic(stRef.current), want = ocean || jungle || thunder || cave || temple || arctic;
+        const ocean = isOcean(stRef.current), jungle = isJungle(stRef.current), thunder = isThunder(stRef.current), cave = isCave(stRef.current), temple = isTemple(stRef.current), arctic = isArctic(stRef.current), mountain = isMountain(stRef.current), want = ocean || jungle || thunder || cave || temple || arctic || mountain;
+        if (!mountain && mt.bed) mountainBedStop();
         if (!arctic && ar.bed) arcticBedStop();
         if (!temple && tp.bed) templeBedStop();
         if (!cave && cv.bed) caveBedStop();
@@ -4000,6 +4030,7 @@ export default function Chloe() {
           if (cave) caveStep(bus, ac, ac.currentTime + 0.1, stRef.current);
           if (temple) templeStep(bus, ac, ac.currentTime + 0.1, stRef.current);
           if (arctic) arcticStep(bus, ac, ac.currentTime + 0.1, stRef.current);
+          if (mountain) mountainStep(bus, ac, ac.currentTime + 0.1, stRef.current);
         }
       } catch (e) { console.error("ambience:", e); }
       oceanT = setTimeout(oceanLoop, 100);
@@ -4573,6 +4604,140 @@ export default function Chloe() {
       if (!ar.wolf) ar.wolf = t + 30 + Math.random() * 30;
       else if (t >= ar.wolf) { wolves(bus, ac, t, st); ar.wolf = t + 60 + Math.random() * 60; }
     };
+    // Mountain (its world): a summer day in the high meadows. A bed of aspen
+    // leaves rustling (noise fluttering fast, in slow gusts) and a brook. Birds
+    // all the time (one every 1.5-5 s, sometimes two at once; fewer when calm):
+    // chickadees (fee-bee, a step down), a cuckoo far off (a third down, a few
+    // times), warblers (a quick trill running up or down the scale), robins
+    // (caroling phrases of little slides), a woodpecker drumming now and
+    // then; all on scale notes. Cowbells far off on the pasture, a few clanks
+    // as a cow wanders. An alphorn now and then: the root's natural overtones
+    // (the ones in the scale), echoing off the peaks.
+    const mt = { bed: null, bird: 0, cow: 0, horn: 0, wood: 0 };
+    const mountainEcho = (bus, ac) => {
+      if (bus.echoM) return bus.echoM;
+      const d = ac.createDelay(2), fb = ac.createGain(), lp = ac.createBiquadFilter(), out = ac.createGain();
+      d.delayTime.value = 0.9; fb.gain.value = 0.35; lp.type = "lowpass"; lp.frequency.value = 1500; out.gain.value = 0.6;
+      d.connect(lp); lp.connect(fb); fb.connect(d); lp.connect(out); out.connect(bus.vol); out.connect(bus.roomSend);
+      return (bus.echoM = d);
+    };
+    const mountainBedStart = (bus, ac) => {
+      const out = ac.createGain(), t = ac.currentTime, nodes = [];
+      out.gain.setValueAtTime(0, t); out.gain.linearRampToValueAtTime(1, t + 4); out.connect(bus.vol);
+      const lfo = (f, depth, param) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = f; g.gain.value = depth; o.connect(g); g.connect(param); nodes.push(o); return o; };
+      for (const [pan, gf] of [[-0.6, 0.08], [0.6, 0.11]]) {
+        const n = ac.createBufferSource(), fl = ac.createBufferSource(); n.buffer = fl.buffer = noiseBuf(ac); n.loop = fl.loop = true; n.loopStart = Math.random(); fl.loopStart = Math.random();
+        const bp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), am = ac.createGain(), fll = ac.createBiquadFilter(), flg = ac.createGain(), gust = ac.createGain(), p = ac.createStereoPanner();
+        bp.type = "bandpass"; bp.frequency.value = 3200; bp.Q.value = 0.7; lp.type = "lowpass"; lp.frequency.value = 6000;
+        am.gain.value = 0.5; fll.type = "lowpass"; fll.frequency.value = 30; flg.gain.value = 25;   // the flutter of the leaves
+        fl.connect(fll); fll.connect(flg); flg.connect(am.gain);
+        gust.gain.value = 0.06; lfo(gf, 0.03, gust.gain); p.pan.value = pan;
+        n.connect(bp); bp.connect(am); am.connect(gust); gust.connect(lp); lp.connect(p); p.connect(out); nodes.push(n, fl);
+      }
+      const b = ac.createBufferSource(), bf = ac.createBiquadFilter(), bg = ac.createGain();   // the brook
+      b.buffer = noiseBuf(ac); b.loop = true; b.loopStart = Math.random(); bf.type = "bandpass"; bf.frequency.value = 1400; bf.Q.value = 1.2;
+      bg.gain.value = 0.012; lfo(6, 0.008, bg.gain); lfo(0.11, 0.005, bg.gain);
+      b.connect(bf); bf.connect(bg); bg.connect(out); nodes.push(b);
+      nodes.forEach(x => x.start(t));
+      return { ac, out, nodes };
+    };
+    const mountainBedStop = () => {
+      const b = mt.bed; mt.bed = null;
+      if (!b) return;
+      const t = b.ac.currentTime;
+      b.out.gain.cancelScheduledValues(t); b.out.gain.setValueAtTime(b.out.gain.value, t); b.out.gain.linearRampToValueAtTime(0, t + 4);
+      b.nodes.forEach(x => { try { x.stop(t + 4.2); } catch {} });
+      setTimeout(() => { try { b.out.disconnect(); } catch {} }, 4500);
+    };
+    // One whistled note for a bird: from f0 to f1 over len, a soft start
+    const whistle = (bus, ac, t, f0, f1, len, v, pan, far) => {
+      const w = voice(bus, ac, t, "sine", pan, far ? 2500 : 4500, true);
+      w.f.setValueAtTime(f0, t); w.f.exponentialRampToValueAtTime(f1, t + len);
+      w.g.gain.setValueAtTime(0, t); w.g.gain.linearRampToValueAtTime(v, t + Math.min(0.02, len * 0.2)); w.g.gain.setValueAtTime(v, t + len * 0.7); w.g.gain.linearRampToValueAtTime(0, t + len);
+      w.o.start(t); w.o.stop(t + len + 0.02);
+    };
+    const songbird = (bus, ac, t, st, calm) => {
+      const L = lastBase.length, pan = (Math.random() * 2 - 1) * 0.9, far = calm || Math.random() < 0.35, v = far ? 0.035 : 0.06;
+      const r = Math.random(), d = Math.floor(Math.random() * L), hz = (k, o = 84) => scaleHz(st, k, o);
+      if (r < 0.25) {   // chickadee: fee-bee, a step down, sometimes twice
+        for (let k = 0, a = t; k < (Math.random() < 0.4 ? 2 : 1); k++, a += 1.1) {
+          whistle(bus, ac, a, hz(d), hz(d) * 0.99, 0.32, v, pan, far);
+          whistle(bus, ac, a + 0.4, hz(d - 1) * 1.01, hz(d - 1), 0.3, v * 0.9, pan, far);
+        }
+      } else if (r < 0.4) {   // cuckoo, far off: a third down, 2-4 times
+        for (let k = 0, a = t; k < 2 + Math.floor(Math.random() * 3); k++, a += 0.9) {
+          whistle(bus, ac, a, hz(d, 72), hz(d, 72), 0.2, 0.04, pan, true);
+          whistle(bus, ac, a + 0.28, hz(d - 2, 72), hz(d - 2, 72) * 0.98, 0.35, 0.035, pan, true);
+        }
+      } else if (r < 0.65) {   // warbler: a quick trill running up or down
+        const dir = Math.random() < 0.5 ? 1 : -1, n = 8 + Math.floor(Math.random() * 6);
+        for (let k = 0; k < n; k++) { const f = hz(d + dir * Math.floor(k / 3)); whistle(bus, ac, t + k * 0.075, f * 1.04, f, 0.055, v * 0.8, pan, far); }
+      } else {   // robin: phrases of little slides between neighbouring notes
+        let a = t, k = d;
+        for (let ph = 0; ph < 2 + Math.floor(Math.random() * 3); ph++, a += 0.55) {
+          const up = Math.random() < 0.5;
+          whistle(bus, ac, a, hz(k), hz(k + (up ? 1 : -1)), 0.17, v, pan, far);
+          whistle(bus, ac, a + 0.22, hz(k + (up ? 1 : -1)), hz(k), 0.15, v * 0.85, pan, far);
+          k += Math.floor(Math.random() * 3) - 1;
+        }
+      }
+    };
+    const woodpecker = (bus, ac, t) => {
+      const pan = (Math.random() * 2 - 1) * 0.8, n = 14 + Math.floor(Math.random() * 8);
+      for (let k = 0, a = t; k < n; k++, a += 0.055 + k * 0.0012) {
+        const o = ac.createOscillator(), g = ac.createGain(), p = ac.createStereoPanner(); o.frequency.value = 950;
+        g.gain.setValueAtTime(0, a); g.gain.linearRampToValueAtTime(0.025 * (1 - k / (n * 1.5)), a + 0.001); g.gain.setTargetAtTime(0, a + 0.001, 0.008);
+        p.pan.value = pan; o.connect(g); g.connect(p); p.connect(bus.vol); p.connect(bus.roomSend); o.start(a); o.stop(a + 0.05);
+        o.onended = () => { try { p.disconnect(); } catch {} };
+      }
+    };
+    const cowbells = (bus, ac, t, st) => {
+      const f = scaleHz(st, Math.random() < 0.6 ? 0 : 2, 72), pan = (Math.random() * 2 - 1) * 0.8;
+      for (let k = 0, a = t; k < 2 + Math.floor(Math.random() * 4); k++, a += 0.3 + Math.random() * 0.9) {
+        const g = ac.createGain(), p = ac.createStereoPanner(), lp = ac.createBiquadFilter(); p.pan.value = pan; lp.type = "lowpass"; lp.frequency.value = 2200;
+        g.connect(lp); lp.connect(p); p.connect(bus.vol); p.connect(bus.roomSend);
+        for (const [r, amp, tau] of [[1, 1, 0.25], [2.63, 0.5, 0.12], [4.1, 0.25, 0.06]]) {
+          const o = ac.createOscillator(), og = ac.createGain(); o.frequency.value = f * r;
+          og.gain.setValueAtTime(0, a); og.gain.linearRampToValueAtTime(0.01 * amp, a + 0.003); og.gain.setTargetAtTime(0, a + 0.003, tau);
+          o.connect(og); og.connect(g); o.start(a); o.stop(a + 1.2);
+        }
+        setTimeout(() => { try { p.disconnect(); } catch {} }, (a - ac.currentTime + 1.5) * 1000);
+      }
+    };
+    const alphorn = (bus, ac, t, st) => {
+      // A call on the root's natural overtones (those in the scale), long notes, into the peaks' echo
+      const ok = overtonesIn(lastBase, 3, 10), F = st.aRef * 2 ** ((36 + OFFS[st.rootIdx] - 69) / 12);
+      const n = 3 + Math.floor(Math.random() * 3), echo = mountainEcho(bus, ac), pan = (Math.random() * 2 - 1) * 0.5;
+      let a = t, h = ok[Math.floor(Math.random() * ok.length)];
+      for (let k = 0; k < n; k++) {
+        const len = k === n - 1 ? 2.2 : 0.7 + Math.random() * 0.8, f = F * h;
+        const w = voice(bus, ac, a, "sawtooth", pan, 900, true);
+        w.f.setValueAtTime(f * 0.98, a); w.f.exponentialRampToValueAtTime(f, a + 0.1);
+        w.g.gain.setValueAtTime(0, a); w.g.gain.linearRampToValueAtTime(0.012, a + 0.12); w.g.gain.setValueAtTime(0.012, a + len * 0.8); w.g.gain.linearRampToValueAtTime(0, a + len);
+        w.g.connect(echo);
+        w.o.start(a); w.o.stop(a + len + 0.02);
+        a += len + 0.05;
+        const i = ok.indexOf(h); h = ok[Math.max(0, Math.min(ok.length - 1, i + (Math.random() < 0.5 ? 1 : -1) * (1 + Math.floor(Math.random() * 2))))];
+      }
+    };
+    const mountainStep = (bus, ac, t, st) => {
+      if (!lastBase || !lastBase.length) return;
+      const calm = !!JOURNEYS[journeyRef.current?.id]?.endless || energy < 0.3;
+      if (!mt.bed || mt.bed.ac !== ac) { mountainBedStop(); mt.bed = mountainBedStart(bus, ac); }
+      if (mt.bird - t > 30 || mt.cow - t > 90 || mt.horn - t > 200 || mt.wood - t > 150) { mt.bird = mt.cow = mt.horn = mt.wood = 0; }   // a fresh clock
+      if (!mt.bird) mt.bird = t + 0.5;
+      else if (t >= mt.bird) {
+        songbird(bus, ac, t, st, calm);
+        if (!calm && Math.random() < 0.3) songbird(bus, ac, t + 0.4 + Math.random() * 1.2, st, calm);
+        mt.bird = t + (calm ? 4 + Math.random() * 6 : 1.5 + Math.random() * 3.5);
+      }
+      if (!mt.cow) mt.cow = t + 8 + Math.random() * 10;
+      else if (t >= mt.cow) { cowbells(bus, ac, t, st); mt.cow = t + 15 + Math.random() * 20; }
+      if (!mt.horn) mt.horn = t + 40 + Math.random() * 40;
+      else if (t >= mt.horn) { alphorn(bus, ac, t, st); mt.horn = t + 90 + Math.random() * 90; }
+      if (!mt.wood) mt.wood = t + 25 + Math.random() * 30;
+      else if (t >= mt.wood) { woodpecker(bus, ac, t); mt.wood = t + 45 + Math.random() * 60; }
+    };
     window.__chloeRain = (kind) => { const ac = getCtx(); rainstick(getKit(ac), ac, ac.currentTime + 0.05, 0.32, kind); };
     const rampBeat = (k, ac, v, sec) => {
       for (const g of [k.fade, k.fadeRoom]) {
@@ -4802,7 +4967,7 @@ export default function Chloe() {
     beatT = setTimeout(beatLoop, 0);
     oceanT = setTimeout(oceanLoop, 0);
     return () => {
-      clearTimeout(melTimeout); clearInterval(arpRef.current); clearTimeout(orchT); clearTimeout(beatT); clearTimeout(oceanT); jungleBedStop(); thunderBedStop(); caveBedStop(); templeBedStop(); arcticBedStop();
+      clearTimeout(melTimeout); clearInterval(arpRef.current); clearTimeout(orchT); clearTimeout(beatT); clearTimeout(oceanT); jungleBedStop(); thunderBedStop(); caveBedStop(); templeBedStop(); arcticBedStop(); mountainBedStop();
       if (oceanAc?.__ocean?.on) { const b = oceanAc.__ocean, t = oceanAc.currentTime; b.on = false; for (const g of [b.fade, b.fadeRoom]) { g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0, t, 0.3); } }
       if (orchRef.current) orchRef.current.all.forEach(i => i.stop());
     };
@@ -5170,14 +5335,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // ♥ likes bend every brightness target toward the liked brightness, and
       // now and then bring back a liked scale outright
       const likes = likesRef.current, likeB = likes.length ? likedMean(likes, "b") : null;
-      const neon = isNeon(stRef.current), desert = isDesert(stRef.current), ocean = isOcean(stRef.current), jungle = isJungle(stRef.current), thunder = isThunder(stRef.current), cave = isCave(stRef.current), temple = isTemple(stRef.current), arctic = isArctic(stRef.current);
+      const neon = isNeon(stRef.current), desert = isDesert(stRef.current), ocean = isOcean(stRef.current), jungle = isJungle(stRef.current), thunder = isThunder(stRef.current), cave = isCave(stRef.current), temple = isTemple(stRef.current), arctic = isArctic(stRef.current), mountain = isMountain(stRef.current);
       // The storm passing: its last peak within 3 minutes and quieter now = lighter scales
       const afterStorm = thunder && Date.now() - stormRef.current.peakAt < 180000 && stormRef.current.I < 0.4;
       const bend = b => { if (b === null) return b; if (likeB) b += likeB.k * 0.6 * (likeB.v - b); return neon ? b + 0.35 * (0.7 - b) : b; };
       const jv = journeyRef.current?.vals, jb = jv ? bend(jv.b) : null;
       // Desert: mostly a Middle Eastern scale (in a journey, one near its brightness)
-      if (!entry && (desert || ocean || jungle || thunder || cave || temple || arctic) && Math.random() < 0.7) {
-        const cands = (ocean || afterStorm ? OCEAN_SCALES : jungle ? JUNGLE_SCALES : thunder ? THUNDER_SCALES : cave ? CAVE_SCALES : temple ? TEMPLE_SCALES : arctic ? ARCTIC_SCALES : DESERT_SCALES).map(([pat, w]) => ({ e: catalogue.find(e => e.pat === pat), w }))
+      if (!entry && (desert || ocean || jungle || thunder || cave || temple || arctic || mountain) && Math.random() < 0.7) {
+        const cands = (ocean || afterStorm ? OCEAN_SCALES : jungle ? JUNGLE_SCALES : thunder ? THUNDER_SCALES : cave ? CAVE_SCALES : temple ? TEMPLE_SCALES : arctic ? ARCTIC_SCALES : mountain ? MOUNTAIN_SCALES : DESERT_SCALES).map(([pat, w]) => ({ e: catalogue.find(e => e.pat === pat), w }))
           .filter(c => c.e && c.e.pat !== cur?.pattern && (jb === null || Math.abs(normalizedBrightness(c.e.pat) - jb) <= 0.2));
         let r = Math.random() * cands.reduce((a, c) => a + c.w, 0);
         for (const c of cands) if ((r -= c.w) < 0) { entry = c.e; break; }
@@ -5222,7 +5387,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
       const chordVoice = VOICES[Math.floor(Math.random() * VOICES.length)];
       const likeT = likes.length ? likedMean(likes, "bpm", true) : null;
-      const bendT = b => { if (likeT) b *= Math.pow(likeT.v / b, likeT.k * 0.5); return desert ? b * Math.pow(66 / b, 0.5) : ocean ? b * Math.pow(60 / b, 0.5) : jungle ? b * Math.pow(96 / b, 0.5) : thunder ? b * Math.pow(72 / b, 0.5) : cave ? b * Math.pow(68 / b, 0.5) : temple ? b * Math.pow(60 / b, 0.5) : arctic ? b * Math.pow(64 / b, 0.5) : b; };
+      const bendT = b => { if (likeT) b *= Math.pow(likeT.v / b, likeT.k * 0.5); return desert ? b * Math.pow(66 / b, 0.5) : ocean ? b * Math.pow(60 / b, 0.5) : jungle ? b * Math.pow(96 / b, 0.5) : thunder ? b * Math.pow(72 / b, 0.5) : cave ? b * Math.pow(68 / b, 0.5) : temple ? b * Math.pow(60 / b, 0.5) : arctic ? b * Math.pow(64 / b, 0.5) : mountain ? b * Math.pow(88 / b, 0.5) : b; };
       let bpm          = Math.round(bendT(driftBpm(stRef.current.bpm)));
 
       const ac = getCtx();
@@ -5269,9 +5434,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // worlds, Rise to the lively ones.
       const e = energyRef.current;
       if (_al.beat && stRef.current.worldWander && Math.random() < 0.2 && maybe()) {
-        const w = sleepJ ? { ocean: 1, desert: 0.8, steppe: 0.5, thunder: 0.7, cave: 0.9, temple: 0.9, arctic: 0.6 }
-          : epicJ ? { neon: 1, steppe: 0.6, jungle: 0.5, thunder: 0.8 }
-          : { steppe: 0.8, desert: 0.9 * (1 - 0.5 * e), ocean: 0.1 + 0.9 * (1 - e) ** 2, jungle: 0.8, neon: 0.4 + 0.7 * e, thunder: 0.4 + 0.6 * e, cave: 0.8 * (1 - 0.5 * e), temple: 0.8 * (1 - 0.6 * e), arctic: 0.7 * (1 - 0.5 * e) };
+        const w = sleepJ ? { ocean: 1, desert: 0.8, steppe: 0.5, thunder: 0.7, cave: 0.9, temple: 0.9, arctic: 0.6, mountain: 0.4 }
+          : epicJ ? { neon: 1, steppe: 0.6, jungle: 0.5, thunder: 0.8, mountain: 0.5 }
+          : { steppe: 0.8, desert: 0.9 * (1 - 0.5 * e), ocean: 0.1 + 0.9 * (1 - e) ** 2, jungle: 0.8, neon: 0.4 + 0.7 * e, thunder: 0.4 + 0.6 * e, cave: 0.8 * (1 - 0.5 * e), temple: 0.8 * (1 - 0.6 * e), arctic: 0.7 * (1 - 0.5 * e), mountain: 0.9 };
         delete w[stRef.current.world];
         const ks = Object.keys(w);
         let r = Math.random() * ks.reduce((a, k) => a + w[k], 0), nw = ks[ks.length - 1];
@@ -5326,6 +5491,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       } else if (_al.bpm && stRef.current.autoTempo === "drift" && maybe()) later(() => setBpm(bpm));
       if (_al.reverb && J?.vals) { const rv = parseFloat(Math.min(1, Math.max(0, J.vals.rv + (Math.random() - 0.5) * 0.08)).toFixed(2)); later(() => setReverbAmt(rv)); }
       else if (_al.reverb && maybe()) { const rv = parseFloat((0.3 + Math.random() * 0.65).toFixed(2)); later(() => setReverbAmt(rv)); }
+      if (_al.reverb && mountain) { const rv = parseFloat((0.45 + Math.random() * 0.15).toFixed(2)); later(() => setReverbAmt(rv)); }   // open air
       if (_al.reverb && arctic) { const rv = parseFloat((0.88 + Math.random() * 0.1).toFixed(2)); later(() => setReverbAmt(rv)); }   // the open ice
       if (_al.reverb && temple) { const rv = parseFloat((0.88 + Math.random() * 0.1).toFixed(2)); later(() => setReverbAmt(rv)); }   // the hall
       if (_al.reverb && cave) { const rv = parseFloat((0.85 + Math.random() * 0.12).toFixed(2)); later(() => setReverbAmt(rv)); }   // deep in the rock
@@ -5841,7 +6007,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
         {/* World */}
         <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 14 }}>
-          <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together. Steppe: Mongolian fiddle and lute, shaman drums, throat singing. Desert: the duduk, a daf, the dam drone, Hijaz and friends. Ocean: whale song over waves, gulls and a buoy bell, no drums. Jungle: a kalimba over tuned log drums, insects, howler monkeys, whooping gibbon songs, birds and frogs. Thunderstorm: a felt piano indoors while it rains; the storm builds with the music's tension, thunder closer at the peak, brighter scales once it passes. Cave: a handpan, water drips tuned to the scale echoing, the wind's breath at the mouth, no drums. Temple: a bamboo flute in long breaths, the wooden fish, monks chanting, singing bowls, the great bell, wind chimes. Arctic: a glass harmonica over wind across the ice, singing ice, wolves howling a chord now and then. New wave: a DX7 electric piano, 1980s LinnDrum and synth bass, the Juno pad. Change the drums or drone after and the world keeps its lead. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>world</span>
+          <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together. Steppe: Mongolian fiddle and lute, shaman drums, throat singing. Desert: the duduk, a daf, the dam drone, Hijaz and friends. Ocean: whale song over waves, gulls and a buoy bell, no drums. Jungle: a kalimba over tuned log drums, insects, howler monkeys, whooping gibbon songs, birds and frogs. Thunderstorm: a felt piano indoors while it rains; the storm builds with the music's tension, thunder closer at the peak, brighter scales once it passes. Cave: a handpan, water drips tuned to the scale echoing, the wind's breath at the mouth, no drums. Temple: a bamboo flute in long breaths, the wooden fish, monks chanting, singing bowls, the great bell, wind chimes. Arctic: a glass harmonica over wind across the ice, singing ice, wolves howling a chord now and then. Mountain: a summer day: a hammered dulcimer, birds everywhere, leaves rustling, a brook, cowbells and an alphorn. New wave: a DX7 electric piano, 1980s LinnDrum and synth bass, the Juno pad. Change the drums or drone after and the world keeps its lead. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 11, marginRight: 4, cursor: "help" }}>world</span>
           <button onClick={() => { const on = !worldWander; setWorldWander(on); if (on && world === "off") { const ks = Object.keys(WORLDS); chooseWorld(ks[Math.floor(Math.random() * ks.length)]); } if (on) setWorldWander(true); }} title="Wander: Chloe drifts from world to world as the music goes, a few minutes in each (calm leans to the ocean and the desert, livelier to new wave)" style={{ ...chip(worldWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
           {[["off", "none"], ...Object.entries(WORLDS).map(([w, d]) => [w, d.label])].map(([w, l]) => (
             <button key={w} onClick={() => chooseWorld(w)} style={{ ...chip(world === w && !worldWander), fontSize: 10, padding: "4px 11px", ...(worldWander && world === w ? { borderStyle: "dashed" } : {}) }}>{l}</button>
@@ -7076,7 +7242,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* World — lead, beat, drone and leanings that belong together */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together, and owns the lead while it's on. Steppe: horsehead fiddle (slow) or lute (fast), shaman drums, throat singing or jaw harp. Desert: the duduk in phrases, harmonized now and then, a daf, the dam drone, Hijaz and friends, slow, long reverb. Ocean: whale song over waves, tuned gulls and a buoy bell, no drums, calm open scales. Jungle: kalimba, log drums tuned to the scale, an insect bed, howler monkeys on the root, gibbon-style songs climbing the scale, birds, frogs (more of them, and fewer monkeys, when calm). Thunderstorm: felt piano, rain, close drops, wind whistling on scale notes, thunder rumbling on the root; the storm follows tension (heavier rain, closer thunder, at the peak a crack and a hush), darker scales while it rages, brighter after; gentle rain only in Endless. Cave: handpan, drips tuned to the scale from a few sources at their own steady rates (they phase into a slow melody), the cave's echo, the wind's low breath on the root, a faint stream, a far boom now and then; handpan scales (Kurd, Celtic minor, Pygmy), slow, deep reverb. Temple: shakuhachi-style flute (breaths of 1-3 long notes, bends up into pitch, head-shake vibrato), the wooden fish on the beat, the chant drone (monks on a low om), singing bowls struck and sung on scale notes, the great bell on the root, far wind chimes; In, Yo and Hirajoshi scales, ~60 BPM, a long reverb. Arctic: glass harmonica, wind across the ice with a thin whistle on a scale note, lake ice singing as it cracks (falling chirps landing on scale notes, echoing), deep booms of the ice settling, wolves now and then howling a chord in the scale; Lydian, pentatonic, whole tone, slow, vast reverb. New wave: DX7 electric piano, the new wave beat with synth bass, the Juno pad, bright scales. Picking one sets its beat and drone; change them after and the world stays. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WORLD</span>
+              <span title="A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together, and owns the lead while it's on. Steppe: horsehead fiddle (slow) or lute (fast), shaman drums, throat singing or jaw harp. Desert: the duduk in phrases, harmonized now and then, a daf, the dam drone, Hijaz and friends, slow, long reverb. Ocean: whale song over waves, tuned gulls and a buoy bell, no drums, calm open scales. Jungle: kalimba, log drums tuned to the scale, an insect bed, howler monkeys on the root, gibbon-style songs climbing the scale, birds, frogs (more of them, and fewer monkeys, when calm). Thunderstorm: felt piano, rain, close drops, wind whistling on scale notes, thunder rumbling on the root; the storm follows tension (heavier rain, closer thunder, at the peak a crack and a hush), darker scales while it rages, brighter after; gentle rain only in Endless. Cave: handpan, drips tuned to the scale from a few sources at their own steady rates (they phase into a slow melody), the cave's echo, the wind's low breath on the root, a faint stream, a far boom now and then; handpan scales (Kurd, Celtic minor, Pygmy), slow, deep reverb. Temple: shakuhachi-style flute (breaths of 1-3 long notes, bends up into pitch, head-shake vibrato), the wooden fish on the beat, the chant drone (monks on a low om), singing bowls struck and sung on scale notes, the great bell on the root, far wind chimes; In, Yo and Hirajoshi scales, ~60 BPM, a long reverb. Arctic: glass harmonica, wind across the ice with a thin whistle on a scale note, lake ice singing as it cracks (falling chirps landing on scale notes, echoing), deep booms of the ice settling, wolves now and then howling a chord in the scale; Lydian, pentatonic, whole tone, slow, vast reverb. Mountain: hammered dulcimer; birds all the time on scale notes (chickadees, a cuckoo, warblers, robins, a woodpecker now and then), aspen leaves rustling, a brook, cowbells on the pasture, an alphorn on the root's overtones echoing off the peaks; bright summer scales, ~88 BPM, open air. New wave: DX7 electric piano, the new wave beat with synth bass, the Juno pad, bright scales. Picking one sets its beat and drone; change them after and the world stays. WANDER drifts from world to world." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WORLD</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {[["off", "off"], ...Object.entries(WORLDS).map(([w, d]) => [w, d.label])].map(([v, l]) => (
                   <button key={v} onClick={() => chooseWorld(v)} style={{
