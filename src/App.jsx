@@ -5099,10 +5099,19 @@ export default function Chloe() {
       const sr = ac.sampleRate, n = sr * 5, b = ac.createBuffer(2, n, sr);
       for (let c = 0; c < 2; c++) {
         const d = b.getChannelData(c);
-        for (let k = 0; k < 120; k++) {
-          const at = Math.floor(Math.random() * (n - sr * 0.01)), a = 0.05 + 0.95 * Math.random() ** 4, len = Math.floor(sr * (0.0005 + Math.random() * 0.003));
-          for (let j = 0; j < len; j++) d[at + j] += a * (Math.random() * 2 - 1) * Math.exp(-j / (len * 0.3));
+        // Each snap: a tiny burst ringing a little resonance (the wood's pitch,
+        // 1.2-5 kHz), eased in, not a bare click (bare clicks = a bad speaker)
+        for (let k = 0; k < 90; k++) {
+          const at = Math.floor(Math.random() * (n - sr * 0.03)), a = 0.04 + 0.5 * Math.random() ** 5, len = Math.floor(sr * 0.025);
+          const w = 2 * Math.PI * (1200 + Math.random() * 3800) / sr, r = Math.exp(-1 / (sr * (0.0015 + Math.random() * 0.003))), c1 = 2 * r * Math.cos(w), c2 = -r * r;
+          let y1 = 0, y2 = 0;
+          for (let j = 0; j < len; j++) {
+            const x = j < sr * 0.002 ? (Math.random() * 2 - 1) * Math.sin(Math.PI * j / (sr * 0.002)) : 0, y = x + c1 * y1 + c2 * y2;
+            y2 = y1; y1 = y; d[at + j] += a * y * 0.15;
+          }
         }
+        let pk = 0; for (let j = 0; j < n; j++) pk = Math.max(pk, Math.abs(d[j]));
+        for (let j = 0; j < n; j++) d[j] *= 0.6 / (pk || 1);
       }
       return b;
     })());
@@ -5111,8 +5120,12 @@ export default function Chloe() {
       out.gain.setValueAtTime(0, t); out.gain.linearRampToValueAtTime(1, t + 4); out.connect(bus.vol);
       const lfo = (f, depth, param) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = f; g.gain.value = depth; o.connect(g); g.connect(param); nodes.push(o); return o; };
       const c = ac.createBufferSource(), hp = ac.createBiquadFilter(), cg = ac.createGain();
-      c.buffer = crackleBuf(ac); c.loop = true; hp.type = "highpass"; hp.frequency.value = 1200; cg.gain.value = 0.25; lfo(0.07, 0.1, cg.gain);
+      c.buffer = crackleBuf(ac); c.loop = true; hp.type = "highpass"; hp.frequency.value = 600; cg.gain.value = 0.25; lfo(0.07, 0.1, cg.gain);
       c.connect(hp); hp.connect(cg); cg.connect(out); nodes.push(c);
+      const z = ac.createBufferSource(), zb = ac.createBiquadFilter(), zg = ac.createGain();   // the soft hiss of burning wood
+      z.buffer = noiseBuf(ac); z.loop = true; z.loopStart = Math.random(); zb.type = "bandpass"; zb.frequency.value = 2500; zb.Q.value = 0.6;
+      zg.gain.value = 0.006; lfo(0.09, 0.003, zg.gain);
+      z.connect(zb); zb.connect(zg); zg.connect(out); nodes.push(z);
       const r = ac.createBufferSource(), lp = ac.createBiquadFilter(), rg = ac.createGain();   // the roar, breathing
       r.buffer = noiseBuf(ac); r.loop = true; r.loopStart = Math.random(); lp.type = "lowpass"; lp.frequency.value = 350;
       rg.gain.value = 0.05; lfo(0.13, 0.025, rg.gain); lfo(0.31, 0.012, rg.gain);
@@ -5130,8 +5143,9 @@ export default function Chloe() {
     };
     const firePop = (bus, ac, t, big) => {
       const n = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(), p = ac.createStereoPanner();
-      n.buffer = noiseBuf(ac); bp.type = "bandpass"; bp.frequency.value = 2000 + Math.random() * 2000; bp.Q.value = 0.8; p.pan.value = (Math.random() * 2 - 1) * 0.4;
-      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(big ? 0.5 : 0.25, t + 0.0005); g.gain.setTargetAtTime(0, t + 0.0005, big ? 0.01 : 0.006);
+      // a pop rings the wood's pitch (a resonant band, eased in) rather than a bare click
+      n.buffer = noiseBuf(ac); bp.type = "bandpass"; bp.frequency.value = 900 + Math.random() * 2500; bp.Q.value = 6; p.pan.value = (Math.random() * 2 - 1) * 0.4;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(big ? 0.7 : 0.35, t + 0.0015); g.gain.setTargetAtTime(0, t + 0.0015, big ? 0.012 : 0.007);
       n.connect(bp); bp.connect(g); g.connect(p); p.connect(bus.vol); p.connect(bus.roomSend);
       n.start(t, Math.random() * 1.5, 0.08);
       n.onended = () => { try { p.disconnect(); } catch {} };
