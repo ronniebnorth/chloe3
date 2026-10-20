@@ -4955,7 +4955,7 @@ export default function Chloe() {
       else if (t >= ar.wolf) { wolves(bus, ac, t, st); ar.wolf = t + 60 + Math.random() * 60; }
     };
     // Mountain (its world): a summer day in the high meadows. A bed of aspen
-    // leaves rustling (noise fluttering fast, in slow gusts) and a brook. Birds
+    // leaves rustling (noise fluttering, in slow gusts) and a brook. Birds
     // all the time (one every 1.5-5 s, sometimes two at once; fewer when calm):
     // chickadees (fee-bee, a step down), a cuckoo far off (a third down, a few
     // times), warblers (a quick trill running up or down the scale), robins
@@ -4976,13 +4976,14 @@ export default function Chloe() {
       out.gain.setValueAtTime(0, t); out.gain.linearRampToValueAtTime(1, t + 4); out.connect(bus.vol);
       const lfo = (f, depth, param) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = f; g.gain.value = depth; o.connect(g); g.connect(param); nodes.push(o); return o; };
       for (const [pan, gf] of [[-0.6, 0.08], [0.6, 0.11]]) {
-        const n = ac.createBufferSource(), fl = ac.createBufferSource(); n.buffer = fl.buffer = noiseBuf(ac); n.loop = fl.loop = true; n.loopStart = Math.random(); fl.loopStart = Math.random();
-        const bp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), am = ac.createGain(), fll = ac.createBiquadFilter(), flg = ac.createGain(), gust = ac.createGain(), p = ac.createStereoPanner();
+        const n = ac.createBufferSource(); n.buffer = noiseBuf(ac); n.loop = true; n.loopStart = Math.random();
+        const bp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), am = ac.createGain(), gust = ac.createGain(), p = ac.createStereoPanner();
         bp.type = "bandpass"; bp.frequency.value = 3200; bp.Q.value = 0.7; lp.type = "lowpass"; lp.frequency.value = 6000;
-        am.gain.value = 0.5; fll.type = "lowpass"; fll.frequency.value = 30; flg.gain.value = 25;   // the flutter of the leaves
-        fl.connect(fll); fll.connect(flg); flg.connect(am.gain);
-        gust.gain.value = 0.06; lfo(gf, 0.03, gust.gain); p.pan.value = pan;
-        n.connect(bp); bp.connect(am); am.connect(gust); gust.connect(lp); lp.connect(p); p.connect(out); nodes.push(n, fl);
+        // The flutter of the leaves: three slow sines at odd rates, so it never
+        // quite repeats (a noise-driven flutter this deep crackled like a fire)
+        am.gain.value = 0.55; for (const [f, d] of [[2.3, 0.15], [3.7, 0.12], [5.9, 0.08]]) lfo(f * (0.9 + Math.random() * 0.2), d, am.gain);
+        gust.gain.value = 0.1; lfo(gf, 0.05, gust.gain); p.pan.value = pan;
+        n.connect(bp); bp.connect(am); am.connect(gust); gust.connect(lp); lp.connect(p); p.connect(out); nodes.push(n);
       }
       const b = ac.createBufferSource(), bf = ac.createBiquadFilter(), bg = ac.createGain();   // the brook
       b.buffer = noiseBuf(ac); b.loop = true; b.loopStart = Math.random(); bf.type = "bandpass"; bf.frequency.value = 1400; bf.Q.value = 1.2;
