@@ -4955,7 +4955,7 @@ export default function Chloe() {
       else if (t >= ar.wolf) { wolves(bus, ac, t, st); ar.wolf = t + 60 + Math.random() * 60; }
     };
     // Mountain (its world): a summer day in the high meadows. A bed of aspen
-    // leaves rustling (noise fluttering, in slow gusts) and a brook. Birds
+    // leaves on the whole hillside (a soft wash swelling in slow gusts) and a brook. Birds
     // all the time (one every 1.5-5 s, sometimes two at once; fewer when calm):
     // chickadees (fee-bee, a step down), a cuckoo far off (a third down, a few
     // times), warblers (a quick trill running up or down the scale), robins
@@ -4975,15 +4975,18 @@ export default function Chloe() {
       const out = ac.createGain(), t = ac.currentTime, nodes = [];
       out.gain.setValueAtTime(0, t); out.gain.linearRampToValueAtTime(1, t + 4); out.connect(bus.vol);
       const lfo = (f, depth, param) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = f; g.gain.value = depth; o.connect(g); g.connect(param); nodes.push(o); return o; };
-      for (const [pan, gf] of [[-0.6, 0.08], [0.6, 0.11]]) {
-        const n = ac.createBufferSource(); n.buffer = noiseBuf(ac); n.loop = true; n.loopStart = Math.random();
-        const bp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), am = ac.createGain(), gust = ac.createGain(), p = ac.createStereoPanner();
-        bp.type = "bandpass"; bp.frequency.value = 3200; bp.Q.value = 0.7; lp.type = "lowpass"; lp.frequency.value = 6000;
-        // The flutter of the leaves: three slow sines at odd rates, so it never
-        // quite repeats (a noise-driven flutter this deep crackled like a fire)
-        am.gain.value = 0.55; for (const [f, d] of [[2.3, 0.15], [3.7, 0.12], [5.9, 0.08]]) lfo(f * (0.9 + Math.random() * 0.2), d, am.gain);
-        gust.gain.value = 0.1; lfo(gf, 0.05, gust.gain); p.pan.value = pan;
-        n.connect(bp); bp.connect(am); am.connect(gust); gust.connect(lp); lp.connect(p); p.connect(out); nodes.push(n);
+      // A hillside of leaves, not one tree: four wide, soft bands of noise
+      // across the stereo field, each swelling on its own slow clock, and gusts
+      // rolling over the whole wash every 10-30 s. Barely any flutter: a fast
+      // flutter is heard as single swishes (a broom), millions of leaves
+      // average out to a smooth wash.
+      const wash = ac.createGain(); wash.gain.value = 1; lfo(0.04 + Math.random() * 0.03, 0.35, wash.gain); wash.connect(out);
+      for (const pan of [-0.85, -0.3, 0.3, 0.85]) {
+        const n = ac.createBufferSource(); n.buffer = noiseBuf(ac); n.loop = true; n.loopStart = Math.random() * 1.5;
+        const bp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), sw = ac.createGain(), p = ac.createStereoPanner();
+        bp.type = "bandpass"; bp.frequency.value = 1700 + Math.random() * 900; bp.Q.value = 0.4; lp.type = "lowpass"; lp.frequency.value = 4200;
+        sw.gain.value = 0.04; lfo(0.05 + Math.random() * 0.08, 0.025, sw.gain); lfo(0.2 + Math.random() * 0.15, 0.006, sw.gain); p.pan.value = pan;
+        n.connect(bp); bp.connect(lp); lp.connect(sw); sw.connect(p); p.connect(wash); nodes.push(n);
       }
       const b = ac.createBufferSource(), bf = ac.createBiquadFilter(), bg = ac.createGain();   // the brook
       b.buffer = noiseBuf(ac); b.loop = true; b.loopStart = Math.random(); bf.type = "bandpass"; bf.frequency.value = 1400; bf.Q.value = 1.2;
