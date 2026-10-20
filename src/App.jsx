@@ -4984,8 +4984,8 @@ export default function Chloe() {
       for (const pan of [-0.85, -0.3, 0.3, 0.85]) {
         const n = ac.createBufferSource(); n.buffer = noiseBuf(ac); n.loop = true; n.loopStart = Math.random() * 1.5;
         const bp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), sw = ac.createGain(), p = ac.createStereoPanner();
-        bp.type = "bandpass"; bp.frequency.value = 1700 + Math.random() * 900; bp.Q.value = 0.4; lp.type = "lowpass"; lp.frequency.value = 4200;
-        sw.gain.value = 0.04; lfo(0.05 + Math.random() * 0.08, 0.025, sw.gain); lfo(0.2 + Math.random() * 0.15, 0.006, sw.gain); p.pan.value = pan;
+        bp.type = "bandpass"; bp.frequency.value = 1000 + Math.random() * 500; bp.Q.value = 0.4; lp.type = "lowpass"; lp.frequency.value = 2600; lp.Q.value = 0.5;
+        sw.gain.value = 0.03; lfo(0.05 + Math.random() * 0.08, 0.019, sw.gain); lfo(0.2 + Math.random() * 0.15, 0.004, sw.gain); p.pan.value = pan;
         n.connect(bp); bp.connect(lp); lp.connect(sw); sw.connect(p); p.connect(wash); nodes.push(n);
       }
       const b = ac.createBufferSource(), bf = ac.createBiquadFilter(), bg = ac.createGain();   // the brook
