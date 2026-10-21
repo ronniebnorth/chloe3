@@ -1951,7 +1951,10 @@ const brainBusyRaw = eeg => {
   return fast + slow > 0.5 ? Math.log((fast + 1) / (slow + 1)) : null;
 };
 const WEATHER_BRAIN = [["off", "music"], ["calm", "calm it"], ["ride", "ride it"]];
-const WEATHER_TIP = "What drives the storm. Music: the music's tension. Calm it (with an EEG headband): a busy mind brings the storm on; settling clears it, and staying settled brightens the scales and brings a bird now and then. Ride it: the reverse, the deeper you settle, the bigger the storm grows. Busy = beta + gamma against alpha + theta, scaled to your own range over the last 5 minutes (it needs ~20 s to learn you; until then it sits in the middle). No headband: it follows the music.";
+// Where a headband comes in (the Listen page and the Studio both say so)
+const EEG_HINT = "Have a Muse headband? Through BERM Bridge your mind can drive Chloe: pick the thunderstorm and set its weather to calm it or ride it.";
+const BERM_URL = "https://berm.live";
+const WEATHER_TIP = "What drives the storm. Music: the music's tension. Calm it (with an EEG headband): a busy mind brings the storm on; settling clears it, and staying settled brightens the scales and brings a bird now and then. Ride it: the reverse, the deeper you settle, the bigger the storm grows. Busy = beta + gamma against alpha + theta, scaled to your own range over the last 5 minutes (it needs ~20 s to learn you; until then it sits in the middle). No headband: it follows the music. Headbands: a Muse 2 or Muse S through BERM Bridge (berm.live).";
 
 /* ── Session arc ──
    Lead: 1 min baseline (no steering), then the brightness target glides from
@@ -2131,7 +2134,7 @@ const HELP_SECTIONS = [
   { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
   { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
-  { title: "EEG MODE", body: "When a FlowTime headband is connected via the EEG proxy (localhost:8520), a coloured dot appears in the Demo controls showing your dominant brainwave band (excluding delta, which is always high at forehead sites and not meaningful). In Demo mode with EEG active, a brightness-matching algorithm runs before each Claude call: a high theta/alpha ratio pushes the target darker (deep meditation, drowsiness); a high beta/alpha ratio pushes it brighter (focus, engagement); alpha dominance pulls 50% toward neutral (0.5 = Dorian). The system then finds the scale in the catalogue whose normalized brightness is closest to the target — scales of any size (pentatonic, heptatonic, etc.) are equally reachable at any brightness level. A scale only changes if the target shifts by more than 5% from the current scale's brightness. Claude receives the pre-selected scale and its normalized brightness, and focuses on choosing BPM, voicing, and effects to complement it. The brightness bar lets you override the EEG target manually with the slider, lock the current zone, or explore random scales at similar brightness. If a heart rate sensor is also active, the live BPM appears in the playback controls — Claude can read and track it each cycle when you ask it to sync BPM to your pulse." },
+  { title: "EEG HEADBAND", body: "Chloe reads a headband through BERM Bridge (berm.live), which works with a Muse 2 or Muse S and serves the brain data on this computer (localhost:8520). When it's coming in, the World row says 'headband on'. What it drives: the thunderstorm's WEATHER. Calm it = a busy mind (beta + gamma against alpha + theta) brings the storm on and settling clears it; Ride it = the reverse. It learns your own range over ~20 s and the storm follows over ~20 s. Journeys keep their own shape (the headband doesn't steer them). In the Studio, the brightness bar shows the EEG target, and the session log records your brain alongside the scales. A heart rate from the headband shows as a ♥ BPM button in the playback controls." },
   { title: "LOOP & SAVE", body: "While Demo or Auto is running, a Loop button appears. Click it to freeze playback on the current scale — Claude or Auto keeps repeating it instead of moving on. While looping, a Save button appears. Clicking Save captures a full snapshot: scale, root, BPM, rhythm, arpeggio direction, chord voicing, instrument, reverb, delay, and drone settings. Saved moments persist in your browser and appear in a collapsible panel. Click the play button on any saved moment to instantly restore all its settings and start playback. Delete a moment with the × button." },
   { title: "◎ MONASTIC MODE", body: "A toggle in the playback controls (◎ Monastic / ◎ Still) that shifts the entire system into a slow, sustained, contemplative mode — the opposite of the default, which optimises for variety and exploration. When activated: BPM is set to 15 and the floor drops to 1 (one note every 60 seconds at BPM 1); the drone turns on with tanpura selected; Claude and Auto cycle intervals extend to 3 minutes; the EEG smoothing window widens to 30 polls (60 seconds of data) so only sustained brain state shifts register; and the brightness transition threshold rises to 0.15, meaning subtler fluctuations no longer trigger scale changes. Claude is instructed to hold each scale for the full cycle, prefer sparse scales (3–5 notes) and slow tempos, keep commentary to one sentence, and skip feature suggestions. Toggle off to restore the previous BPM and normal cycle speed. Monastic mode is independent of Demo, Auto, and manual Play — it modifies how each mode behaves, not which mode is active." },
 ];
@@ -6530,6 +6533,15 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             <button key={w} onClick={() => chooseWorld(w)} style={{ ...chip(world === w && !worldWander), fontSize: 10, padding: "4px 11px", ...(worldWander && world === w ? { borderStyle: "dashed" } : {}) }}>{l}</button>
           ))}
         </div>
+        {/* A headband: where it comes in */}
+        {!(world === "thunder" && weatherBrain !== "off") && (
+          <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "flex-end", marginTop: 10 }}>
+            {eegData?.connected
+              ? <span style={{ color: "#5fd08a", fontSize: 11 }}>headband on: let it drive the storm</span>
+              : <span title={EEG_HINT} style={{ color: K.t2, fontSize: 11, cursor: "help" }}>EEG headband? Your mind can drive the thunderstorm. Muse via <a href={BERM_URL} target="_blank" rel="noopener" style={{ color: K.a }}>BERM Bridge</a></span>}
+            <button onClick={() => { chooseWorld("thunder"); setWeatherBrain("calm"); track("weather/try"); }} title={EEG_HINT} style={{ ...chip(false), fontSize: 10, padding: "4px 11px" }}>try it</button>
+          </div>
+        )}
         {/* Thunderstorm: what drives the weather */}
         {world === "thunder" && (
           <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "flex-end", marginTop: 10 }}>
@@ -6537,7 +6549,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             {WEATHER_BRAIN.map(([v, l]) => (
               <button key={v} onClick={() => { setWeatherBrain(v); track(`weather/${v}`); }} title={WEATHER_TIP} style={{ ...chip(weatherBrain === v), fontSize: 10, padding: "4px 11px" }}>{l}</button>
             ))}
-            {weatherBrain !== "off" && <span style={{ color: eegData?.connected ? "#5fd08a" : K.t2, fontSize: 10 }}>{eegData?.connected ? "headband on" : "no headband: following the music"}</span>}
+            {weatherBrain !== "off" && <span style={{ color: eegData?.connected ? "#5fd08a" : K.t2, fontSize: 10 }}>{eegData?.connected ? "headband on" : <>no headband: following the music (Muse via <a href={BERM_URL} target="_blank" rel="noopener" style={{ color: K.a }}>BERM Bridge</a>)</>}</span>}
           </div>
         )}
 
@@ -7778,10 +7790,21 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 }}>wander</button>
               </div>
             </div>
+            {!(world === "thunder" && weatherBrain !== "off") && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <span title={EEG_HINT} style={{ color: eegData?.connected ? "#5fd08a" : K.t2, fontSize: 9, cursor: "help" }}>
+                  {eegData?.connected ? "headband on: the thunderstorm's weather can follow your mind" : <>EEG headband? Muse via <a href={BERM_URL} target="_blank" rel="noopener" style={{ color: K.a }}>BERM Bridge</a> drives the thunderstorm</>}
+                </span>
+                <button onClick={() => { chooseWorld("thunder"); setWeatherBrain("calm"); }} title={EEG_HINT} style={{
+                  marginLeft: "auto", background: K.bg3, color: K.txt, border: `1px solid ${K.br}`, borderRadius: 3, padding: "3px 8px",
+                  fontSize: 9, cursor: "pointer", fontFamily: "inherit",
+                }}>try it</button>
+              </div>
+            )}
             {world === "thunder" && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                 <span title={WEATHER_TIP} style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>WEATHER</span>
-                {weatherBrain !== "off" && <span style={{ color: eegData?.connected ? "#5fd08a" : K.t2, fontSize: 9 }}>{eegData?.connected ? "headband on" : "no headband"}</span>}
+                {weatherBrain !== "off" && <span style={{ color: eegData?.connected ? "#5fd08a" : K.t2, fontSize: 9 }}>{eegData?.connected ? "headband on" : <>no headband (<a href={BERM_URL} target="_blank" rel="noopener" style={{ color: K.a }}>BERM Bridge</a>)</>}</span>}
                 <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                   {WEATHER_BRAIN.map(([v, l]) => (
                     <button key={v} onClick={() => setWeatherBrain(v)} title={WEATHER_TIP} style={{
