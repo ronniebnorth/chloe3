@@ -2022,6 +2022,23 @@ const PAT_CSV_COLS = ["at", "dur_s", "samples", "scale_id", "scale_name", "brigh
 const jcol = (r, k) => r.jv?.[k] == null ? "" : +r.jv[k].toFixed(3);
 const lovedIn = (loves, r) => loves.filter(t => t >= r.at && t <= r.at + r.dur * 1000 + 10000).length;
 const patternsCSV = (segs, loves = []) => [PAT_CSV_COLS.join(","), ...segs.map(r => [new Date(r.at).toISOString(), r.dur, r.n, r.id, `"${r.name}"`, r.bright ?? "", r.size, r.world, r.bpm, r.beat, r.drums ?? "", r.drone, r.inst, r.journey ?? "", jcol(r, "b"), jcol(r, "t"), jcol(r, "e"), jcol(r, "tn"), lovedIn(loves, r), r.busy, r.alpha, r.theta].join(","))].join("\n");
+// Back from a downloaded CSV (any version of its columns) to segments; pattern
+// comes from the id through the families, since the CSV doesn't carry it
+const splitCSV = line => { const out = []; let cur = "", q = false; for (const c of line) { if (c === '"') q = !q; else if (c === "," && !q) { out.push(cur); cur = ""; } else cur += c; } out.push(cur); return out; };
+const segsFromCSV = (text, families) => {
+  const [head, ...lines] = text.trim().split(/\r?\n/), cols = splitCSV(head);
+  const fam = new Map(families.map(f => [f.id, f]));
+  return lines.map(line => {
+    const v = Object.fromEntries(splitCSV(line).map((x, i) => [cols[i], x])), num = k => v[k] === undefined || v[k] === "" ? null : +v[k];
+    const [, fid, mi] = (v.scale_id || "").match(/^(.+)\.(\d+)$/) || [];
+    const pattern = fam.get(fid)?.modes[+mi], at = Date.parse(v.at);
+    if (pattern === undefined || !at) return null;
+    const jv = num("j_bright") === null ? null : { b: num("j_bright"), t: num("j_tempo"), e: num("j_energy"), tn: num("j_tension") };
+    return { id: v.scale_id, pattern, name: v.scale_name, bright: num("brightness"), size: num("notes"), world: v.world, bpm: num("bpm"), beat: v.beat,
+      ...(v.drums ? { drums: v.drums } : {}), drone: v.drone, inst: v.lead, journey: v.journey || null, jv, at, dur: num("dur_s"), n: num("samples"),
+      loved: num("loved") ?? 0, busy: num("busy_sd"), alpha: num("alpha_sd"), theta: num("theta_sd") };
+  }).filter(Boolean);
+};
 
 const sessionSummary = (sess) => {
   const pts = sess.rows.filter(r => r.brain_target !== null);
@@ -2920,6 +2937,7 @@ export default function Chloe() {
   const [patAll, setPatAll] = useState(false);
   const [patLive, setPatLive] = useState(0);   // segments this visit, for the panel's status
   const leadNowRef = useRef(null);
+  const keepDataRef = useRef(null);   // keepData, for the logger (defined further down)
   const drumsNowRef = useRef(null);   // the beat actually playing, after rests and map's drum blocks
   const patRef = useRef({ hist: [], seg: null });
   useEffect(() => {
@@ -2942,6 +2960,7 @@ export default function Chloe() {
       }
       return { mean, sd };
     };
+    let askedKeep = false;   // ask the browser to keep the data once a visit, at the first segment
     const closeSeg = seg => {
       const now = Date.now(), use = seg.samples.filter(x => x.t - seg.t0 >= 4000);
       if (!seg.base || now - seg.t0 < 8000 || use.length < 3) return;
@@ -2949,6 +2968,7 @@ export default function Chloe() {
       for (const m of PAT_METRICS) r[m] = +Math.max(-4, Math.min(4, (median(use.map(x => x[m])) - seg.base.mean[m]) / seg.base.sd[m])).toFixed(3);
       setPatterns(p => addPatternSeg(p, r));
       setPatLive(n => n + 1);
+      if (!askedKeep) { askedKeep = true; keepDataRef.current?.(); }
       try { const segs = loadJSON("chloe-pattern-segs", []); segs.push(r); localStorage.setItem("chloe-pattern-segs", JSON.stringify(segs.slice(-PAT_SEGS_MAX))); } catch {}
     };
     const id = setInterval(() => {
@@ -2976,10 +2996,37 @@ export default function Chloe() {
     a.href = URL.createObjectURL(blob); a.download = `chloe-patterns-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
+  // Merge a downloaded CSV back in: segments not already here (by start time)
+  // join the log and the totals; its ♥ taps come back as one tap mid-segment
+  const importPatterns = e => {
+    const file = e.target.files?.[0]; e.target.value = "";
+    if (!file) return;
+    file.text().then(text => {
+      const have = loadJSON("chloe-pattern-segs", []), seen = new Set(have.map(r => r.at));
+      const fresh = segsFromCSV(text, FAMILIES).filter(r => !seen.has(r.at));
+      if (!fresh.length) { window.alert("Nothing new in that file: every segment in it is already here."); return; }
+      const loves = loadJSON("chloe-love-times", []), back = fresh.filter(r => r.loved && !lovedIn(loves, r)).map(r => r.at + r.dur * 500);
+      const segs = [...have, ...fresh.map(({ loved, ...r }) => r)].sort((x, y) => x.at - y.at).slice(-PAT_SEGS_MAX);
+      try {
+        localStorage.setItem("chloe-pattern-segs", JSON.stringify(segs));
+        localStorage.setItem("chloe-love-times", JSON.stringify([...loves, ...back].sort((x, y) => x - y).slice(-PAT_SEGS_MAX)));
+      } catch {}
+      setPatterns(p => fresh.reduce(addPatternSeg, p));
+      keepData();
+      window.alert(`Added ${fresh.length} segment${fresh.length === 1 ? "" : "s"}${have.length ? ` (${have.length} were already here)` : ""}.`);
+    }).catch(() => window.alert("Couldn't read that file."));
+  };
+  // Ask the browser not to clear Chloe's storage on its own (Chrome decides
+  // quietly; Firefox may ask). Clearing site data by hand still erases it
+  const [dataKept, setDataKept] = useState(null);
+  const keepData = () => { try { navigator.storage?.persist?.().then(setDataKept, () => {}); } catch {} };
+  useEffect(() => { try { navigator.storage?.persisted?.().then(setDataKept, () => {}); } catch {} }, []);
+  const patFileRef = useRef(null);
+  keepDataRef.current = keepData;
   const resetPatterns = () => {
     if (!window.confirm("Forget every pattern Chloe has logged? (Download the CSV first if you want to keep it.)")) return;
     setPatterns({}); setPatLive(0);
-    try { localStorage.removeItem("chloe-pattern-segs"); } catch {}
+    try { localStorage.removeItem("chloe-pattern-segs"); localStorage.removeItem("chloe-love-times"); } catch {}
   };
 
   // Arc clock: steer the lead target once a second, log a row every ARC_LOG_MS
@@ -6821,7 +6868,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", color: K.demoT2 }}>
               <span style={{ flex: 1 }}>Eyes closing, drifting off and moving all shift the brain more than any scale; the more times each is heard, the more the averages say.</span>
-              <button onClick={downloadPatterns} style={chip(false)} title="Every segment logged, as CSV">csv</button>
+              <span title={dataKept ? "This browser has agreed to keep Chloe's data. Clearing site data by hand still erases it, so download the csv now and then." : "This browser may clear Chloe's data on its own (Safari after a week away). Download the csv now and then; import puts it back."} style={{ color: dataKept ? "#5fbf7f" : K.demoT2, cursor: "help" }}>{dataKept ? "kept by browser" : "browser may clear"}</span>
+              <button onClick={() => { keepData(); downloadPatterns(); }} style={chip(false)} title="Every segment logged, as CSV: your backup">csv</button>
+              <button onClick={() => patFileRef.current?.click()} style={chip(false)} title="Load a downloaded csv back in. Merges: segments already here are skipped, so it's safe to import the same file twice">import</button>
+              <input ref={patFileRef} type="file" accept=".csv,text/csv" onChange={importPatterns} style={{ display: "none" }} />
               <button onClick={resetPatterns} style={chip(false)}>reset</button>
             </div>
           </div>
