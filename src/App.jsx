@@ -2083,7 +2083,7 @@ const shuffled = (n, seed) => {
   return a;
 };
 JOURNEYS.map = { label: "map", home: 1709, survey: true,
-  tip: "For measuring with a headband (◇ patterns): brightness, tempo, energy and tension each jump around their whole range in blocks of their own length, never in step, and the worlds take turns, so everything gets heard early and late in the session. Best at 30 or 60 minutes, sitting still.",
+  tip: "For measuring with a headband (◇ patterns): brightness, tempo, energy and tension each jump around their whole range in blocks of their own length, never in step, and the worlds take turns, so everything gets heard early and late in the session. Best at 30 or 60 minutes, sitting still. It keeps shuffling past the end until you stop it.",
   at: (ms, seed = 1) => {
     const lvl = (k, blockMs, lo, hi) => {
       const i = Math.floor(ms / blockMs), x = (ms % blockMs) / blockMs;
@@ -3061,7 +3061,7 @@ export default function Chloe() {
         J.arrived = true;
         if (recordingRef.current) endJourney(J, j);
       }
-      setJourneyNow({ el, f, arrived: J.arrived, ending: J.ending, endless: !!j.endless });
+      setJourneyNow({ el, f, arrived: J.arrived, ending: J.ending, endless: !!j.endless, survey: !!j.survey });
     };
     tick();
     const id = setInterval(tick, 1000);
@@ -6626,7 +6626,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               {playingNow && sel ? (morphSemis ? <><span style={{ color: JOURNEY_COLOR }}>→ </span>{selName || sel.id}</> : (selName || sel.id)) : ""}
             </span>
             <span style={{ color: JOURNEY_COLOR, fontVariantNumeric: "tabular-nums" }}>
-              {journeyNow ? (journeyNow.endless ? `${mmss(journeyNow.el)} · endless` : journeyNow.ending ? "ending…" : journeyNow.arrived ? "arrived" : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : ""}
+              {journeyNow ? (journeyNow.endless ? `${mmss(journeyNow.el)} · endless` : journeyNow.ending ? "ending…" : journeyNow.arrived ? (journeyNow.survey ? `${mmss(journeyNow.el)} · still shuffling` : "arrived") : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : ""}
               {sleepLeft !== null && (sleepLeft <= SLEEP_FADE * 1000 ? " · fading out…" : ` · sleep in ${mmss(sleepLeft)}`)}
             </span>
           </div>
@@ -7125,7 +7125,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 <span style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, flexShrink: 0 }}>BRIGHT</span>
                 {jOn && (
                   <span title={JOURNEYS[journey]?.tip} style={{ color: JOURNEY_COLOR, fontSize: 9, flexShrink: 0, fontVariantNumeric: "tabular-nums", cursor: "help" }}>
-                    {journey} {journeyNow.endless ? `· ${mmss(journeyNow.el)}` : journeyNow.ending ? "· ending" : journeyNow.arrived ? "· arrived" : `${Math.round(journeyNow.f * 100)}%`}
+                    {journey} {journeyNow.endless ? `· ${mmss(journeyNow.el)}` : journeyNow.ending ? "· ending" : journeyNow.arrived ? (journeyNow.survey ? `· ${mmss(journeyNow.el)}` : "· arrived") : `${Math.round(journeyNow.f * 100)}%`}
                   </span>
                 )}
                 {/* Bar */}
@@ -7895,7 +7895,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                 <span title="How long the journey takes. Changing it mid-journey keeps the clock running, so it may jump ahead or back along the shape." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>LENGTH</span>
                 <span style={{ color: JOURNEY_COLOR, fontSize: 9, fontVariantNumeric: "tabular-nums" }}>
-                  {journeyNow ? (journeyNow.ending ? "ending…" : journeyNow.arrived ? "arrived · holding" : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : autoOn ? "" : "starts with Auto"}
+                  {journeyNow ? (journeyNow.ending ? "ending…" : journeyNow.arrived ? (journeyNow.survey ? `${mmss(journeyNow.el)} · still shuffling` : "arrived · holding") : `${mmss(journeyNow.el)} / ${journeyMins}:00`) : autoOn ? "" : "starts with Auto"}
                 </span>
                 <div style={{ display: "flex", gap: 3, marginLeft: "auto" }}>
                   {JOURNEY_MINS.map(m => (
