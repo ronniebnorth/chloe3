@@ -1992,9 +1992,13 @@ const sessionCSV = (sess) => [
    the world, tempo, drums, drone and lead. A segment needs 8 s, 3 samples and
    a 1-minute baseline. What's playing is taken from the segment's middle
    (Smooth changes settings partway through). */
-const PAT_METRICS = ["busy", "alpha", "theta"];
+// asym: frontal alpha asymmetry, ln(right α) − ln(left α). Alpha is idling, so
+// more of it on the right means the LEFT side is working harder, the classic
+// EEG sign of approach / liking. On Base's averaged montage each side mixes
+// forehead and ear (the CSV's montage column), so read it as a rough version
+const PAT_METRICS = ["busy", "alpha", "theta", "asym"];
 const PAT_GROUPS = [["scale", "scale"], ["bright", "brightness"], ["size", "notes"], ["world", "world"], ["tempo", "tempo"], ["beat", "drums"], ["drone", "drone"], ["inst", "lead"]];
-const PAT_SD_MIN = { busy: 0.02, alpha: 0.5, theta: 0.5 };   // floors, so a flat baseline doesn't blow a segment up
+const PAT_SD_MIN = { busy: 0.02, alpha: 0.5, theta: 0.5, asym: 0.05 };   // floors, so a flat baseline doesn't blow a segment up
 const PAT_SEGS_MAX = 5000;
 const tempoBin = b => b < 70 ? "under 70" : b < 90 ? "70-89" : b < 110 ? "90-109" : b < 130 ? "110-129" : "130+";
 const brightBin = v => v == null ? "outside" : ["darkest", "dark", "middle", "bright", "brightest"][Math.min(4, Math.floor(v * 5))];
@@ -2010,7 +2014,11 @@ const addPatternSeg = (pats, r) => {
   for (const [g, [k, label]] of Object.entries(patKeys(r))) {
     const grp = { ...(out[g] || {}) }, a = grp[k] ? { ...grp[k] } : { label: label ?? k, n: 0 };
     a.n++;
-    for (const m of PAT_METRICS) { const [s1, s2] = a[m] || [0, 0]; a[m] = [s1 + r[m], s2 + r[m] * r[m]]; }
+    for (const m of PAT_METRICS) {
+      if (typeof r[m] !== "number" || !Number.isFinite(r[m])) continue;
+      const [s1, s2, c = a.n - 1] = a[m] || [0, 0, 0];   // c: segments with this metric (older totals lack it)
+      a[m] = [s1 + r[m], s2 + r[m] * r[m], c + 1];
+    }
     grp[k] = a; out[g] = grp;
   }
   out.total = (out.total || 0) + 1;
@@ -2018,10 +2026,15 @@ const addPatternSeg = (pats, r) => {
 };
 // beat = the world's style; drums = what was actually playing. j_* = the journey's targets at that moment
 // loved = ♥ taps during the segment or within 10 s after it (a tap comes a moment after the thing that caused it)
-const PAT_CSV_COLS = ["at", "dur_s", "samples", "scale_id", "scale_name", "brightness", "notes", "world", "bpm", "beat", "drums", "drone", "lead", "journey", "j_bright", "j_tempo", "j_energy", "j_tension", "loved", "busy_sd", "alpha_sd", "theta_sd"];
+// raw_* = the segment's own medians, before the 2-minute baseline, so a later
+// analysis can use any baseline it likes. contact = the worst electrode verdict
+// seen during the segment (contact_bad names the non-good ones); montage = Base's channel mode
+const PAT_CSV_COLS = ["at", "dur_s", "samples", "scale_id", "scale_name", "brightness", "notes", "world", "bpm", "beat", "drums", "drone", "lead", "journey", "j_bright", "j_tempo", "j_energy", "j_tension", "loved", "busy_sd", "alpha_sd", "theta_sd",
+  "asym_sd", "raw_busy", "raw_alpha", "raw_theta", "raw_asym", "contact", "contact_bad", "montage"];
 const jcol = (r, k) => r.jv?.[k] == null ? "" : +r.jv[k].toFixed(3);
 const lovedIn = (loves, r) => loves.filter(t => t >= r.at && t <= r.at + r.dur * 1000 + 10000).length;
-const patternsCSV = (segs, loves = []) => [PAT_CSV_COLS.join(","), ...segs.map(r => [new Date(r.at).toISOString(), r.dur, r.n, r.id, `"${r.name}"`, r.bright ?? "", r.size, r.world, r.bpm, r.beat, r.drums ?? "", r.drone, r.inst, r.journey ?? "", jcol(r, "b"), jcol(r, "t"), jcol(r, "e"), jcol(r, "tn"), lovedIn(loves, r), r.busy, r.alpha, r.theta].join(","))].join("\n");
+const patternsCSV = (segs, loves = []) => [PAT_CSV_COLS.join(","), ...segs.map(r => [new Date(r.at).toISOString(), r.dur, r.n, r.id, `"${r.name}"`, r.bright ?? "", r.size, r.world, r.bpm, r.beat, r.drums ?? "", r.drone, r.inst, r.journey ?? "", jcol(r, "b"), jcol(r, "t"), jcol(r, "e"), jcol(r, "tn"), lovedIn(loves, r), r.busy, r.alpha, r.theta,
+  r.asym ?? "", r.raw?.busy ?? "", r.raw?.alpha ?? "", r.raw?.theta ?? "", r.raw?.asym ?? "", r.contact ?? "", r.contactBad ?? "", r.montage ?? ""].join(","))].join("\n");
 // Back from a downloaded CSV (any version of its columns) to segments; pattern
 // comes from the id through the families, since the CSV doesn't carry it
 const splitCSV = line => { const out = []; let cur = "", q = false; for (const c of line) { if (c === '"') q = !q; else if (c === "," && !q) { out.push(cur); cur = ""; } else cur += c; } out.push(cur); return out; };
@@ -2036,7 +2049,10 @@ const segsFromCSV = (text, families) => {
     const jv = num("j_bright") === null ? null : { b: num("j_bright"), t: num("j_tempo"), e: num("j_energy"), tn: num("j_tension") };
     return { id: v.scale_id, pattern, name: v.scale_name, bright: num("brightness"), size: num("notes"), world: v.world, bpm: num("bpm"), beat: v.beat,
       ...(v.drums ? { drums: v.drums } : {}), drone: v.drone, inst: v.lead, journey: v.journey || null, jv, at, dur: num("dur_s"), n: num("samples"),
-      loved: num("loved") ?? 0, busy: num("busy_sd"), alpha: num("alpha_sd"), theta: num("theta_sd") };
+      loved: num("loved") ?? 0, busy: num("busy_sd"), alpha: num("alpha_sd"), theta: num("theta_sd"),
+      ...(num("asym_sd") !== null ? { asym: num("asym_sd") } : {}),
+      ...(num("raw_busy") !== null ? { raw: { busy: num("raw_busy"), alpha: num("raw_alpha"), theta: num("raw_theta"), asym: num("raw_asym") } } : {}),
+      ...(v.contact ? { contact: v.contact, contactBad: v.contact_bad || "" } : {}), ...(v.montage ? { montage: v.montage } : {}) };
   }).filter(Boolean);
 };
 
@@ -2937,7 +2953,8 @@ export default function Chloe() {
   const [patAll, setPatAll] = useState(false);
   const [patLive, setPatLive] = useState(0);   // segments this visit, for the panel's status
   const leadNowRef = useRef(null);
-  const keepDataRef = useRef(null);   // keepData, for the logger (defined further down)
+  const keepDataRef = useRef(null);
+  const contactRef = useRef(null);   // latest electrode check: { t, worst, notGood }   // keepData, for the logger (defined further down)
   const drumsNowRef = useRef(null);   // the beat actually playing, after rests and map's drum blocks
   const patRef = useRef({ hist: [], seg: null });
   useEffect(() => {
@@ -2965,29 +2982,60 @@ export default function Chloe() {
       const now = Date.now(), use = seg.samples.filter(x => x.t - seg.t0 >= 4000);
       if (!seg.base || now - seg.t0 < 8000 || use.length < 3) return;
       const r = { ...seg.ctxs[Math.floor(seg.ctxs.length / 2)], at: seg.t0, dur: Math.round((now - seg.t0) / 1000), n: use.length };
-      for (const m of PAT_METRICS) r[m] = +Math.max(-4, Math.min(4, (median(use.map(x => x[m])) - seg.base.mean[m]) / seg.base.sd[m])).toFixed(3);
-      setPatterns(p => addPatternSeg(p, r));
-      setPatLive(n => n + 1);
+      r.raw = {};
+      for (const m of PAT_METRICS) {
+        const med = median(use.map(x => x[m]));
+        r.raw[m] = +med.toFixed(4);
+        r[m] = +Math.max(-4, Math.min(4, (med - seg.base.mean[m]) / seg.base.sd[m])).toFixed(3);
+      }
+      if (seg.contact.length) {
+        const rank = { good: 0, marginal: 1, bad: 2 };
+        r.contact = seg.contact.reduce((w, c) => rank[c.worst] > rank[w] ? c.worst : w, "good");
+        r.contactBad = [...new Set(seg.contact.flatMap(c => c.notGood))].join(" ");
+      }
+      r.montage = eegDataRef.current?.chan_mode ?? null;
+      // A bad electrode isn't brain data: kept in the CSV, left out of the totals
+      if (r.contact !== "bad") { setPatterns(p => addPatternSeg(p, r)); setPatLive(n => n + 1); }
       if (!askedKeep) { askedKeep = true; keepDataRef.current?.(); }
       try { const segs = loadJSON("chloe-pattern-segs", []); segs.push(r); localStorage.setItem("chloe-pattern-segs", JSON.stringify(segs.slice(-PAT_SEGS_MAX))); } catch {}
     };
+    // Electrode contact from the Bridge's /electrodes, every 10 s while data is
+    // coming in (Bridges without it just leave contact blank)
+    const pollContact = async () => {
+      if (!eegDataRef.current?.connected) { contactRef.current = null; return; }
+      try {
+        const d = await (await fetch("http://localhost:8520/electrodes")).json();
+        if (!d.ok || !d.channels) { contactRef.current = null; return; }
+        const ch = Object.entries(d.channels), rank = { good: 0, marginal: 1, bad: 2 };
+        contactRef.current = {
+          t: Date.now(), worst: ch.reduce((w, [, v]) => rank[v.verdict] > rank[w] ? v.verdict : w, "good"),
+          notGood: ch.filter(([, v]) => v.verdict !== "good").map(([k, v]) => `${k}:${v.verdict}`),
+        };
+      } catch { contactRef.current = null; }
+    };
+    const cid = setInterval(pollContact, 10000);
     const id = setInterval(() => {
       const P = patRef.current, st = stRef.current, eeg = eegDataRef.current;
       const b = eeg?.connected && eeg.bands ? eeg.bands : null;
       const avg = k => ((b[k]?.left_pct || 0) + (b[k]?.right_pct || 0)) / 2;
       // Busy without gamma: on a Muse, gamma at the forehead is mostly muscle (jaw, brow)
       const smp = b && avg("beta") + avg("alpha") + avg("theta") > 0.5
-        ? { t: Date.now(), busy: Math.log((avg("beta") + 1) / (avg("alpha") + avg("theta") + 1)), alpha: avg("alpha"), theta: avg("theta") } : null;
+        ? { t: Date.now(), busy: Math.log((avg("beta") + 1) / (avg("alpha") + avg("theta") + 1)), alpha: avg("alpha"), theta: avg("theta"),
+            asym: Math.log(((b.alpha?.right_pct || 0) + 0.5) / ((b.alpha?.left_pct || 0) + 0.5)) } : null;
       const key = autoOnRef.current && st.sel ? st.sel.pattern : null;
       if (P.seg && P.seg.key !== key) { closeSeg(P.seg); P.seg = null; }
-      if (key != null && !P.seg) P.seg = { key, t0: Date.now(), base: baseline(P.hist), ctxs: [], samples: [] };
-      if (P.seg) P.seg.ctxs.push(ctxNow(st));
+      if (key != null && !P.seg) P.seg = { key, t0: Date.now(), base: baseline(P.hist), ctxs: [], samples: [], contact: [] };
+      if (P.seg) {
+        P.seg.ctxs.push(ctxNow(st));
+        const C = contactRef.current;
+        if (C && Date.now() - C.t < 25000) P.seg.contact.push(C);
+      }
       if (smp) {
         if (P.seg) P.seg.samples.push(smp);
         P.hist.push(smp); if (P.hist.length > 60) P.hist.shift();
       }
     }, 2000);
-    return () => clearInterval(id);
+    return () => { clearInterval(id); clearInterval(cid); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const downloadPatterns = () => {
@@ -3011,7 +3059,7 @@ export default function Chloe() {
         localStorage.setItem("chloe-pattern-segs", JSON.stringify(segs));
         localStorage.setItem("chloe-love-times", JSON.stringify([...loves, ...back].sort((x, y) => x - y).slice(-PAT_SEGS_MAX)));
       } catch {}
-      setPatterns(p => fresh.reduce(addPatternSeg, p));
+      setPatterns(p => fresh.filter(r => r.contact !== "bad").reduce(addPatternSeg, p));
       keepData();
       window.alert(`Added ${fresh.length} segment${fresh.length === 1 ? "" : "s"}${have.length ? ` (${have.length} were already here)` : ""}.`);
     }).catch(() => window.alert("Couldn't read that file."));
@@ -6825,7 +6873,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           color: on ? ARC_COLOR : K.demoT2, fontSize: 9, padding: "2px 7px", cursor: "pointer", borderRadius: 3, fontFamily: "inherit" });
         const lbl = { color: K.lbl, fontSize: 9, letterSpacing: 2 };
         const logging = !!(eegData?.connected && autoOn);
-        const stat = ([s1, s2], n) => { const m = s1 / n, v = Math.max(0, s2 / n - m * m); return { m, se: n > 1 ? Math.sqrt(v / (n - 1)) : Infinity }; };
+        const stat = ([s1, s2, c] = [0, 0, 0], n0) => { const n = c ?? n0; if (!n) return { m: 0, se: Infinity, none: true }; const m = s1 / n, v = Math.max(0, s2 / n - m * m); return { m, se: n > 1 ? Math.sqrt(v / (n - 1)) : Infinity }; };
         const rows = Object.entries(patterns[patGroup] || {}).map(([k, a]) => {
           const r = { k, label: a.label, n: a.n };
           for (const m of PAT_METRICS) r[m] = stat(a[m], a.n);
@@ -6846,7 +6894,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         };
         return (
           <div onClick={() => setShowPat(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: K.bg2, border: `1px solid ${K.demoBr}`, borderRadius: 6, width: "min(760px, 100%)", maxHeight: "85vh", overflowY: "auto", padding: "14px 18px", display: "flex", flexDirection: "column", gap: 8, fontSize: 9 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: K.bg2, border: `1px solid ${K.demoBr}`, borderRadius: 6, width: "min(900px, 100%)", maxHeight: "85vh", overflowY: "auto", padding: "14px 18px", display: "flex", flexDirection: "column", gap: 8, fontSize: 9 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <span style={lbl}>PATTERNS</span>
               <span style={{ color: logging ? ARC_COLOR : K.demoT2 }}>
@@ -6858,17 +6906,18 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               {PAT_GROUPS.map(([g, l]) => <button key={g} style={chip(patGroup === g)} onClick={() => setPatGroup(g)}>{l}</button>)}
               <button style={{ ...chip(patAll), marginLeft: "auto" }} onClick={() => setPatAll(v => !v)} title="Also show those heard fewer than 3 times">all</button>
             </div>
-            <div title="Each value: how far your brain sat from the 2 minutes before, while this played, averaged over every time it played, in standard deviations (σ) of your own baseline. Busy: beta against alpha + theta, leaving out gamma, which on a Muse is mostly muscle (green = calmer). Alpha and theta: their share (green = more). Solid bars: more than twice their standard error, so likely real; faint: not yet. Sorted calmest first." style={{ display: "flex", gap: 8, color: K.lbl, letterSpacing: 1, cursor: "help" }}>
+            <div title="Each value: how far your brain sat from the 2 minutes before, while this played, averaged over every time it played, in standard deviations (σ) of your own baseline. Busy: beta against alpha + theta, leaving out gamma, which on a Muse is mostly muscle (green = calmer). Alpha and theta: their share (green = more). Approach: frontal alpha asymmetry (green = left side more active, a sign of liking). Segments with a bad electrode are left out. Solid bars: more than twice their standard error, so likely real; faint: not yet. Sorted calmest first." style={{ display: "flex", gap: 8, color: K.lbl, letterSpacing: 1, cursor: "help" }}>
               <span style={{ flex: 1 }}>{PAT_GROUPS.find(([g]) => g === patGroup)[1].toUpperCase()}</span>
               <span style={{ width: 24, textAlign: "right" }} title="Times heard">n</span>
               <span style={{ width: 132 }}>BUSY σ</span><span style={{ width: 132 }}>ALPHA σ</span><span style={{ width: 132 }}>THETA σ</span>
+              <span style={{ width: 132 }} title="Frontal alpha asymmetry: green = the left side more active than usual, the classic EEG sign of approach or liking. Rough on Base's averaged montage, cleaner on frontal">APPROACH σ</span>
             </div>
             <div style={{ maxHeight: "50vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
               {rows.length ? rows.map(r => (
                 <div key={r.k} style={{ display: "flex", gap: 8, alignItems: "center", color: K.demoT2 }}>
                   <span style={{ flex: 1, color: K.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</span>
                   <span style={{ width: 24, textAlign: "right" }}>{r.n}</span>
-                  {bar(r.busy, true)}{bar(r.alpha, false)}{bar(r.theta, false)}
+                  {bar(r.busy, true)}{bar(r.alpha, false)}{bar(r.theta, false)}{r.asym.none ? <span style={{ width: 132, color: K.demoT2 }}>·</span> : bar(r.asym, false)}
                 </div>
               )) : <span style={{ color: K.demoT2 }}>Nothing heard 3 times yet{patAll ? "" : " (all shows everything so far)"}. Put the headband on and let Auto play; every scale change adds a row.</span>}
             </div>
