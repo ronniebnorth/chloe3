@@ -6245,7 +6245,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
   const filtered = useMemo(() => {
     // When favsOnly, restrict each family to only its starred modes
     // Carry origIdx so favId stays correct after filtering
-    let base = ACTIVE_FAMILIES.map(f => {
+    // Typing an outside id ("x-hex-30.5", from patterns) finds it even with outside scales hidden
+    let base = (/(^|,)\s*x-/i.test(filter) ? FAMILIES : ACTIVE_FAMILIES).map(f => {
       if (!favsOnly) return { ...f, origIdxs: f.modes.map((_, i) => i) };
       const origIdxs = f.modes.map((_, i) => i).filter(i => favs.has(f.id + "." + i));
       const modes = origIdxs.map(i => f.modes[i]);
@@ -6265,7 +6266,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         if (noteNum !== null) return f.n === noteNum ? f : null;
         const matchIdxs = f.modes.reduce((acc, m, mi) => {
           const name = (KNOWN[m] || customNames[m] || "").toLowerCase();
-          if (name.includes(q) || f.id.toLowerCase().includes(q)) acc.push(mi);
+          if (name.includes(q) || f.id.toLowerCase().includes(q) || `${f.id}.${f.origIdxs?.[mi] ?? mi}` === q) acc.push(mi);
           return acc;
         }, []);
         if (!matchIdxs.length) return null;
@@ -6276,8 +6277,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     // Header filter (existing — unchanged)
     if (!filter.trim()) return base;
     const terms = filter.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
-    return base.filter(f =>
-      terms.some(t =>
+    // A full id like "tet-5.0" (as patterns shows it) is one mode of one family: just that mode
+    const isId = t => /^(x-)?(tri|tet|pen|hex|hep|oct)-\d+\.\d+$/.test(t);
+    const ids = terms.filter(isId), loose = terms.filter(t => !isId(t));
+    return base.map(f => {
+      if (loose.some(t =>
         f.id.includes(t) ||
         GRP_PFX[f.n].startsWith(t) ||
         f.modes.some(m =>
@@ -6285,9 +6289,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           (KNOWN[m] || customNames[m] || "").toLowerCase().includes(t) ||
           matchesInterval(t, m)
         )
-      )
-    );
-  }, [ACTIVE_FAMILIES, filter, favs, favsOnly, customNames, listSearch, noteCountFilter]);
+      )) return f;
+      const keep = f.origIdxs.map((_, k) => k).filter(k => ids.includes(`${f.id}.${f.origIdxs[k]}`));
+      return keep.length ? { ...f, modes: keep.map(k => f.modes[k]), origIdxs: keep.map(k => f.origIdxs[k]) } : null;
+    }).filter(Boolean);
+  }, [ACTIVE_FAMILIES, FAMILIES, filter, favs, favsOnly, customNames, listSearch, noteCountFilter]);
 
   const grouped = useMemo(() => {
     const g = {};
@@ -6870,7 +6876,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         <div style={{ position: "relative" }}>
           <input
             value={filter} onChange={e => setFilter(e.target.value)}
-            placeholder="filter: hep-6, Dorian, 2-2-1, pen…"
+            placeholder="filter: hep-6, tet-5.0, Dorian, 2-2-1, pen…"
             style={{ background: K.bg3, border: `1px solid ${K.br}`, color: K.t1, padding: "6px 28px 6px 10px", borderRadius: 4, fontFamily: "inherit", fontSize: 11, width: 280, outline: "none" }}
           />
           {filter && (
