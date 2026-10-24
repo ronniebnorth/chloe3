@@ -1996,9 +1996,13 @@ const sessionCSV = (sess) => [
 // more of it on the right means the LEFT side is working harder, the classic
 // EEG sign of approach / liking. On Base's averaged montage each side mixes
 // forehead and ear (the CSV's montage column), so read it as a rough version
-const PAT_METRICS = ["busy", "alpha", "theta", "asym"];
+// beta, gamma, delta: their shares, logged alongside. Gamma at the forehead is
+// partly muscle (jaw, brow, a smile) and partly what Ronnie can raise at will
+// with his "brain-stem smile"; delta is mostly blinks, eye movement and
+// drowsiness, and since shares sum to 100 a blink burst also squeezes alpha
+const PAT_METRICS = ["busy", "alpha", "theta", "asym", "beta", "gamma", "delta"];
 const PAT_GROUPS = [["scale", "scale"], ["bright", "brightness"], ["size", "notes"], ["world", "world"], ["tempo", "tempo"], ["beat", "drums"], ["drone", "drone"], ["inst", "lead"]];
-const PAT_SD_MIN = { busy: 0.02, alpha: 0.5, theta: 0.5, asym: 0.05 };   // floors, so a flat baseline doesn't blow a segment up
+const PAT_SD_MIN = { busy: 0.02, alpha: 0.5, theta: 0.5, asym: 0.05, beta: 0.5, gamma: 0.5, delta: 0.5 };   // floors, so a flat baseline doesn't blow a segment up
 const PAT_SEGS_MAX = 5000;
 const tempoBin = b => b < 70 ? "under 70" : b < 90 ? "70-89" : b < 110 ? "90-109" : b < 130 ? "110-129" : "130+";
 const brightBin = v => v == null ? "outside" : ["darkest", "dark", "middle", "bright", "brightest"][Math.min(4, Math.floor(v * 5))];
@@ -2030,11 +2034,13 @@ const addPatternSeg = (pats, r) => {
 // analysis can use any baseline it likes. contact = the worst electrode verdict
 // seen during the segment (contact_bad names the non-good ones); montage = Base's channel mode
 const PAT_CSV_COLS = ["at", "dur_s", "samples", "scale_id", "scale_name", "brightness", "notes", "world", "bpm", "beat", "drums", "drone", "lead", "journey", "j_bright", "j_tempo", "j_energy", "j_tension", "loved", "busy_sd", "alpha_sd", "theta_sd",
-  "asym_sd", "raw_busy", "raw_alpha", "raw_theta", "raw_asym", "contact", "contact_bad", "montage"];
+  "asym_sd", "raw_busy", "raw_alpha", "raw_theta", "raw_asym", "contact", "contact_bad", "montage",
+  "beta_sd", "gamma_sd", "delta_sd", "raw_beta", "raw_gamma", "raw_delta"];
 const jcol = (r, k) => r.jv?.[k] == null ? "" : +r.jv[k].toFixed(3);
 const lovedIn = (loves, r) => loves.filter(t => t >= r.at && t <= r.at + r.dur * 1000 + 10000).length;
 const patternsCSV = (segs, loves = []) => [PAT_CSV_COLS.join(","), ...segs.map(r => [new Date(r.at).toISOString(), r.dur, r.n, r.id, `"${r.name}"`, r.bright ?? "", r.size, r.world, r.bpm, r.beat, r.drums ?? "", r.drone, r.inst, r.journey ?? "", jcol(r, "b"), jcol(r, "t"), jcol(r, "e"), jcol(r, "tn"), lovedIn(loves, r), r.busy, r.alpha, r.theta,
-  r.asym ?? "", r.raw?.busy ?? "", r.raw?.alpha ?? "", r.raw?.theta ?? "", r.raw?.asym ?? "", r.contact ?? "", r.contactBad ?? "", r.montage ?? ""].join(","))].join("\n");
+  r.asym ?? "", r.raw?.busy ?? "", r.raw?.alpha ?? "", r.raw?.theta ?? "", r.raw?.asym ?? "", r.contact ?? "", r.contactBad ?? "", r.montage ?? "",
+  r.beta ?? "", r.gamma ?? "", r.delta ?? "", r.raw?.beta ?? "", r.raw?.gamma ?? "", r.raw?.delta ?? ""].join(","))].join("\n");
 // Back from a downloaded CSV (any version of its columns) to segments; pattern
 // comes from the id through the families, since the CSV doesn't carry it
 const splitCSV = line => { const out = []; let cur = "", q = false; for (const c of line) { if (c === '"') q = !q; else if (c === "," && !q) { out.push(cur); cur = ""; } else cur += c; } out.push(cur); return out; };
@@ -2050,8 +2056,8 @@ const segsFromCSV = (text, families) => {
     return { id: v.scale_id, pattern, name: v.scale_name, bright: num("brightness"), size: num("notes"), world: v.world, bpm: num("bpm"), beat: v.beat,
       ...(v.drums ? { drums: v.drums } : {}), drone: v.drone, inst: v.lead, journey: v.journey || null, jv, at, dur: num("dur_s"), n: num("samples"),
       loved: num("loved") ?? 0, busy: num("busy_sd"), alpha: num("alpha_sd"), theta: num("theta_sd"),
-      ...(num("asym_sd") !== null ? { asym: num("asym_sd") } : {}),
-      ...(num("raw_busy") !== null ? { raw: { busy: num("raw_busy"), alpha: num("raw_alpha"), theta: num("raw_theta"), asym: num("raw_asym") } } : {}),
+      ...Object.fromEntries(["asym", "beta", "gamma", "delta"].filter(m => num(`${m}_sd`) !== null).map(m => [m, num(`${m}_sd`)])),
+      ...(num("raw_busy") !== null ? { raw: Object.fromEntries(PAT_METRICS.filter(m => num(`raw_${m}`) !== null).map(m => [m, num(`raw_${m}`)])) } : {}),
       ...(v.contact ? { contact: v.contact, contactBad: v.contact_bad || "" } : {}), ...(v.montage ? { montage: v.montage } : {}) };
   }).filter(Boolean);
 };
@@ -3021,7 +3027,8 @@ export default function Chloe() {
       // Busy without gamma: on a Muse, gamma at the forehead is mostly muscle (jaw, brow)
       const smp = b && avg("beta") + avg("alpha") + avg("theta") > 0.5
         ? { t: Date.now(), busy: Math.log((avg("beta") + 1) / (avg("alpha") + avg("theta") + 1)), alpha: avg("alpha"), theta: avg("theta"),
-            asym: Math.log(((b.alpha?.right_pct || 0) + 0.5) / ((b.alpha?.left_pct || 0) + 0.5)) } : null;
+            asym: Math.log(((b.alpha?.right_pct || 0) + 0.5) / ((b.alpha?.left_pct || 0) + 0.5)),
+            beta: avg("beta"), gamma: avg("gamma"), delta: avg("delta") } : null;
       const key = autoOnRef.current && st.sel ? st.sel.pattern : null;
       if (P.seg && P.seg.key !== key) { closeSeg(P.seg); P.seg = null; }
       if (key != null && !P.seg) P.seg = { key, t0: Date.now(), base: baseline(P.hist), ctxs: [], samples: [], contact: [] };
@@ -6880,13 +6887,15 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           return r;
         }).filter(r => patAll || r.n >= 3).sort((x, y) => x.busy.m - y.busy.m);
         const sure = x => Number.isFinite(x.se) && Math.abs(x.m) > 2 * x.se;
+        // calmIsLow: true = green when lower, false = green when higher, null = no good direction (delta)
         const bar = (x, calmIsLow) => {
-          const w = Math.min(1, Math.abs(x.m)) * 40, calmer = calmIsLow ? x.m < 0 : x.m > 0;
+          if (x.none) return <span style={{ width: 112, color: K.demoT2 }}>·</span>;
+          const w = Math.min(1, Math.abs(x.m)) * 32, calmer = calmIsLow ? x.m < 0 : x.m > 0;
           return (
-            <span style={{ display: "inline-flex", alignItems: "center", width: 132 }}>
-              <span style={{ position: "relative", width: 80, height: 7, background: K.bg3, borderRadius: 2, flexShrink: 0 }}>
-                <span style={{ position: "absolute", left: 40, top: -1, width: 1, height: 9, background: K.demoBr }} />
-                <span style={{ position: "absolute", top: 0, height: 7, borderRadius: 2, left: x.m < 0 ? 40 - w : 40, width: w, background: calmer ? ARC_COLOR : "#e8a040", opacity: sure(x) ? 1 : 0.45 }} />
+            <span style={{ display: "inline-flex", alignItems: "center", width: 112 }}>
+              <span style={{ position: "relative", width: 64, height: 7, background: K.bg3, borderRadius: 2, flexShrink: 0 }}>
+                <span style={{ position: "absolute", left: 32, top: -1, width: 1, height: 9, background: K.demoBr }} />
+                <span style={{ position: "absolute", top: 0, height: 7, borderRadius: 2, left: x.m < 0 ? 32 - w : 32, width: w, background: calmIsLow === null ? "#7a9cc6" : calmer ? ARC_COLOR : "#e8a040", opacity: sure(x) ? 1 : 0.45 }} />
               </span>
               <span style={{ marginLeft: 6, color: sure(x) ? K.txt : K.demoT2 }}>{x.m >= 0 ? "+" : "−"}{Math.abs(x.m).toFixed(2)}</span>
             </span>
@@ -6894,7 +6903,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         };
         return (
           <div onClick={() => setShowPat(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: K.bg2, border: `1px solid ${K.demoBr}`, borderRadius: 6, width: "min(900px, 100%)", maxHeight: "85vh", overflowY: "auto", padding: "14px 18px", display: "flex", flexDirection: "column", gap: 8, fontSize: 9 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: K.bg2, border: `1px solid ${K.demoBr}`, borderRadius: 6, width: "min(1000px, 100%)", maxHeight: "85vh", overflowY: "auto", padding: "14px 18px", display: "flex", flexDirection: "column", gap: 8, fontSize: 9 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <span style={lbl}>PATTERNS</span>
               <span style={{ color: logging ? ARC_COLOR : K.demoT2 }}>
@@ -6906,21 +6915,25 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               {PAT_GROUPS.map(([g, l]) => <button key={g} style={chip(patGroup === g)} onClick={() => setPatGroup(g)}>{l}</button>)}
               <button style={{ ...chip(patAll), marginLeft: "auto" }} onClick={() => setPatAll(v => !v)} title="Also show those heard fewer than 3 times">all</button>
             </div>
-            <div title="Each value: how far your brain sat from the 2 minutes before, while this played, averaged over every time it played, in standard deviations (σ) of your own baseline. Busy: beta against alpha + theta, leaving out gamma, which on a Muse is mostly muscle (green = calmer). Alpha and theta: their share (green = more). Approach: frontal alpha asymmetry (green = left side more active, a sign of liking). Segments with a bad electrode are left out. Solid bars: more than twice their standard error, so likely real; faint: not yet. Sorted calmest first." style={{ display: "flex", gap: 8, color: K.lbl, letterSpacing: 1, cursor: "help" }}>
-              <span style={{ flex: 1 }}>{PAT_GROUPS.find(([g]) => g === patGroup)[1].toUpperCase()}</span>
+            <div style={{ overflowX: "auto" }}><div style={{ minWidth: 800, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div title="Each value: how far your brain sat from the 2 minutes before, while this played, averaged over every time it played, in standard deviations (σ) of your own baseline. Busy: beta against alpha + theta, leaving out gamma, which on a Muse is mostly muscle (green = calmer). Alpha and theta: their share (green = more). Approach: frontal alpha asymmetry (green = left side more active, a sign of liking). Gamma: green = more (face muscle or the brain-stem smile). Delta: blinks, eyes, drowsiness (blue, no good direction); beta is in the CSV. Segments with a bad electrode are left out. Solid bars: more than twice their standard error, so likely real; faint: not yet. Sorted calmest first." style={{ display: "flex", gap: 8, color: K.lbl, letterSpacing: 1, cursor: "help" }}>
+              <span style={{ flex: 1, minWidth: 90 }}>{PAT_GROUPS.find(([g]) => g === patGroup)[1].toUpperCase()}</span>
               <span style={{ width: 24, textAlign: "right" }} title="Times heard">n</span>
-              <span style={{ width: 132 }}>BUSY σ</span><span style={{ width: 132 }}>ALPHA σ</span><span style={{ width: 132 }}>THETA σ</span>
-              <span style={{ width: 132 }} title="Frontal alpha asymmetry: green = the left side more active than usual, the classic EEG sign of approach or liking. Rough on Base's averaged montage, cleaner on frontal">APPROACH σ</span>
+              <span style={{ width: 112 }}>BUSY σ</span><span style={{ width: 112 }}>ALPHA σ</span><span style={{ width: 112 }}>THETA σ</span>
+              <span style={{ width: 112 }} title="Frontal alpha asymmetry: green = the left side more active than usual, the classic EEG sign of approach or liking. Rough on Base's averaged montage, cleaner on frontal">APPROACH σ</span>
+              <span style={{ width: 112 }} title="Gamma share (green = more). At the forehead it's partly face muscle (smile, jaw, brow) and partly the brain-stem smile you can raise at will, so either way: something in you lit up">GAMMA σ</span>
+              <span style={{ width: 112 }} title="Delta share (blue: no good direction). Mostly blinks, eye movement and drowsiness while awake. A rise here can also squeeze alpha and theta down, so check it before trusting an alpha dip">DELTA σ</span>
             </div>
             <div style={{ maxHeight: "50vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
               {rows.length ? rows.map(r => (
                 <div key={r.k} style={{ display: "flex", gap: 8, alignItems: "center", color: K.demoT2 }}>
-                  <span style={{ flex: 1, color: K.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</span>
+                  <span style={{ flex: 1, minWidth: 90, color: K.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</span>
                   <span style={{ width: 24, textAlign: "right" }}>{r.n}</span>
-                  {bar(r.busy, true)}{bar(r.alpha, false)}{bar(r.theta, false)}{r.asym.none ? <span style={{ width: 132, color: K.demoT2 }}>·</span> : bar(r.asym, false)}
+                  {bar(r.busy, true)}{bar(r.alpha, false)}{bar(r.theta, false)}{bar(r.asym, false)}{bar(r.gamma, false)}{bar(r.delta, null)}
                 </div>
               )) : <span style={{ color: K.demoT2 }}>Nothing heard 3 times yet{patAll ? "" : " (all shows everything so far)"}. Put the headband on and let Auto play; every scale change adds a row.</span>}
             </div>
+            </div></div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", color: K.demoT2 }}>
               <span style={{ flex: 1 }}>Eyes closing, drifting off and moving all shift the brain more than any scale; the more times each is heard, the more the averages say.</span>
               <span title={dataKept ? "This browser has agreed to keep Chloe's data. Clearing site data by hand still erases it, so download the csv now and then." : "This browser may clear Chloe's data on its own (Safari after a week away). Download the csv now and then; import puts it back."} style={{ color: dataKept ? "#5fbf7f" : K.demoT2, cursor: "help" }}>{dataKept ? "kept by browser" : "browser may clear"}</span>
