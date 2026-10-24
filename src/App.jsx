@@ -2069,6 +2069,30 @@ JOURNEYS.endless = { label: "endless", home: 1453, endless: true,
              // Percussion comes in now and then: on for a few minutes about a third of the time
              perc: w(23, 0.9) + 0.5 * w(8.7, 2.0) > 0.45 };
   } };
+// Map: built for measuring (◇ patterns), no story to follow. Brightness,
+// tempo, energy and tension each move in blocks of their own length (1.5,
+// 2.5, 3.5 and 4.5 min, so they never line up) to levels shuffled across
+// their whole range (each run of 6 blocks visits all 6 levels once), holding,
+// then easing into the next. Every kind of scale, speed and tension comes up
+// early and late, so the slow drift of a session (settling, drowsiness)
+// doesn't line up with any of them. A fresh shuffle every run. World wander
+// comes on with it, so the worlds take turns too.
+const shuffled = (n, seed) => {
+  const a = [...Array(n).keys()]; let x = Math.imul(seed ^ 0x9e3779b9, 2654435761) >>> 0 || 1;
+  for (let i = n - 1; i > 0; i--) { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; x >>>= 0; const j = x % (i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+};
+JOURNEYS.map = { label: "map", home: 1709, survey: true,
+  tip: "For measuring with a headband (◇ patterns): brightness, tempo, energy and tension each jump around their whole range in blocks of their own length, never in step, and the worlds take turns, so everything gets heard early and late in the session. Best at 30 or 60 minutes, sitting still.",
+  at: (ms, seed = 1) => {
+    const lvl = (k, blockMs, lo, hi) => {
+      const i = Math.floor(ms / blockMs), x = (ms % blockMs) / blockMs;
+      const at = n => lo + (hi - lo) * shuffled(6, seed * 7919 + k * 104729 + Math.floor(n / 6))[n % 6] / 5;
+      const s = x < 0.85 ? 0 : (1 - Math.cos(Math.PI * (x - 0.85) / 0.15)) / 2;   // hold, then ease into the next
+      return at(i) + (at(i + 1) - at(i)) * s;
+    };
+    return { b: lvl(1, 90000, 0.15, 0.85), t: lvl(2, 150000, 0.7, 1.3), e: lvl(3, 210000, 0, 0.8), tn: lvl(4, 270000, 0, 0.5), rv: 0.6, su: 1 };
+  } };
 const ENDLESS_WINDOW = 40 * 60000;   // how much of Endless a card or the stage draws
 const JOURNEY_MINS  = [5, 15, 30, 60];
 // Sleep timer: stop after this many minutes, fading out over the last SLEEP_FADE seconds
@@ -2080,8 +2104,9 @@ const JOURNEY_COLOR = "#e8b04a";
 // (the beat was 116); playback rate corrects for it.
 const RISE_RIFFS = [{ f: "rise_riff_1.wav", bpm: 114.8 }, { f: "rise_riff_2.wav", bpm: 116.6 }];
 const RIFF_BPM = 116, RIFF_ROOT = 4, RIFF_BARS = 2, RIFF_GAIN = 0.6, RIFF_PRE = 0.004;
-const journeyAt = (j, f) => {
+const journeyAt = (j, f, run) => {
   if (j.endless) return j.at(f * ENDLESS_WINDOW);
+  if (j.survey) return j.at(f * (run?.mins ?? 30) * 60000, run?.seed);   // a card draws a 30-minute run; the stage, this one
   const p = j.pts;
   let i = 0;
   while (i < p.length - 2 && f > p[i + 1].at) i++;
@@ -3022,7 +3047,7 @@ export default function Chloe() {
     const j = JOURNEYS[journey];
     // Changing only the length keeps the clock running; a new journey starts over
     if (!journeyRef.current || journeyRef.current.id !== journey)
-      journeyRef.current = { id: journey, startMs: Date.now(), homeBpm: j.bpm ?? stRef.current.bpm, arrived: false, ending: false };
+      journeyRef.current = { id: journey, startMs: Date.now(), homeBpm: j.bpm ?? stRef.current.bpm, arrived: false, ending: false, seed: 1 + Math.floor(Math.random() * 1e6) };
     const J = journeyRef.current;
     J.mins = journeyMins;
     const tick = () => {
@@ -3030,7 +3055,7 @@ export default function Chloe() {
       const el = Date.now() - J.startMs;
       // Endless never arrives; f is just where it is in the drawn window
       const f = j.endless ? (el % ENDLESS_WINDOW) / ENDLESS_WINDOW : Math.min(1, el / (J.mins * 60000));
-      J.vals = j.endless ? j.at(el) : journeyAt(j, f);
+      J.vals = j.endless ? j.at(el) : j.survey ? j.at(el, J.seed) : journeyAt(j, f);
       setLeadTarget(J.vals.b);
       if (!j.endless && f >= 1 && !J.arrived) {
         J.arrived = true;
@@ -6536,8 +6561,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     // A journey's shape: brightness as a line (up = bright), Storm's intensity as a shaded hill
     const curve = (id, w, h, pad = 6) => {
       // (the hill is the bigger of tension and orchestra energy, so Rise shows its build)
-      const pts = [...Array(61).keys()].map(i => { const v = journeyAt(JOURNEYS[id], i / 60); return { x: pad + (w - 2 * pad) * i / 60, b: v.b, tn: v.tn === undefined ? undefined : Math.max(v.tn, v.e ?? 0) }; });
-      const y = b => pad + (h - 2 * pad) * (1 - (b - 0.25) / 0.5);
+      const run = journeyRef.current?.id === id ? journeyRef.current : null;
+      const pts = [...Array(61).keys()].map(i => { const v = journeyAt(JOURNEYS[id], i / 60, run); return { x: pad + (w - 2 * pad) * i / 60, b: v.b, tn: v.tn === undefined ? undefined : Math.max(v.tn, v.e ?? 0) }; });
+      const [lo, span] = JOURNEYS[id].survey ? [0.1, 0.8] : [0.25, 0.5];   // map roams the whole range
+      const y = b => pad + (h - 2 * pad) * (1 - Math.min(1, Math.max(0, (b - lo) / span)));
       const line = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${y(p.b).toFixed(1)}`).join(" ");
       const hill = pts[0].tn === undefined ? null
         : `M${pad},${h - pad} ` + pts.map(p => `L${p.x.toFixed(1)},${(h - pad - (h - 2 * pad) * 0.8 * p.tn).toFixed(1)}`).join(" ") + ` L${w - pad},${h - pad} Z`;
@@ -6550,6 +6577,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       storm: "Calm, a gathering storm, calm again.",
       rise: "Builds and builds: bright, driving and big. For energy.",
       endless: "Never ends. A slow, calm wander, for sleep.",
+      map: "For measuring with a headband: everything takes a turn, in a shuffled order.",
     };
     const play = () => {
       wake();
@@ -6565,7 +6593,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     };
     const f = journeyNow?.f ?? 0;
     const big = curve(J, W, H, 10);
-    const dotB = journeyNow ? journeyAt(JOURNEYS[J], f).b : null;
+    const dotB = journeyNow ? journeyAt(JOURNEYS[J], f, journeyRef.current).b : null;
     const chip = (on) => ({
       background: on ? K.a + "22" : "none", color: on ? K.a : K.t1,
       border: `1px solid ${on ? K.a : K.br}`, borderRadius: 20, padding: "6px 14px",
@@ -6612,6 +6640,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               <button key={id} onClick={() => {
                 setJourney(id);
                 if (id !== J) track(`listen/journey/${id}`);
+                // Map wants every world to take a turn
+                if (JOURNEYS[id].survey && !worldWander) { setWorldWander(true); if (world === "off") { const ks = Object.keys(WORLDS); chooseWorld(ks[Math.floor(Math.random() * ks.length)]); setWorldWander(true); } }
                 // Rise wants the whole band: orchestra on, and a kit beat (drive)
                 if (JOURNEYS[id].epic) {
                   if (!symphonic) { setSymphonic(true); getOrchestra(getCtx()); }
