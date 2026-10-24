@@ -3195,12 +3195,18 @@ export default function Chloe() {
   useEffect(() => { if (!autoOn && !demoOn && arcRef.current) stopArc(); }, [autoOn, demoOn]);
   useEffect(() => { demoLogRef.current = demoLog; }, [demoLog]);
   // EEG proxy polling — always on so brainwave indicator works outside demo mode too
+  // Bridge "connected" can mean only that it's linked to BERM Base: with the
+  // headband off it keeps serving its last frame. So "on" also needs the data
+  // to have changed in the last 6 s (the packet count, or the bands themselves)
   useEffect(() => {
+    let lastFp = null, lastChange = 0;
     const poll = async () => {
       try {
         const res = await fetch("http://localhost:8520/eeg");
-        if (res.ok) setEegData(await res.json());
-        else setEegData(null);
+        if (!res.ok) { setEegData(null); return; }
+        const d = await res.json(), fp = d.packet_count ?? JSON.stringify(d.bands ?? null), now = Date.now();
+        if (fp !== lastFp) { if (lastFp !== null) lastChange = now; lastFp = fp; }
+        setEegData(d.connected && now - lastChange > 6000 ? { ...d, connected: false, stale: true } : d);
       } catch { setEegData(null); }
     };
     poll();
