@@ -2003,7 +2003,7 @@ const loadJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 
 // Which total a segment adds to, per group: [key, label]
 const patKeys = r => ({
   scale: [r.pattern, r.name], bright: [brightBin(r.bright)], size: [`${r.size} notes`], world: [r.world === "off" ? "none" : WORLDS[r.world]?.label ?? r.world],
-  tempo: [tempoBin(r.bpm)], beat: [r.beat === "off" ? "none" : r.beat], drone: [r.drone], inst: [r.inst],
+  tempo: [tempoBin(r.bpm)], beat: [(r.drums ?? r.beat) === "off" ? "none" : r.drums ?? r.beat], drone: [r.drone], inst: [r.inst],
 });
 const addPatternSeg = (pats, r) => {
   const out = { ...pats };
@@ -2016,8 +2016,10 @@ const addPatternSeg = (pats, r) => {
   out.total = (out.total || 0) + 1;
   return out;
 };
-const PAT_CSV_COLS = ["at", "dur_s", "samples", "scale_id", "scale_name", "brightness", "notes", "world", "bpm", "beat", "drone", "lead", "journey", "busy_sd", "alpha_sd", "theta_sd"];
-const patternsCSV = segs => [PAT_CSV_COLS.join(","), ...segs.map(r => [new Date(r.at).toISOString(), r.dur, r.n, r.id, `"${r.name}"`, r.bright ?? "", r.size, r.world, r.bpm, r.beat, r.drone, r.inst, r.journey ?? "", r.busy, r.alpha, r.theta].join(","))].join("\n");
+// beat = the world's style; drums = what was actually playing. j_* = the journey's targets at that moment
+const PAT_CSV_COLS = ["at", "dur_s", "samples", "scale_id", "scale_name", "brightness", "notes", "world", "bpm", "beat", "drums", "drone", "lead", "journey", "j_bright", "j_tempo", "j_energy", "j_tension", "busy_sd", "alpha_sd", "theta_sd"];
+const jcol = (r, k) => r.jv?.[k] == null ? "" : +r.jv[k].toFixed(3);
+const patternsCSV = segs => [PAT_CSV_COLS.join(","), ...segs.map(r => [new Date(r.at).toISOString(), r.dur, r.n, r.id, `"${r.name}"`, r.bright ?? "", r.size, r.world, r.bpm, r.beat, r.drums ?? "", r.drone, r.inst, r.journey ?? "", jcol(r, "b"), jcol(r, "t"), jcol(r, "e"), jcol(r, "tn"), r.busy, r.alpha, r.theta].join(","))].join("\n");
 
 const sessionSummary = (sess) => {
   const pts = sess.rows.filter(r => r.brain_target !== null);
@@ -2083,7 +2085,7 @@ const shuffled = (n, seed) => {
   return a;
 };
 JOURNEYS.map = { label: "map", home: 1709, survey: true,
-  tip: "For measuring with a headband (◇ patterns): brightness, tempo, energy and tension each jump around their whole range in blocks of their own length, never in step, and the worlds take turns, so everything gets heard early and late in the session. Best at 30 or 60 minutes, sitting still. It keeps shuffling past the end until you stop it.",
+  tip: "For measuring with a headband (◇ patterns): brightness, tempo, energy and tension each jump around their whole range in blocks of their own length, never in step, drums come and go on their own clock (brushes in the worlds without drums), and the worlds take turns, so everything gets heard early and late in the session. Best at 30 or 60 minutes, sitting still. It keeps shuffling past the end until you stop it.",
   at: (ms, seed = 1) => {
     const lvl = (k, blockMs, lo, hi) => {
       const i = Math.floor(ms / blockMs), x = (ms % blockMs) / blockMs;
@@ -2091,7 +2093,9 @@ JOURNEYS.map = { label: "map", home: 1709, survey: true,
       const s = x < 0.85 ? 0 : (1 - Math.cos(Math.PI * (x - 0.85) / 0.15)) / 2;   // hold, then ease into the next
       return at(i) + (at(i + 1) - at(i)) * s;
     };
-    return { b: lvl(1, 90000, 0.15, 0.85), t: lvl(2, 150000, 0.7, 1.3), e: lvl(3, 210000, 0, 0.8), tn: lvl(4, 270000, 0, 0.5), rv: 0.6, su: 1 };
+    // Drums on or off in 2-minute blocks, three of each per six, so "no drums" isn't just "the drumless worlds"
+    const dn = Math.floor(ms / 120000), dr = shuffled(6, seed * 7919 + 5 * 104729 + Math.floor(dn / 6))[dn % 6] < 3;
+    return { b: lvl(1, 90000, 0.15, 0.85), t: lvl(2, 150000, 0.7, 1.3), e: lvl(3, 210000, 0, 0.8), tn: lvl(4, 270000, 0, 0.5), dr, rv: 0.6, su: 1 };
   } };
 const ENDLESS_WINDOW = 40 * 60000;   // how much of Endless a card or the stage draws
 const JOURNEY_MINS  = [5, 15, 30, 60];
@@ -2914,6 +2918,7 @@ export default function Chloe() {
   const [patAll, setPatAll] = useState(false);
   const [patLive, setPatLive] = useState(0);   // segments this visit, for the panel's status
   const leadNowRef = useRef(null);
+  const drumsNowRef = useRef(null);   // the beat actually playing, after rests and map's drum blocks
   const patRef = useRef({ hist: [], seg: null });
   useEffect(() => {
     const ctxNow = st => {
@@ -2923,6 +2928,7 @@ export default function Chloe() {
         bright: isOutsideId(sel.id) ? null : +normalizedBrightness(sel.pattern).toFixed(3), size: toSemis(sel.pattern).length,
         world: st.world, bpm: Math.round(st.bpm), beat: st.beatStyle, drone: st.droneOn ? st.droneWave : "off",
         inst: leadNowRef.current ?? st.instrument ?? st.timbre, journey: journeyRef.current?.id ?? null,
+        drums: drumsNowRef.current ?? st.beatStyle, jv: journeyRef.current?.vals ? { ...journeyRef.current.vals } : null,
       };
     };
     const baseline = hist => {
@@ -5476,8 +5482,10 @@ export default function Chloe() {
     const beatLoop = () => {
       try {
         const st = stRef.current, sm = smoothRef.current, F = 1 + 7 * sm;
-        const resting = (beatRestRef.current && Date.now() < beatRestRef.current) || journeyRef.current?.vals?.perc === false;
-        const want = st.beatStyle === "off" || resting ? "off" : st.beatStyle;
+        const jv = journeyRef.current?.vals, style = st.beatStyle === "off" && jv?.dr === true ? "brushes" : st.beatStyle;   // map brings brushes to a drumless world
+        const resting = (beatRestRef.current && Date.now() < beatRestRef.current) || jv?.perc === false || jv?.dr === false;
+        const want = style === "off" || resting ? "off" : style;
+        drumsNowRef.current = want;
         const playing = beatStyleNow !== null && beatStyleNow !== "off";
         const ac = playing || want !== "off" ? getCtx() : null;
         beatSwapTo = playing && want !== "off" && want !== beatStyleNow && beatFadeTo === null ? want : null;
