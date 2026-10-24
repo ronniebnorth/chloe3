@@ -2017,9 +2017,11 @@ const addPatternSeg = (pats, r) => {
   return out;
 };
 // beat = the world's style; drums = what was actually playing. j_* = the journey's targets at that moment
-const PAT_CSV_COLS = ["at", "dur_s", "samples", "scale_id", "scale_name", "brightness", "notes", "world", "bpm", "beat", "drums", "drone", "lead", "journey", "j_bright", "j_tempo", "j_energy", "j_tension", "busy_sd", "alpha_sd", "theta_sd"];
+// loved = ♥ taps during the segment or within 10 s after it (a tap comes a moment after the thing that caused it)
+const PAT_CSV_COLS = ["at", "dur_s", "samples", "scale_id", "scale_name", "brightness", "notes", "world", "bpm", "beat", "drums", "drone", "lead", "journey", "j_bright", "j_tempo", "j_energy", "j_tension", "loved", "busy_sd", "alpha_sd", "theta_sd"];
 const jcol = (r, k) => r.jv?.[k] == null ? "" : +r.jv[k].toFixed(3);
-const patternsCSV = segs => [PAT_CSV_COLS.join(","), ...segs.map(r => [new Date(r.at).toISOString(), r.dur, r.n, r.id, `"${r.name}"`, r.bright ?? "", r.size, r.world, r.bpm, r.beat, r.drums ?? "", r.drone, r.inst, r.journey ?? "", jcol(r, "b"), jcol(r, "t"), jcol(r, "e"), jcol(r, "tn"), r.busy, r.alpha, r.theta].join(","))].join("\n");
+const lovedIn = (loves, r) => loves.filter(t => t >= r.at && t <= r.at + r.dur * 1000 + 10000).length;
+const patternsCSV = (segs, loves = []) => [PAT_CSV_COLS.join(","), ...segs.map(r => [new Date(r.at).toISOString(), r.dur, r.n, r.id, `"${r.name}"`, r.bright ?? "", r.size, r.world, r.bpm, r.beat, r.drums ?? "", r.drone, r.inst, r.journey ?? "", jcol(r, "b"), jcol(r, "t"), jcol(r, "e"), jcol(r, "tn"), lovedIn(loves, r), r.busy, r.alpha, r.theta].join(","))].join("\n");
 
 const sessionSummary = (sess) => {
   const pts = sess.rows.filter(r => r.brain_target !== null);
@@ -2969,7 +2971,7 @@ export default function Chloe() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const downloadPatterns = () => {
-    const blob = new Blob([patternsCSV(loadJSON("chloe-pattern-segs", []))], { type: "text/csv" });
+    const blob = new Blob([patternsCSV(loadJSON("chloe-pattern-segs", []), loadJSON("chloe-love-times", []))], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = `chloe-patterns-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -5989,7 +5991,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // Far from the target (the start) it jumps straight there instead.
       // ♥ likes bend every brightness target toward the liked brightness, and
       // now and then bring back a liked scale outright
-      const likes = likesRef.current, likeB = likes.length ? likedMean(likes, "b") : null;
+      // Map ignores them: it's measuring, so its picks stay unbiased (♥ there only marks the moment)
+      const likes = JOURNEYS[journeyRef.current?.id]?.survey ? [] : likesRef.current, likeB = likes.length ? likedMean(likes, "b") : null;
       const neon = isNeon(stRef.current), desert = isDesert(stRef.current), ocean = isOcean(stRef.current), jungle = isJungle(stRef.current), thunder = isThunder(stRef.current), cave = isCave(stRef.current), temple = isTemple(stRef.current), arctic = isArctic(stRef.current), mountain = isMountain(stRef.current), carnival = isCarnival(stRef.current), celtic = isCeltic(stRef.current), nightdrive = isNightDrive(stRef.current), fire = isFire(stRef.current);
       // The storm passing: its last peak within 3 minutes and quieter now = lighter scales
       const afterStorm = thunder && Date.now() - stormRef.current.peakAt < 180000 && stormRef.current.I < 0.4;
@@ -6547,6 +6550,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     };
     likesRef.current = [...likesRef.current, l].slice(-LIKE_KEEP);
     try { localStorage.setItem("chloe-likes", JSON.stringify(likesRef.current)); } catch {}
+    try { localStorage.setItem("chloe-love-times", JSON.stringify([...loadJSON("chloe-love-times", []), l.t].slice(-PAT_SEGS_MAX))); } catch {}
     setLikeFlash(Date.now()); setTimeout(() => setLikeFlash(f => (Date.now() - f >= 2500 ? 0 : f)), 2600);
     track("like", `like · ${journeyRef.current?.id ?? "free"} · world ${l.world} · beat ${l.beat} · drone ${l.drone ?? "off"} · ${l.snd} · ${l.bpm} bpm · bright ${l.b?.toFixed(2)}`);
   };
@@ -6737,12 +6741,12 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           }}>{playingNow ? "■" : "▶"}</button>
           {playingNow && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-              <button onClick={likeNow} title="More of this: Chloe leans toward what's playing now (the scale's brightness, tempo, drums, drone and sound)" style={{
+              <button onClick={likeNow} title={JOURNEYS[journey]?.survey ? "Love this: marks the moment in patterns (the csv's loved column). Map keeps its picks unbiased, so it doesn't steer; your normal listening learns from it later." : "More of this: Chloe leans toward what's playing now (the scale's brightness, tempo, drums, drone and sound)"} style={{
                 ...chip(Date.now() - likeFlash < 2500), borderRadius: 20, fontSize: 15, padding: "6px 18px",
                 borderColor: "#e05a6a", color: Date.now() - likeFlash < 2500 ? "#000" : "#ff8a96",
                 background: Date.now() - likeFlash < 2500 ? "#ff8a96" : "none", transition: "all .3s",
-              }}>♥ more of this</button>
-              <span style={{ fontSize: 10, color: K.t2, minHeight: 13 }}>{Date.now() - likeFlash < 2500 ? "got it, heading that way" : ""}</span>
+              }}>{JOURNEYS[journey]?.survey ? "♥ love this" : "♥ more of this"}</button>
+              <span style={{ fontSize: 10, color: K.t2, minHeight: 13 }}>{Date.now() - likeFlash < 2500 ? (JOURNEYS[journey]?.survey ? "noted for patterns" : "got it, heading that way") : ""}</span>
             </div>
           )}
           <button onClick={toggleRec} title="Record the journey. If it's still recording when the journey ends, Chloe fades out and saves the WAV for you." style={{ ...chip(!!recording), borderColor: recording ? "#c0392b" : K.br, color: recording ? "#e74c3c" : K.t2 }}>
@@ -6874,11 +6878,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           )}
         </div>
 
-        {(autoOn || demoOn) && <button onClick={likeNow} title="More of this: Auto leans toward what's playing now (the scale's brightness, tempo, drums, drone and sound). Each like's pull halves every 15 minutes." style={{
+        {(autoOn || demoOn) && <button onClick={likeNow} title={JOURNEYS[journey]?.survey ? "Love this: marks the moment in patterns (the csv's loved column). Map keeps its picks unbiased, so it doesn't steer." : "More of this: Auto leans toward what's playing now (the scale's brightness, tempo, drums, drone and sound). Each like's pull halves every 15 minutes."} style={{
           background: Date.now() - likeFlash < 2500 ? "#ff8a96" : K.bg3, color: Date.now() - likeFlash < 2500 ? "#000" : "#ff8a96",
           border: "1px solid #e05a6a", borderRadius: 3, padding: "5px 12px",
           fontSize: 9, cursor: "pointer", fontFamily: "inherit", letterSpacing: 1, transition: "all .3s", flexShrink: 0,
-        }}>♥ more of this</button>}
+        }}>{JOURNEYS[journey]?.survey ? "♥ love this" : "♥ more of this"}</button>}
         <button onClick={toggleRec} title="Record exactly what you hear to a 24-bit stereo WAV. Click again to stop and download." style={{
           background: recording ? "#c0392b" : K.bg3,
           color: recording ? "#fff" : K.txt,
