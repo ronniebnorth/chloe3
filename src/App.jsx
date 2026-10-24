@@ -3056,19 +3056,22 @@ export default function Chloe() {
       } catch { contactRef.current = null; }
     };
     const cid = setInterval(pollContact, 10000);
-    // Each drum entrance: the brain's medians over the 10 s before against the
-    // 12 s after (saved 13 s later), for "chloe-drum-entries"
+    // Each drum entrance: the brain's medians over the 10 s before, during the
+    // fade (at least 6 s), and over the 12 s once the drums are at full volume,
+    // for "chloe-drum-entries". (Entries logged before 2026-10-24 have only
+    // "after", which was the first 12 s: mostly the fade)
     drumEntryRef.current = (style, fade, quietS) => {
       if (!eegDataRef.current?.connected) return;
-      const t = Date.now(), before = patRef.current.hist.filter(x => x.t > t - 10000), world = stRef.current.world;
+      const t = Date.now(), fadeEnd = t + fade * 1000, before = patRef.current.hist.filter(x => x.t > t - 10000), world = stRef.current.world;
       setTimeout(() => {
-        const after = patRef.current.hist.filter(x => x.t > t && x.t <= t + 12000);
-        if (before.length < 3 || after.length < 3) return;
-        const med = a => Object.fromEntries(PAT_METRICS.map(m => [m, +median(a.map(x => x[m])).toFixed(4)]));
-        const e = { t, style, fade: +fade.toFixed(1), quiet: Math.round(quietS), world, contact: contactRef.current?.worst ?? "", before: med(before), after: med(after) };
+        const H = patRef.current.hist;
+        const during = H.filter(x => x.t > t && x.t <= Math.max(fadeEnd, t + 6000)), full = H.filter(x => x.t > fadeEnd && x.t <= fadeEnd + 12000);
+        if (before.length < 3 || full.length < 3) return;
+        const med = a => a.length ? Object.fromEntries(PAT_METRICS.map(m => [m, +median(a.map(x => x[m])).toFixed(4)])) : {};
+        const e = { t, style, fade: +fade.toFixed(1), quiet: Math.round(quietS), world, contact: contactRef.current?.worst ?? "", before: med(before), during: med(during), full: med(full) };
         try { localStorage.setItem("chloe-drum-entries", JSON.stringify([...loadJSON("chloe-drum-entries", []), e].slice(-DRUM_ENTRY_MAX))); } catch {}
         setDrumEntries(n => n + 1);
-      }, 13000);
+      }, fadeEnd - t + 13000);
     };
     const id = setInterval(() => {
       const P = patRef.current, st = stRef.current, eeg = eegDataRef.current;
@@ -3108,9 +3111,10 @@ export default function Chloe() {
   }, []);
   const [drumEntries, setDrumEntries] = useState(() => loadJSON("chloe-drum-entries", []).length);
   const downloadEntries = () => {
-    const E = loadJSON("chloe-drum-entries", []), cols = PAT_METRICS.flatMap(m => [`before_${m}`, `after_${m}`]);
+    // fade_* = during the fade, full_* = the 12 s after it reached full volume (older entries: fade_ only)
+    const E = loadJSON("chloe-drum-entries", []), cols = PAT_METRICS.flatMap(m => [`before_${m}`, `fade_${m}`, `full_${m}`]);
     const csv = [["at", "style", "fade_s", "quiet_before_s", "world", "contact", ...cols].join(","),
-      ...E.map(e => [new Date(e.t).toISOString(), e.style, e.fade, e.quiet, e.world, e.contact, ...PAT_METRICS.flatMap(m => [e.before[m] ?? "", e.after[m] ?? ""])].join(","))].join("\n");
+      ...E.map(e => [new Date(e.t).toISOString(), e.style, e.fade, e.quiet, e.world, e.contact, ...PAT_METRICS.flatMap(m => [e.before[m] ?? "", (e.during ?? e.after)?.[m] ?? "", e.full?.[m] ?? ""])].join(","))].join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = `chloe-drum-entries-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -7032,7 +7036,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               <span style={{ flex: 1 }}>Eyes closing, drifting off and moving all shift the brain more than any scale; the more times each is heard, the more the averages say.</span>
               <span title={dataKept ? "This browser has agreed to keep Chloe's data. Clearing site data by hand still erases it, so download the csv now and then." : "This browser may clear Chloe's data on its own (Safari after a week away). Download the csv now and then; import puts it back."} style={{ color: dataKept ? "#5fbf7f" : K.demoT2, cursor: "help" }}>{dataKept ? "kept by browser" : "browser may clear"}</span>
               <button onClick={() => { keepData(); downloadPatterns(); }} style={chip(false)} title="Every segment logged, as CSV: your backup">csv</button>
-              <button onClick={downloadEntries} style={chip(false)} title="Every drum entrance with the headband on: your brain in the 10 s before against the 12 s after, with how long the fade was and how long it had been quiet">drum entries ({drumEntries})</button>
+              <button onClick={downloadEntries} style={chip(false)} title="Every drum entrance with the headband on: your brain in the 10 s before, during the fade, and in the 12 s after the drums reached full volume, with how long the fade was and how long it had been quiet">drum entries ({drumEntries})</button>
               <button onClick={() => patFileRef.current?.click()} style={chip(false)} title="Load a downloaded csv back in. Merges: segments already here are skipped, so it's safe to import the same file twice">import</button>
               <input ref={patFileRef} type="file" accept=".csv,text/csv" onChange={importPatterns} style={{ display: "none" }} />
               <button onClick={resetPatterns} style={chip(false)}>reset</button>
