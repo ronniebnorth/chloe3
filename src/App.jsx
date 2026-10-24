@@ -2000,6 +2000,16 @@ const sessionCSV = (sess) => [
 // partly muscle (jaw, brow, a smile) and partly what Ronnie can raise at will
 // with his "brain-stem smile"; delta is mostly blinks, eye movement and
 // drowsiness, and since shares sum to 100 a blink burst also squeezes alpha
+// Drum entrances: a straight-line fade sounds like an arrival (a quarter of
+// full volume in the first quarter, already loud to the ear), so they come in
+// on a cubic curve, which rises in loudness evenly (−36 dB a quarter of the
+// way, −18 halfway, −7.5 at three quarters). After a quiet stretch they take
+// longer, and the heavy kits longer still. Ronnie: strong beats arriving after
+// calm waves "shock my system"
+const BEAT_IN_QUIET_MS = 45000, BEAT_IN_AFTER_QUIET = 18;
+const BEAT_IN_WEIGHT = { drive: 1.4, heavy: 1.4, break: 1.3, synthwave: 1.4, newwave: 1.3, circle: 1.3, fusion: 1.2, samba: 1.2,
+  brushes: 0.8, hand: 0.8, downtempo: 0.9, shaman: 0.9, temple: 0.9 };
+const DRUM_ENTRY_MAX = 2000;
 const PAT_METRICS = ["busy", "alpha", "theta", "asym", "beta", "gamma", "delta"];
 const PAT_GROUPS = [["scale", "scale"], ["bright", "brightness"], ["size", "notes"], ["world", "world"], ["tempo", "tempo"], ["beat", "drums"], ["drone", "drone"], ["inst", "lead"]];
 const PAT_SD_MIN = { busy: 0.02, alpha: 0.5, theta: 0.5, asym: 0.05, beta: 0.5, gamma: 0.5, delta: 0.5 };   // floors, so a flat baseline doesn't blow a segment up
@@ -2960,7 +2970,8 @@ export default function Chloe() {
   const [patLive, setPatLive] = useState(0);   // segments this visit, for the panel's status
   const leadNowRef = useRef(null);
   const keepDataRef = useRef(null);
-  const contactRef = useRef(null);   // latest electrode check: { t, worst, notGood }   // keepData, for the logger (defined further down)
+  const contactRef = useRef(null);
+  const drumEntryRef = useRef(null);   // (style, fadeS, quietS) from the beat loop, logs the brain around it   // latest electrode check: { t, worst, notGood }   // keepData, for the logger (defined further down)
   const drumsNowRef = useRef(null);   // the beat actually playing, after rests and map's drum blocks
   const patRef = useRef({ hist: [], seg: null });
   useEffect(() => {
@@ -3020,6 +3031,20 @@ export default function Chloe() {
       } catch { contactRef.current = null; }
     };
     const cid = setInterval(pollContact, 10000);
+    // Each drum entrance: the brain's medians over the 10 s before against the
+    // 12 s after (saved 13 s later), for "chloe-drum-entries"
+    drumEntryRef.current = (style, fade, quietS) => {
+      if (!eegDataRef.current?.connected) return;
+      const t = Date.now(), before = patRef.current.hist.filter(x => x.t > t - 10000), world = stRef.current.world;
+      setTimeout(() => {
+        const after = patRef.current.hist.filter(x => x.t > t && x.t <= t + 12000);
+        if (before.length < 3 || after.length < 3) return;
+        const med = a => Object.fromEntries(PAT_METRICS.map(m => [m, +median(a.map(x => x[m])).toFixed(4)]));
+        const e = { t, style, fade: +fade.toFixed(1), quiet: Math.round(quietS), world, contact: contactRef.current?.worst ?? "", before: med(before), after: med(after) };
+        try { localStorage.setItem("chloe-drum-entries", JSON.stringify([...loadJSON("chloe-drum-entries", []), e].slice(-DRUM_ENTRY_MAX))); } catch {}
+        setDrumEntries(n => n + 1);
+      }, 13000);
+    };
     const id = setInterval(() => {
       const P = patRef.current, st = stRef.current, eeg = eegDataRef.current;
       const b = eeg?.connected && eeg.bands ? eeg.bands : null;
@@ -3045,6 +3070,15 @@ export default function Chloe() {
     return () => { clearInterval(id); clearInterval(cid); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const [drumEntries, setDrumEntries] = useState(() => loadJSON("chloe-drum-entries", []).length);
+  const downloadEntries = () => {
+    const E = loadJSON("chloe-drum-entries", []), cols = PAT_METRICS.flatMap(m => [`before_${m}`, `after_${m}`]);
+    const csv = [["at", "style", "fade_s", "quiet_before_s", "world", "contact", ...cols].join(","),
+      ...E.map(e => [new Date(e.t).toISOString(), e.style, e.fade, e.quiet, e.world, e.contact, ...PAT_METRICS.flatMap(m => [e.before[m] ?? "", e.after[m] ?? ""])].join(","))].join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = `chloe-drum-entries-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
   const downloadPatterns = () => {
     const blob = new Blob([patternsCSV(loadJSON("chloe-pattern-segs", []), loadJSON("chloe-love-times", []))], { type: "text/csv" });
     const a = document.createElement("a");
@@ -3081,7 +3115,8 @@ export default function Chloe() {
   const resetPatterns = () => {
     if (!window.confirm("Forget every pattern Chloe has logged? (Download the CSV first if you want to keep it.)")) return;
     setPatterns({}); setPatLive(0);
-    try { localStorage.removeItem("chloe-pattern-segs"); localStorage.removeItem("chloe-love-times"); } catch {}
+    try { localStorage.removeItem("chloe-pattern-segs"); localStorage.removeItem("chloe-love-times"); localStorage.removeItem("chloe-drum-entries"); } catch {}
+    setDrumEntries(0);
   };
 
   // Arc clock: steer the lead target once a second, log a row every ARC_LOG_MS
@@ -4362,6 +4397,7 @@ export default function Chloe() {
     // Console: __chloeRiff() brings one in at the next 4-bar line (Rise, kit beat); __chloeRiff(false) shows the state
     window.__chloeRiff = (go = true) => { if (go) { riffForce = true; riffNext = 0; } return riff && { phase: riff.phase, bpm: riff.bpm, left: riff.left, bar: riff.bar }; };
     let beatFadeTo = null, beatFadeEnd = 0, beatFadeAc = null, beatAc = null, beatNoCrash = false, beatSwapTo = null;
+    let drumsOffAt = Date.now(), beatInSoft = false;   // when the drums last went quiet; this entrance fades (so no crash)
     // A rainstick through the kit's volume, distance and fade. kind: shake
     // (1-1.5 s accent), fall (2.5-5 s) or pour (6-8 s, slow). The stick is
     // picked each time; never glass in Endless (nothing shrill for sleep).
@@ -5434,6 +5470,16 @@ export default function Chloe() {
       else if (t >= fr.hum) { if (energy > 0.5) hum(bus, ac, t, st); fr.hum = t + 25 + Math.random() * 30; }
     };
     window.__chloeRain = (kind) => { const ac = getCtx(); rainstick(getKit(ac), ac, ac.currentTime + 0.05, 0.32, kind); };
+    // From silence up to full on the cubic curve (see BEAT_IN_*)
+    const rampBeatIn = (k, ac, sec) => {
+      const N = 64, c = new Float32Array(N);
+      for (let i = 0; i < N; i++) c[i] = (i / (N - 1)) ** 3;
+      c[0] = 0.0001;
+      for (const g of [k.fade, k.fadeRoom]) {
+        g.gain.cancelScheduledValues(ac.currentTime);
+        g.gain.setValueCurveAtTime(c, ac.currentTime + 0.01, sec);
+      }
+    };
     const rampBeat = (k, ac, v, sec) => {
       for (const g of [k.fade, k.fadeRoom]) {
         const p = g.gain;
@@ -5608,14 +5654,23 @@ export default function Chloe() {
           if (!sm || !playing) {
             if (want !== "off") {
               const k = getKit(ac);
-              if (!playing && sm) { rampBeat(k, ac, 0, 0.01); rampBeat(k, ac, 1, F); } else rampBeat(k, ac, 1, 0.01);
+              if (!playing) {
+                // From silence: longer after a quiet stretch (even with Smooth off), longer for the heavy kits
+                const quietS = (Date.now() - drumsOffAt) / 1000, quiet = quietS * 1000 >= BEAT_IN_QUIET_MS;
+                const T = (quiet ? BEAT_IN_AFTER_QUIET : sm ? F : 0) * (BEAT_IN_WEIGHT[want] ?? 1);
+                beatInSoft = T > 0.05;
+                if (beatInSoft) rampBeatIn(k, ac, T); else rampBeat(k, ac, 1, 0.01);
+                drumEntryRef.current?.(want, T, quietS);
+              } else rampBeat(k, ac, 1, 0.01);
             }
+            if (playing && want === "off") drumsOffAt = Date.now();
             beatStyleNow = want; beatFadeTo = null;
           } else if (beatFadeTo === null) {
             beatFadeTo = want; beatFadeAc = ac;
             beatFadeEnd = ac.currentTime + (want === "off" ? F : F / 2);
             rampBeat(getKit(ac), ac, 0, beatFadeEnd - ac.currentTime);
           } else if (ac !== beatFadeAc || ac.currentTime >= beatFadeEnd) {
+            if (want === "off") drumsOffAt = Date.now();
             beatStyleNow = want; beatFadeTo = null;
             if (want !== "off") rampBeat(getKit(ac), ac, 1, F / 2);
           }
@@ -5630,7 +5685,7 @@ export default function Chloe() {
           if (ac !== beatAc) { if (beatAc) beatNext = ac.currentTime + 0.05; beatAc = ac; }
           if (beatNext < ac.currentTime) {
             beatNext = ac.currentTime + 0.05; beatStep = 0; beatBar = 0;
-            beatNoCrash = sm > 0;   // fading in: no crash on the way in
+            beatNoCrash = sm > 0 || beatInSoft;   // fading in: no crash on the way in
           }
           while (beatNext < ac.currentTime + 0.12) {
             // The new style comes in on the downbeat with a crash, in time with the old one
@@ -6938,6 +6993,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
               <span style={{ flex: 1 }}>Eyes closing, drifting off and moving all shift the brain more than any scale; the more times each is heard, the more the averages say.</span>
               <span title={dataKept ? "This browser has agreed to keep Chloe's data. Clearing site data by hand still erases it, so download the csv now and then." : "This browser may clear Chloe's data on its own (Safari after a week away). Download the csv now and then; import puts it back."} style={{ color: dataKept ? "#5fbf7f" : K.demoT2, cursor: "help" }}>{dataKept ? "kept by browser" : "browser may clear"}</span>
               <button onClick={() => { keepData(); downloadPatterns(); }} style={chip(false)} title="Every segment logged, as CSV: your backup">csv</button>
+              <button onClick={downloadEntries} style={chip(false)} title="Every drum entrance with the headband on: your brain in the 10 s before against the 12 s after, with how long the fade was and how long it had been quiet">drum entries ({drumEntries})</button>
               <button onClick={() => patFileRef.current?.click()} style={chip(false)} title="Load a downloaded csv back in. Merges: segments already here are skipped, so it's safe to import the same file twice">import</button>
               <input ref={patFileRef} type="file" accept=".csv,text/csv" onChange={importPatterns} style={{ display: "none" }} />
               <button onClick={resetPatterns} style={chip(false)}>reset</button>
