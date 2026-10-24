@@ -2010,6 +2010,15 @@ const BEAT_IN_QUIET_MS = 45000, BEAT_IN_AFTER_QUIET = 18;
 const BEAT_IN_WEIGHT = { drive: 1.4, heavy: 1.4, break: 1.3, synthwave: 1.4, newwave: 1.3, circle: 1.3, fusion: 1.2, samba: 1.2,
   brushes: 0.8, hand: 0.8, downtempo: 0.9, shaman: 0.9, temple: 0.9 };
 const DRUM_ENTRY_MAX = 2000;
+// Suspect samples, flagged by SHAPE and never deleted: a 2-s sample whose total
+// power jumps past ARTIFACT_POWER_X × the recent median is suspect when
+//   delta leads (its share up ARTIFACT_DELTA_PTS points): a blink or eye movement, "eyes"
+//   every band rises together (each ≥ 2×, none leading by 3×): movement or a clench, "move"
+// A surge one band leads (alpha settling, theta, the brain-stem smile's gamma,
+// a deep state) is left alone. Patterns keeps two sets of totals, with and
+// without suspect samples, so both views can be compared
+const ARTIFACT_POWER_X = 3, ARTIFACT_DELTA_PTS = 15;
+const ABS_BANDS = ["theta", "alpha", "beta", "gamma"];
 const PAT_METRICS = ["busy", "alpha", "theta", "asym", "beta", "gamma", "delta"];
 const PAT_GROUPS = [["scale", "scale"], ["bright", "brightness"], ["size", "notes"], ["world", "world"], ["tempo", "tempo"], ["beat", "drums"], ["drone", "drone"], ["inst", "lead"]];
 const PAT_SD_MIN = { busy: 0.02, alpha: 0.5, theta: 0.5, asym: 0.05, beta: 0.5, gamma: 0.5, delta: 0.5 };   // floors, so a flat baseline doesn't blow a segment up
@@ -2045,12 +2054,14 @@ const addPatternSeg = (pats, r) => {
 // seen during the segment (contact_bad names the non-good ones); montage = Base's channel mode
 const PAT_CSV_COLS = ["at", "dur_s", "samples", "scale_id", "scale_name", "brightness", "notes", "world", "bpm", "beat", "drums", "drone", "lead", "journey", "j_bright", "j_tempo", "j_energy", "j_tension", "loved", "busy_sd", "alpha_sd", "theta_sd",
   "asym_sd", "raw_busy", "raw_alpha", "raw_theta", "raw_asym", "contact", "contact_bad", "montage",
-  "beta_sd", "gamma_sd", "delta_sd", "raw_beta", "raw_gamma", "raw_delta"];
+  "beta_sd", "gamma_sd", "delta_sd", "raw_beta", "raw_gamma", "raw_delta",
+  "flagged", "flag_kinds", ...PAT_METRICS.map(m => `clean_${m}_sd`)];   // flagged = share of suspect samples; clean_* = without them
 const jcol = (r, k) => r.jv?.[k] == null ? "" : +r.jv[k].toFixed(3);
 const lovedIn = (loves, r) => loves.filter(t => t >= r.at && t <= r.at + r.dur * 1000 + 10000).length;
 const patternsCSV = (segs, loves = []) => [PAT_CSV_COLS.join(","), ...segs.map(r => [new Date(r.at).toISOString(), r.dur, r.n, r.id, `"${r.name}"`, r.bright ?? "", r.size, r.world, r.bpm, r.beat, r.drums ?? "", r.drone, r.inst, r.journey ?? "", jcol(r, "b"), jcol(r, "t"), jcol(r, "e"), jcol(r, "tn"), lovedIn(loves, r), r.busy, r.alpha, r.theta,
   r.asym ?? "", r.raw?.busy ?? "", r.raw?.alpha ?? "", r.raw?.theta ?? "", r.raw?.asym ?? "", r.contact ?? "", r.contactBad ?? "", r.montage ?? "",
-  r.beta ?? "", r.gamma ?? "", r.delta ?? "", r.raw?.beta ?? "", r.raw?.gamma ?? "", r.raw?.delta ?? ""].join(","))].join("\n");
+  r.beta ?? "", r.gamma ?? "", r.delta ?? "", r.raw?.beta ?? "", r.raw?.gamma ?? "", r.raw?.delta ?? "",
+  r.flagged ?? "", r.flagKinds ?? "", ...PAT_METRICS.map(m => r.clean?.[m] ?? "")].join(","))].join("\n");
 // Back from a downloaded CSV (any version of its columns) to segments; pattern
 // comes from the id through the families, since the CSV doesn't carry it
 const splitCSV = line => { const out = []; let cur = "", q = false; for (const c of line) { if (c === '"') q = !q; else if (c === "," && !q) { out.push(cur); cur = ""; } else cur += c; } out.push(cur); return out; };
@@ -2068,7 +2079,9 @@ const segsFromCSV = (text, families) => {
       loved: num("loved") ?? 0, busy: num("busy_sd"), alpha: num("alpha_sd"), theta: num("theta_sd"),
       ...Object.fromEntries(["asym", "beta", "gamma", "delta"].filter(m => num(`${m}_sd`) !== null).map(m => [m, num(`${m}_sd`)])),
       ...(num("raw_busy") !== null ? { raw: Object.fromEntries(PAT_METRICS.filter(m => num(`raw_${m}`) !== null).map(m => [m, num(`raw_${m}`)])) } : {}),
-      ...(v.contact ? { contact: v.contact, contactBad: v.contact_bad || "" } : {}), ...(v.montage ? { montage: v.montage } : {}) };
+      ...(v.contact ? { contact: v.contact, contactBad: v.contact_bad || "" } : {}), ...(v.montage ? { montage: v.montage } : {}),
+      ...(num("flagged") !== null ? { flagged: num("flagged"), flagKinds: v.flag_kinds || "" } : {}),
+      ...(num("clean_busy_sd") !== null ? { clean: Object.fromEntries(PAT_METRICS.filter(m => num(`clean_${m}_sd`) !== null).map(m => [m, num(`clean_${m}_sd`)])) } : {}) };
   }).filter(Boolean);
 };
 
@@ -2964,6 +2977,9 @@ export default function Chloe() {
   // Patterns — see PAT_* above
   const [patterns, setPatterns] = useState(() => loadJSON("chloe-patterns", {}));
   useEffect(() => { try { localStorage.setItem("chloe-patterns", JSON.stringify(patterns)); } catch {} }, [patterns]);
+  const [patternsClean, setPatternsClean] = useState(() => loadJSON("chloe-patterns-clean", {}));   // the same, leaving out suspect samples
+  useEffect(() => { try { localStorage.setItem("chloe-patterns-clean", JSON.stringify(patternsClean)); } catch {} }, [patternsClean]);
+  const [patClean, setPatClean] = useState(false);
   const [showPat, setShowPat] = useState(false);
   const [patGroup, setPatGroup] = useState("scale");
   const [patAll, setPatAll] = useState(false);
@@ -3011,8 +3027,17 @@ export default function Chloe() {
         r.contactBad = [...new Set(seg.contact.flatMap(c => c.notGood))].join(" ");
       }
       r.montage = eegDataRef.current?.chan_mode ?? null;
+      // The same, from the samples nobody flagged, against a baseline of unflagged ones
+      const clean = use.filter(x => !x.flag);
+      r.flagged = +(1 - clean.length / use.length).toFixed(2);
+      r.flagKinds = [...new Set(use.filter(x => x.flag).map(x => x.flag))].join(" ");
+      if (seg.baseClean && clean.length >= 3)
+        r.clean = Object.fromEntries(PAT_METRICS.map(m => [m, +Math.max(-4, Math.min(4, (median(clean.map(x => x[m])) - seg.baseClean.mean[m]) / seg.baseClean.sd[m])).toFixed(3)]));
       // A bad electrode isn't brain data: kept in the CSV, left out of the totals
-      if (r.contact !== "bad") { setPatterns(p => addPatternSeg(p, r)); setPatLive(n => n + 1); }
+      if (r.contact !== "bad") {
+        setPatterns(p => addPatternSeg(p, r)); setPatLive(n => n + 1);
+        if (r.clean) setPatternsClean(p => addPatternSeg(p, { ...r, ...r.clean }));
+      }
       if (!askedKeep) { askedKeep = true; keepDataRef.current?.(); }
       try { const segs = loadJSON("chloe-pattern-segs", []); segs.push(r); localStorage.setItem("chloe-pattern-segs", JSON.stringify(segs.slice(-PAT_SEGS_MAX))); } catch {}
     };
@@ -3054,9 +3079,20 @@ export default function Chloe() {
         ? { t: Date.now(), busy: Math.log((avg("beta") + 1) / (avg("alpha") + avg("theta") + 1)), alpha: avg("alpha"), theta: avg("theta"),
             asym: Math.log(((b.alpha?.right_pct || 0) + 0.5) / ((b.alpha?.left_pct || 0) + 0.5)),
             beta: avg("beta"), gamma: avg("gamma"), delta: avg("delta") } : null;
+      if (smp && eeg.total_power > 0) {
+        smp.pw = eeg.total_power;
+        smp.abs = Object.fromEntries(["delta", ...ABS_BANDS].map(k => [k, b[k]?.abs_power || 0]));
+        const ref = P.hist.filter(x => x.pw && !x.flag).slice(-30);
+        if (ref.length >= 10 && smp.pw > ARTIFACT_POWER_X * median(ref.map(x => x.pw))) {
+          const ratio = k => smp.abs[k] / Math.max(1e-9, median(ref.map(x => x.abs[k])));
+          const rs = ABS_BANDS.map(ratio), lo = Math.min(...rs), hi = Math.max(...rs);
+          if (smp.delta - median(ref.map(x => x.delta)) >= ARTIFACT_DELTA_PTS) smp.flag = "eyes";
+          else if (lo >= 2 && hi < 3 * lo) smp.flag = "move";
+        }
+      }
       const key = autoOnRef.current && st.sel ? st.sel.pattern : null;
       if (P.seg && P.seg.key !== key) { closeSeg(P.seg); P.seg = null; }
-      if (key != null && !P.seg) P.seg = { key, t0: Date.now(), base: baseline(P.hist), ctxs: [], samples: [], contact: [] };
+      if (key != null && !P.seg) P.seg = { key, t0: Date.now(), base: baseline(P.hist), baseClean: baseline(P.hist.filter(x => !x.flag)), ctxs: [], samples: [], contact: [] };
       if (P.seg) {
         P.seg.ctxs.push(ctxNow(st));
         const C = contactRef.current;
@@ -3101,6 +3137,7 @@ export default function Chloe() {
         localStorage.setItem("chloe-love-times", JSON.stringify([...loves, ...back].sort((x, y) => x - y).slice(-PAT_SEGS_MAX)));
       } catch {}
       setPatterns(p => fresh.filter(r => r.contact !== "bad").reduce(addPatternSeg, p));
+      setPatternsClean(p => fresh.filter(r => r.contact !== "bad" && r.clean).reduce((q, r) => addPatternSeg(q, { ...r, ...r.clean }), p));
       keepData();
       window.alert(`Added ${fresh.length} segment${fresh.length === 1 ? "" : "s"}${have.length ? ` (${have.length} were already here)` : ""}.`);
     }).catch(() => window.alert("Couldn't read that file."));
@@ -3114,7 +3151,7 @@ export default function Chloe() {
   keepDataRef.current = keepData;
   const resetPatterns = () => {
     if (!window.confirm("Forget every pattern Chloe has logged? (Download the CSV first if you want to keep it.)")) return;
-    setPatterns({}); setPatLive(0);
+    setPatterns({}); setPatternsClean({}); setPatLive(0);
     try { localStorage.removeItem("chloe-pattern-segs"); localStorage.removeItem("chloe-love-times"); localStorage.removeItem("chloe-drum-entries"); } catch {}
     setDrumEntries(0);
   };
@@ -6936,7 +6973,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         const lbl = { color: K.lbl, fontSize: 9, letterSpacing: 2 };
         const logging = !!(eegData?.connected && autoOn);
         const stat = ([s1, s2, c] = [0, 0, 0], n0) => { const n = c ?? n0; if (!n) return { m: 0, se: Infinity, none: true }; const m = s1 / n, v = Math.max(0, s2 / n - m * m); return { m, se: n > 1 ? Math.sqrt(v / (n - 1)) : Infinity }; };
-        const rows = Object.entries(patterns[patGroup] || {}).map(([k, a]) => {
+        const P0 = patClean ? patternsClean : patterns;
+        const rows = Object.entries(P0[patGroup] || {}).map(([k, a]) => {
           const r = { k, label: a.label, n: a.n };
           for (const m of PAT_METRICS) r[m] = stat(a[m], a.n);
           return r;
@@ -6968,7 +7006,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {PAT_GROUPS.map(([g, l]) => <button key={g} style={chip(patGroup === g)} onClick={() => setPatGroup(g)}>{l}</button>)}
-              <button style={{ ...chip(patAll), marginLeft: "auto" }} onClick={() => setPatAll(v => !v)} title="Also show those heard fewer than 3 times">all</button>
+              <button style={{ ...chip(patClean), marginLeft: "auto" }} onClick={() => setPatClean(v => !v)} title="Leave out suspect samples: 2-second readings whose power jumped with the shape of a blink (delta leading) or movement (every band at once). Surges one band leads, like alpha settling or the brain-stem smile, are never flagged. Compare both views: where they differ, look closer">{patClean ? `without suspect (${P0.total || 0})` : "with suspect"}</button>
+              <button style={chip(patAll)} onClick={() => setPatAll(v => !v)} title="Also show those heard fewer than 3 times">all</button>
             </div>
             <div style={{ overflowX: "auto" }}><div style={{ minWidth: 800, display: "flex", flexDirection: "column", gap: 8 }}>
             <div title="Each value: how far your brain sat from the 2 minutes before, while this played, averaged over every time it played, in standard deviations (σ) of your own baseline. Busy: beta against alpha + theta, leaving out gamma, which on a Muse is mostly muscle (green = calmer). Alpha and theta: their share (green = more). Approach: frontal alpha asymmetry (green = left side more active, a sign of liking). Gamma: green = more (face muscle or the brain-stem smile). Delta: blinks, eyes, drowsiness (blue, no good direction); beta is in the CSV. Segments with a bad electrode are left out. Solid bars: more than twice their standard error, so likely real; faint: not yet. Sorted calmest first." style={{ display: "flex", gap: 8, color: K.lbl, letterSpacing: 1, cursor: "help" }}>
