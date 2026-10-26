@@ -1079,7 +1079,79 @@ function makeHandDrum(ac, d) {
   return buf;
 }
 
-const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes", shaman: "shaman", newwave: "neon", desert: "desert", jungle: "jungle", temple: "temple", samba: "carnival", jig: "celtic", synthwave: "nightdrive", circle: "fire" };
+// Tabla, synthesized. The dayan (right hand) is tuned to the scale's root, Sa,
+// and its black spot (the syahi) makes it ring in near-HARMONIC overtones
+// (Raman measured 1:2:3:4:5 in the 1920s), so unlike the congas it has a clear
+// pitch and can play the scale. Each stroke weights those harmonics its own
+// way: na at the rim brings out the upper ones, tin and tun ring the
+// fundamental, ti/ra/ki are fingers muting the syahi (a dry tick). The bayan
+// (left hand) is the low drum: ge rings open (the wrist can push its pitch up
+// as it sounds), ke is the flat hand, dead. Bols combine them: dha = na + ge,
+// dhin = tin + ge. h = harmonic levels, r = mode ratios when not harmonic.
+// Real skins split each mode into a pair a hair apart that beat against each
+// other (the shimmer), so each partial gets a twin `beat` Hz off. bend = how
+// far sharp the hit starts (a loud hit stretches the skin), settling over
+// bendT s; the bayan's loose skin bends much more. click = the fingertip's
+// broadband tick ahead of the tone. damp = what's left of the drum's previous
+// ring when this stroke lands (fingers resting on the skin mute it: ti and ke
+// stop it dead, na's ring finger takes most of it, tin and tun lift off).
+const TABLA_STROKES = {
+  na:  { h: [0.3, 1, 0.75, 0.5, 0.35, 0.18], decay: 0.45, slap: 0.3, slapHz: 4200, click: 0.5, bend: 0.015, bendT: 0.025, beat: 1.6, damp: 0.25, g: 0.8 },
+  tin: { h: [1, 0.55, 0.3, 0.15, 0.08],      decay: 0.6,  slap: 0.12, slapHz: 2800, click: 0.3, bend: 0.012, bendT: 0.03, beat: 1.2, damp: 0.5, g: 0.7 },
+  tun: { h: [1, 0.3, 0.12, 0.05],            decay: 1.0,  slap: 0.06, slapHz: 2000, click: 0.2, bend: 0.01, bendT: 0.04, beat: 0.8, damp: 0.6, g: 0.75 },
+  ti:  { h: [0.6, 0.5, 0.3, 0.1],            decay: 0.03, slap: 0.55, slapHz: 1800, click: 0.6, bend: 0, bendT: 0.02, beat: 0, damp: 0, g: 0.45 },
+  ge:  { h: [1, 0.3, 0.12], r: [1, 1.58, 2.3], decay: 0.55, slap: 0.08, slapHz: 900, click: 0.25, bend: 0.05, bendT: 0.06, beat: 0.6, damp: 0.4, g: 1 },
+  ke:  { h: [1, 0.2], r: [1, 1.58],          decay: 0.03, slap: 0.65, slapHz: 650, click: 0.4, bend: 0.03, bendT: 0.02, beat: 0, damp: 0, g: 0.55 },
+};
+const TABLA_BAYAN = new Set(["ge", "ke"]);
+function makeTabla(ac, f, d) {
+  const sr = ac.sampleRate, dur = Math.max(0.15, d.decay * 3.5), n = Math.floor(sr * dur);
+  const buf = ac.createBuffer(1, n, sr), y = buf.getChannelData(0);
+  d.h.forEach((lvl, m) => {
+    if (!lvl) return;
+    const ratio = d.r ? d.r[m] : (m + 1) * (1 + 0.003 * m);   // a hair sharp up high, like the real skin
+    const a = lvl * (0.9 + Math.random() * 0.2), tau = d.decay / (1 + m * 0.6);
+    // The mode and its twin (lower level, `beat` Hz up, its own slightly longer ring)
+    for (const [fr, lv, tu] of d.beat ? [[1, 1, tau], [1 + d.beat * (0.7 + Math.random() * 0.6) / (f * ratio), 0.55, tau * 1.15]] : [[1, 1, tau]]) {
+      // Ring and bend as running products (no exp per sample: ~4x faster)
+      const w0 = 2 * Math.PI * f * ratio * fr / sr, dec = Math.exp(-1 / (sr * tu)), bdec = Math.exp(-1 / (sr * d.bendT));
+      let ph = Math.random() * 2 * Math.PI, env = a * lv, be = d.bend;
+      for (let k = 0; k < n; k++) {
+        ph += w0 * (1 + be); be *= bdec;
+        y[k] += env * Math.sin(ph); env *= dec;
+      }
+    }
+  });
+  // The finger's strike: noise through a resonant band-pass, ~5 ms, and a
+  // sub-millisecond broadband tick on top (differenced noise, so it's bright)
+  const w = 2 * Math.PI * d.slapHz / sr, q = 2.5, al = Math.sin(w) / (2 * q), cw = Math.cos(w);
+  const b0 = al / (1 + al), a1 = -2 * cw / (1 + al), a2 = (1 - al) / (1 + al);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0, xp = 0;
+  for (let k = 0; k < Math.floor(0.03 * sr); k++) {
+    const x = (Math.random() * 2 - 1) * Math.exp(-k / sr / 0.005);
+    const v = b0 * x - b0 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1; x1 = x; y2 = y1; y1 = v;
+    const c = (Math.random() * 2 - 1) * Math.exp(-k / sr / 0.0006);
+    y[k] += d.slap * 4.2 * v + d.click * 1.5 * (c - xp); xp = c;
+  }
+  for (let k = 0; k < 24; k++) y[k] *= k / 24;
+  let peak = 0; for (let k = 0; k < n; k++) peak = Math.max(peak, Math.abs(y[k]));
+  for (let k = 0; k < n; k++) y[k] /= peak || 1;
+  return buf;
+}
+// Teental, 16 matras, one per 16th: the clap (tali) on 1, 5 and 13, the wave
+// (khali, no bayan) on 9. At 120 BPM that's 8 strokes a second, the alpha-rate
+// tabla Jean Millay heard lock both her hemispheres (docs/IDEA_TABLA.md).
+const TEENTAL = ["dha", "dhin", "dhin", "dha", "dha", "dhin", "dhin", "dha", "dha", "tin", "tin", "ta", "ta", "dhin", "dhin", "dha"];
+const BOLS = { dha: ["na", "ge"], dhin: ["tin", "ge"], tin: ["tin"], ta: ["na"], ti: ["ti"], ra: ["ti"], ki: ["ke"], ge: ["ge"], tun: ["tun"] };
+// Tabla tarang bars: the dayan walks the scale (degrees above Sa)
+const TARANG = [
+  [0, 1, 2, 1, 2, 3, 4, 3, 2, 3, 4, 5, 4, 2, 1, 0],
+  [0, 2, 1, 3, 2, 4, 3, 5, 4, 6, 5, 4, 3, 2, 1, 0],
+  [0, 0, 1, 2, 4, 4, 2, 1, 0, 1, 2, 4, 5, 4, 2, 0],
+];
+
+const BEAT_FAMILY = { break: "kit", drive: "kit", heavy: "kit", downtempo: "world", hand: "world", fusion: "fusion", brushes: "brushes", shaman: "shaman", newwave: "neon", desert: "desert", jungle: "jungle", temple: "temple", samba: "carnival", jig: "celtic", synthwave: "nightdrive", circle: "fire", tabla: "tabla" };
 
 // Linear fills for fusion: one drum per 16th. Short = the last beat of every
 // 4th bar; long = the last two beats of every 8th, phrased in 3s across the beat.
@@ -2710,7 +2782,7 @@ export default function Chloe() {
         beatWander: p.get("bw") === "1",
         worldWander: p.get("ww") === "1",
         weatherBrain: ["calm", "ride"].includes(p.get("wb")) ? p.get("wb") : undefined,
-        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave", "desert", "jungle", "temple", "samba", "jig", "synthwave", "circle"].includes(p.get("bt")) ? p.get("bt") : "off",
+        beatStyle:  ["break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "newwave", "desert", "jungle", "temple", "samba", "jig", "synthwave", "circle", "tabla"].includes(p.get("bt")) ? p.get("bt") : "off",
         // Links from before the World row: the beat or drone that used to bring a world in still does
         world: Object.hasOwn(WORLDS, p.get("wo") ?? "") ? p.get("wo") : p.has("wo") ? "off"
           : { shaman: "steppe", desert: "desert", newwave: "neon", ocean: "ocean", jungle: "jungle" }[p.get("bt")]
@@ -4646,6 +4718,105 @@ export default function Chloe() {
       if (on.has("claps") && !calm && (i === 4 || i === 12)) claps(K0, ac, tt(), vv(80) / 127);
       if (bar % 8 === 7 && i === 12 && energy > 0.65) hey(K0, ac, t);
     };
+    // Tabla, one matra per 16th: the teental theka, dayan tuned to Sa (folded
+    // into 200-400 Hz), the bayan two octaves down (70-140 Hz). Every 8 bars a
+    // tihai: ti-ra-ki-ta-dha three times, the third dha landing on the next sam.
+    // Bar 4 of 8 (and now and then bar 6) is a tarang bar: the dayan plays the
+    // scale while the bayan keeps the claps. Calm plays it softer and leaves the
+    // ge's wrist alone; tension adds ti-ra-ki-ta flourishes (32nds) and pushes
+    // the bayan up on the claps. ±10 velocity, ±4 ms.
+    const tb = { tarang: null };
+    const tablaSa = (st) => {   // the MIDI base putting Sa in 200-400 Hz
+      let b = 48;
+      const hz = b2 => st.aRef * 2 ** ((b2 + OFFS[st.rootIdx] - 69) / 12);
+      while (hz(b) < 200) b += 12;
+      while (hz(b) >= 400) b -= 12;
+      return { b, f: hz(b) };
+    };
+    // Each stroke is built once per take at a reference pitch (dayan 283 Hz,
+    // the middle of its 200-400 range, and an octave up for tarang; bayan
+    // 99 Hz) and retuned by playback rate, like a sampler: never more than
+    // half an octave. Building one takes ~25 ms, too long for the beat clock
+    // (it schedules only 120 ms ahead; building on the hit made dha skip), so
+    // they're built in the background, one every 30 ms, the first time the
+    // tabla plays. A stroke not built yet sits out (the beat fades in anyway).
+    const TABLA_REF = { dayan: [283, 566], bayan: [99] };
+    const TABLA_WARM = [["ge", 99], ["na", 283], ["tin", 283], ["ti", 283], ["ke", 99], ["tun", 283], ["na", 566], ["tin", 566]];
+    const tablaWarm = (k, ac) => {
+      if (k.tablaQ) return;
+      k.tabla = new Map();
+      k.tablaQ = [...TABLA_WARM, ...TABLA_WARM];   // two takes each
+      const step = () => {
+        const [s, ref] = k.tablaQ.shift(), key = s + ":" + ref;
+        if (!k.tabla.has(key)) k.tabla.set(key, []);
+        k.tabla.get(key).push(makeTabla(ac, ref, TABLA_STROKES[s]));
+        if (k.tablaQ.length) setTimeout(step, 30);
+      };
+      step();
+    };
+    const tabla = (k, ac, stroke, f, v, t, glide) => {
+      const d = TABLA_STROKES[stroke];
+      tablaWarm(k, ac);
+      const refs = TABLA_REF[TABLA_BAYAN.has(stroke) ? "bayan" : "dayan"];
+      let ref = refs[0];
+      for (const r of refs) if (Math.abs(Math.log(f / r)) < Math.abs(Math.log(f / ref)) && k.tabla.has(stroke + ":" + r)) ref = r;
+      const takes = k.tabla.get(stroke + ":" + ref);
+      if (!takes) return;
+      const rate = f / ref;
+      t = Math.max(t, ac.currentTime);
+      // One skin per drum: this stroke's fingers mute what's still ringing
+      // (dha's na and ge each damp their own drum)
+      const drum = TABLA_BAYAN.has(stroke) ? "bayan" : "dayan";
+      if (!k.tablaLast) k.tablaLast = {};
+      const prev = k.tablaLast[drum];
+      if (prev && prev.end > t) {
+        prev.g.gain.setTargetAtTime(prev.lvl * d.damp, t, 0.008);
+        prev.src.playbackRate.cancelScheduledValues(t);   // a muted bayan stops gliding
+      }
+      const src = ac.createBufferSource(), g = ac.createGain(), p = ac.createStereoPanner(), rs = ac.createGain();
+      src.buffer = takes[Math.floor(Math.random() * takes.length)];
+      src.playbackRate.setValueAtTime(rate * (0.997 + Math.random() * 0.006), t);
+      if (glide) src.playbackRate.linearRampToValueAtTime(rate * glide, t + 0.22);   // the wrist pressing the bayan's skin
+      const lvl = 0.75 * d.g * Math.pow(Math.min(127, Math.max(1, v)) / 127, 1.6);
+      g.gain.setValueAtTime(lvl, t);
+      p.pan.value = drum === "bayan" ? -0.2 : 0.2;
+      // A little of the room always (a tabla is a close, roomy sound), more when hit hard
+      rs.gain.value = v > 95 ? 1 : 0.35;
+      src.connect(g); g.connect(p); p.connect(k.vol); p.connect(rs); rs.connect(k.roomSend);
+      src.start(t);
+      k.tablaLast[drum] = { src, g, lvl, end: t + src.buffer.duration / rate };
+      src.onended = () => { try { p.disconnect(); rs.disconnect(); } catch {} };
+    };
+    const tablaStep = (K0, ac, i, bar, t, sd, st) => {
+      const calm = energy < 0.25, tense = energy > 0.6, soft = calm ? 0.8 : 1;
+      const vv = v => (v + (Math.random() - 0.5) * 20) * soft, tt = () => t + (Math.random() - 0.5) * 0.008;
+      const { b, f } = tablaSa(st), fb = f / 4 < 70 ? f / 2 : f / 4;
+      const bol = (name, v, at = tt(), glide = 0) => {
+        for (const s of BOLS[name]) tabla(K0, ac, s, TABLA_BAYAN.has(s) ? fb : f, s === "ge" ? v * 0.95 : v, at, s === "ge" ? glide : 0);
+      };
+      const tali = i === 0 || i === 4 || i === 12;
+      const lift = !calm && tali && Math.random() < (tense ? 0.6 : 0.25) ? 1.06 + Math.random() * 0.06 : 0;
+      // Tihai into the next sam
+      if (bar % 8 === 7 && i >= 1) {
+        if (i === 1) return;
+        const k = (i - 2) % 5, rep = Math.floor((i - 2) / 5);
+        bol(["ti", "ra", "ki", "ta", "dha"][k], (k === 4 ? 100 : 72) + rep * 8);
+        return;
+      }
+      // Tarang: the dayan sings the scale
+      if (i === 0) tb.tarang = lastBase?.length && (bar % 8 === 3 || (bar % 8 === 5 && Math.random() < 0.3))
+        ? TARANG[Math.floor(Math.random() * TARANG.length)] : null;
+      if (tb.tarang) {
+        tabla(K0, ac, i % 2 ? "tin" : "na", scaleHz(st, tb.tarang[i], b), vv(i % 4 === 0 ? 94 : 78), tt());
+        if (tali) tabla(K0, ac, "ge", fb, vv(84), tt(), lift);
+        return;
+      }
+      const name = TEENTAL[i];
+      bol(name, vv(i === 0 ? 112 : tali ? 98 : i === 8 ? 90 : 76), tt(), lift);
+      // Tension: a ti-ra-ki-ta flourish in 32nds leading back to the claps
+      if (tense && (i === 3 || i === 11 || i === 15) && Math.random() < 0.35)
+        ["ti", "ra", "ki", "ta"].forEach((s, j) => j && bol(s, vv(58 + j * 6), t + j * sd / 4));
+    };
     // A synthesized hand drum through the kit's volume, distance and fade; to
     // the room too (like the snare) when it's played hard
     const handDrum = (k, ac, note, v, t, room) => {
@@ -5771,6 +5942,14 @@ export default function Chloe() {
               if (beatStep === 0) beatBar++;
               continue;
             }
+            if (beatStyleNow === "tabla") {
+              tablaStep(K0, ac, beatStep, beatBar, beatNext, 60 / bb / 4, st);
+              if (beatStep === 0 && beatBar > 0) beatNoCrash = false;
+              beatNext += 60 / bb / 4;
+              beatStep = (beatStep + 1) % 16;
+              if (beatStep === 0) beatBar++;
+              continue;
+            }
             if (beatStyleNow === "jig") {
               jigStep(K0, ac, beatStep % 12, beatBar, beatNext);
               if (beatStep === 0 && beatBar > 0) beatNoCrash = false;
@@ -6322,7 +6501,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         const w = stRef.current.beatWander
           ? (sleepJ ? { brushes: 1, hand: 0.7, shaman: 0.8, desert: 0.8 }
             : epicJ ? { break: 0.6, drive: 1, heavy: 0.6, shaman: 0.5, newwave: 0.7, circle: 0.7 }
-            : { brushes: 0.8 * (1 - e) ** 2, downtempo: 0.9, hand: 1 - 0.6 * e, shaman: 1, desert: 0.9 * (1 - 0.5 * e), jungle: 0.8,
+            : { brushes: 0.8 * (1 - e) ** 2, downtempo: 0.9, hand: 1 - 0.6 * e, shaman: 1, desert: 0.9 * (1 - 0.5 * e), jungle: 0.8, tabla: 0.7,
                 break: 0.3 + 0.8 * e, drive: 0.1 + 1.2 * e, heavy: 0.6 * e, fusion: 0.35, newwave: 0.5 + 0.6 * e, circle: 0.3 + 0.7 * e })
           : fam === "world" ? { downtempo: 0.4 + e, hand: 1.1 - e }
                 : fam === "kit" ? { break: 1.2 - e, drive: 0.3 + 1.2 * e, heavy: 0.6 } : null;
@@ -6927,7 +7106,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         {beatStyle !== "off" && (
           <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
             <button onClick={() => setBeatWander(w => !w)} title="Wander: the drums roam across every style as the music goes, from brushes to breakbeats (the world, if one is on, keeps its lead)" style={{ ...chip(beatWander), fontSize: 10, padding: "4px 11px" }}>wander</button>
-            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["shaman", "shaman"], ["desert", "desert"], ["jungle", "jungle"], ["temple", "temple"], ["samba", "samba"], ["jig", "jig"], ["circle", "fire circle"], ["newwave", "new wave"], ["synthwave", "synthwave"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
+            {[["brushes", "brushes"], ["downtempo", "downtempo"], ["hand", "hand drums"], ["tabla", "tabla"], ["shaman", "shaman"], ["desert", "desert"], ["jungle", "jungle"], ["temple", "temple"], ["samba", "samba"], ["jig", "jig"], ["circle", "fire circle"], ["newwave", "new wave"], ["synthwave", "synthwave"], ["break", "breakbeat"], ["drive", "drive"]].map(([v, l]) => (
               <button key={v} onClick={() => { setBeatStyle(v); setBeatWander(false); }} style={{ ...chip(beatStyle === v && !beatWander), fontSize: 10, padding: "4px 11px", ...(beatWander && beatStyle === v ? { borderStyle: "dashed" } : {}) }}>{l}</button>
             ))}
           </div>
@@ -8264,9 +8443,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             )}
             {/* Beat — sampled breakbeat under everything */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends). Desert = a sparse daf/bendir: a deep dum, crisp rim teks, barely-there jingles. Jungle = log drums tuned to the scale in a 3-3-2, shaker, deep congas. Temple = the wooden fish on the beat, a small bowl every 8 bars. Samba = surdos, caixa, tamborim, agogô bells tuned to the scale, ganzá, the whistle and repique every 8 bars. Jig = a bodhrán in 6/8. Synthwave = four on the floor, gated snare, 16th hats, 16th arpeggios and pumping bass on the chords. Fire circle = hand drums in a circle (dunun, djembes, udu, clap sticks, shaker, claps), players joining as tension rises. (New wave, desert, jungle and shaman are the beats of their WORLDs, but play under anything.) Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves); the WORLD, if one is on, keeps its lead. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
+              <span title="A sampled drum beat (LinnDrum) under the music, compressed for punch, snare in the reverb. Break = big-beat breakbeat with ghost notes. Drive = busier kick, 16th hats. Heavy = half-time slam. Fusion = a session-player groove in the Shrapnel-era fusion style: syncopated kick, ghost notes, ride instead of hats, linear tom fills, accents that follow GROUPS across the bar line, cross-stick when it's calm. Downtempo = a laid-back, swung '90s downtempo groove (think Enigma, Deep Forest): big room snare, clap, shaker, tambourine, congas, no crash. Hand = no kit: congas, shaker and tambourine over a low tom pulse. Brushes = very soft: a shaker swirl, cross-stick taps on 2 and 4, a feathered kick; made for sleep (in Endless, the beat comes and goes on its own). New wave = 1980s LinnDrum: kick on 1 and 3, a huge gated-reverb snare with clap on 2 and 4, 16th hats, a tom run every 8th bar, and a pulsing 8th-note synth bass on the chord roots (I-vi-IV-V and friends). Desert = a sparse daf/bendir: a deep dum, crisp rim teks, barely-there jingles. Jungle = log drums tuned to the scale in a 3-3-2, shaker, deep congas. Temple = the wooden fish on the beat, a small bowl every 8 bars. Samba = surdos, caixa, tamborim, agogô bells tuned to the scale, ganzá, the whistle and repique every 8 bars. Jig = a bodhrán in 6/8. Synthwave = four on the floor, gated snare, 16th hats, 16th arpeggios and pumping bass on the chords. Fire circle = hand drums in a circle (dunun, djembes, udu, clap sticks, shaker, claps), players joining as tension rises. Tabla = teental, one stroke per 16th (8 a second at 120 BPM, the alpha-rate tabla from Jean Millay's story), the dayan tuned to the scale's root, a tihai into every 8th bar, and tarang bars where the dayan plays the scale. (New wave, desert, jungle and shaman are the beats of their WORLDs, but play under anything.) Shaman = a deep frame drum's steady pulse with a heartbeat lead-in and softly jingling pendants, doubling to 8ths as tension rises, a roll into every 4th bar. Downtempo and hand play half-time above 120 BPM, and Auto only switches between styles of the same kind, unless WANDER is on: then it roams every style (calm leans to brushes, hand and shaman, tension to the kit grooves); the WORLD, if one is on, keeps its lead. Fill every 4th bar, crash every 16. Plays half-time above 160 BPM. With the orchestra on, tension doubles the hats and adds kicks." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>BEAT</span>
               <div style={{ display: "flex", gap: 3, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "brushes", "shaman", "desert", "jungle", "temple", "samba", "jig", "circle", "newwave", "synthwave"].map(v => (
+                {["off", "break", "drive", "heavy", "fusion", "downtempo", "hand", "tabla", "brushes", "shaman", "desert", "jungle", "temple", "samba", "jig", "circle", "newwave", "synthwave"].map(v => (
                   <button key={v} onClick={() => { setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={{
                     background: beatStyle === v ? K.a : K.bg3,
                     color: beatStyle === v ? "#000" : K.txt,
