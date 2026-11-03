@@ -687,12 +687,23 @@
   </div>
 </section>
 
+<!-- SECTION 2: MODES -->
+<section class="section" id="modes">
+  <div class="sec-label">02 · THE FAMILY</div>
+  <h2 class="sec-title">Modes Are Rotations</h2>
+  <div class="prose">
+    <p>Start the same notes from a different degree and you get a different scale. Begin the major scale on its 2nd degree and you have Dorian. These are its <strong>modes</strong>.</p>
+    <p>In the written pattern, a mode is a <strong>rotation</strong>: move the leading digits to the end until the next 1 is at the front. <span style="font-family:var(--mono);color:var(--accent2);letter-spacing:1px">101011010101</span> becomes <span style="font-family:var(--mono);color:var(--accent2);letter-spacing:1px">101101010110</span>, and 2741 (Ionian) becomes 1709 (Dorian).</p>
+    <p>A scale and all its rotations make a <strong>family</strong>. The seven diatonic modes are one family. Chloe's 560 scales fall into 124 of them.</p>
+  </div>
+</section>
+
 <!-- SECTION 3: BRIGHTNESS -->
 <section class="section" id="brightness">
-  <div class="sec-label">02 · THE BRIGHTNESS SCORE</div>
+  <div class="sec-label">03 · THE BRIGHTNESS SCORE</div>
   <h2 class="sec-title">Measuring Light and Dark</h2>
   <div class="prose">
-    <p>Every musician knows that some scales sound bright and others sound dark. But how do you <em>measure</em> that? And how does it extend beyond the seven familiar modes to all 560 scales in Chloe&rsquo;s 124 families, out of 2,048 possible scales that contain the root?</p>
+    <p>Every musician knows that some scales sound bright and others sound dark. But how do you <em>measure</em> that? And how does it extend beyond the seven familiar modes to all 560 scales in Chloe's 124 families, out of 2,048 possible scales that contain the root?</p>
     <p>The answer falls straight out of the binary representation. <strong>Add up the positions of the active bits.</strong> That's the brightness score.</p>
     <p>The chart below shows the seven diatonic modes sorted by score. Click any mode to explore it.</p>
   </div>
@@ -710,7 +721,7 @@
 
 <!-- SECTION 4: COURAGE -->
 <section class="section" id="courage">
-  <div class="sec-label">03 · WHAT IT MEANS</div>
+  <div class="sec-label">04 · WHAT IT MEANS</div>
   <h2 class="sec-title">Brightness Is Courage</h2>
   <div class="prose">
     <p>The brightness score has a deeper meaning than just a sorting key.</p>
@@ -723,15 +734,15 @@
   </div>
 
   <div class="prose">
-    <p>Every scale steps forward from the root, note by note, and then has to close the gap from its top note back up to the octave. That last gap is the <strong>retreat</strong>: Lydian&rsquo;s is a half step, Mixolydian&rsquo;s a whole step. The character isn't in <em>which</em> direction each step goes — it's in <em>how boldly or reluctantly</em> that step is taken. Lydian commits fully to forward movement and minimises every retreat. Locrian minimises every forward step and maximises every retreat.</p>
-    <p>The brightness score sums the forward positions of all notes — and that single number captures this perfectly, because a scale that lunges forward and barely retreats will always accumulate a higher score than one that shuffles forward and flees backward.</p>
+    <p>Every note in a scale can be reached two ways: as a jump <strong>forward</strong> from the root, or as a jump <strong>back</strong> from the octave above. Lydian's ♯4 is six semitones forward. Phrygian's ♭2 is only one forward, which makes it eleven back. Jumping forward as far as you can is courage; jumping back as far as you can is fear. Lydian places every note as far forward as it can, so even its 7th sits just a half step shy of the octave. Locrian places every note as far back as it can.</p>
+    <p>The brightness score sums the forward positions of all notes. Forward and back always add up to twelve for each note, so that single number captures both, because a scale that lunges forward and barely retreats will always accumulate a higher score than one that shuffles forward and flees backward.</p>
     <p>Select a scale below and watch the bars show each note's forward position. The total is the brightness score.</p>
   </div>
 
   <div id="courageContainer"></div>
 
   <div class="prose">
-    <p>The sum is a tidy measure of how sharp a scale&rsquo;s notes sit, and the metaphor falls straight out of the math. The bit positions <em>are</em> the semitone distances, and the sum <em>is</em> the brightness; courage is the way of reading it.</p>
+    <p>The sum is a tidy measure of how sharp a scale's notes sit, and the metaphor falls straight out of the math. The bit positions <em>are</em> the semitone distances, and the sum <em>is</em> the brightness; courage is the way of reading it.</p>
     <p>And this is why it matters for teaching: students learn that Lydian is brighter than Dorian without understanding <em>why</em>. The binary representation makes it derivable. You don't memorise the order — you calculate it. The calculation is addition. The insight is courage.</p>
   </div>
 </section>
