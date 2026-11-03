@@ -631,9 +631,9 @@
 
 <!-- HERO -->
 <section class="hero">
-  <div class="hero-label">AN INTERACTIVE ESSAY · RONNIE NORTH · 2016–2026</div>
+  <div class="hero-label">AN INTERACTIVE ESSAY · RONNIE NORTH · 2017–2026</div>
   <h1 class="hero-title">Scales Are<br><em>Numbers</em></h1>
-  <p class="hero-sub">A new way to see music theory — and why the darkest scales are the least courageous</p>
+  <p class="hero-sub">Sorting every scale family from light to dark — and why the darkest scales are the least courageous</p>
   <div class="hero-bits" id="heroBits"></div>
   <div class="scroll-hint">SCROLL</div>
 </section>
@@ -674,11 +674,12 @@
       <button id="builderPlayBtn" class="scale-btn" style="font-size:12px;padding:8px 20px;">▶ Play</button>
       <span id="builderFrogLabel" style="font-size:10px;letter-spacing:2px;color:var(--dim);margin-left:14px;"></span>
     </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--dim);">Written root-first: the leftmost digit is the root, so this is the reverse of standard binary. The decimal value is the same either way.</div>
     <canvas id="builderFrog" height="130" style="display:none;width:100%;margin-top:8px;box-sizing:border-box;"></canvas>
   </div>
 
   <div class="prose">
-    <p>Every scale is a unique number between 1 and 4095. The major scale is <strong>2741</strong>. Dorian is <strong>1709</strong>. Lydian is <strong>2773</strong>. Locrian is <strong>1387</strong>. These aren't arbitrary labels — the number <em>is</em> the scale, encoded in its structure.</p>
+    <p>Every scale is a unique number between 1 and 4095. Only odd numbers count, because the root bit is always on, which leaves 2,048 possible scales that contain the root. The major scale is <strong>2741</strong>. Dorian is <strong>1709</strong>. Lydian is <strong>2773</strong>. Locrian is <strong>1387</strong>. These aren't arbitrary labels — the number <em>is</em> the scale, encoded in its structure.</p>
   </div>
 
   <div class="callout">
@@ -691,7 +692,7 @@
   <div class="sec-label">02 · THE BRIGHTNESS SCORE</div>
   <h2 class="sec-title">Measuring Light and Dark</h2>
   <div class="prose">
-    <p>Every musician knows that some scales sound bright and others sound dark. But how do you <em>measure</em> that? And how does it extend beyond the seven familiar modes to all 2000+ possible scales?</p>
+    <p>Every musician knows that some scales sound bright and others sound dark. But how do you <em>measure</em> that? And how does it extend beyond the seven familiar modes to all 560 scales in Chloe&rsquo;s 124 families, out of 2,048 possible scales that contain the root?</p>
     <p>The answer falls straight out of the binary representation. <strong>Add up the positions of the active bits.</strong> That's the brightness score.</p>
     <p>The chart below shows the seven diatonic modes sorted by score. Click any mode to explore it.</p>
   </div>
@@ -722,7 +723,7 @@
   </div>
 
   <div class="prose">
-    <p>Every scale must move in both directions to fill the octave. The character isn't in <em>which</em> direction each step goes — it's in <em>how boldly or reluctantly</em> that step is taken. Lydian commits fully to forward movement and minimises every retreat. Locrian minimises every forward step and maximises every retreat.</p>
+    <p>Every scale steps forward from the root, note by note, and then has to close the gap from its top note back up to the octave. That last gap is the <strong>retreat</strong>: Lydian&rsquo;s is a half step, Mixolydian&rsquo;s a whole step. The character isn't in <em>which</em> direction each step goes — it's in <em>how boldly or reluctantly</em> that step is taken. Lydian commits fully to forward movement and minimises every retreat. Locrian minimises every forward step and maximises every retreat.</p>
     <p>The brightness score sums the forward positions of all notes — and that single number captures this perfectly, because a scale that lunges forward and barely retreats will always accumulate a higher score than one that shuffles forward and flees backward.</p>
     <p>Select a scale below and watch the bars show each note's forward position. The total is the brightness score.</p>
   </div>
@@ -730,7 +731,7 @@
   <div id="courageContainer"></div>
 
   <div class="prose">
-    <p>This is not a metaphor layered on top of the mathematics. The courage <em>is</em> the mathematics. The bit positions <em>are</em> the semitone distances, and the sum <em>is</em> the brightness. They are the same thing.</p>
+    <p>The sum is a tidy measure of how sharp a scale&rsquo;s notes sit, and the metaphor falls straight out of the math. The bit positions <em>are</em> the semitone distances, and the sum <em>is</em> the brightness; courage is the way of reading it.</p>
     <p>And this is why it matters for teaching: students learn that Lydian is brighter than Dorian without understanding <em>why</em>. The binary representation makes it derivable. You don't memorise the order — you calculate it. The calculation is addition. The insight is courage.</p>
   </div>
 </section>
@@ -738,9 +739,9 @@
 <!-- CTA -->
 <div class="cta-section">
   <h2 class="cta-title">Hear Every Scale</h2>
-  <p class="cta-sub">Chloe is a free interactive scale explorer built on these principles. Browse 2000+ scales, hear them over a drone, and use AI demo mode to explore the full spectrum from Lydian luminescence to Locrian shadow.</p>
+  <p class="cta-sub">Chloe is a free interactive scale explorer built on these principles. Browse 560 scales in 124 families, hear them over a drone, and use AI demo mode to explore the full spectrum from Lydian luminescence to Locrian shadow.</p>
   <a href="https://ronniebnorth.github.io/chloe3" target="_blank" class="cta-btn">OPEN CHLOE →</a>
-  <div class="byline">First built 2016 · Chloe3 released 2025 · github.com/ronniebnorth/chloe3</div>
+  <div class="byline">Binary encoding since December 2017 · Chloe 3 2024–present · github.com/ronniebnorth/chloe3</div>
 </div>
 
 <script>
@@ -1430,7 +1431,6 @@ const COURAGE_FAMILIES = [
       {name:'Ionian',      pat:2741, verdict:'Bold forward steps, modest retreats — the familiar brightness of the major scale.'},
       {name:'Mixolydian',  pat:1717, verdict:'Mostly bold, but that flattened 7th is a slightly larger retreat than Ionian allows.'},
       {name:'Dorian',      pat:1709, verdict:'Balanced — forward steps and retreats are neither maximised nor minimised.'},
-      {name:'Harm. Minor', pat:2477, verdict:'Dramatic contrast — the augmented second creates an unusually large forward step.'},
       {name:'Aeolian',     pat:1453, verdict:'Retreats beginning to widen — the natural minor\'s characteristic shadow.'},
       {name:'Phrygian',    pat:1451, verdict:'The opening step is minimal — just a semitone — and retreats are growing.'},
       {name:'Locrian',     pat:1387, verdict:'Shuffles forward as little as possible, and retreats as far as it can. Maximum darkness.'},
@@ -1440,7 +1440,6 @@ const COURAGE_FAMILIES = [
 
 function buildCourageFamily(family){
   const {noteCount, scales} = family;
-  const range = FAMILY_RANGES[noteCount] || {min:0, max:66};
   const label = NOTE_COUNT_NAMES[noteCount] || `${noteCount}-note`;
 
   const wrap = document.createElement('div');
@@ -1476,7 +1475,7 @@ function buildCourageFamily(family){
       <div class="courage-verdict"></div>
     </div>
     <div>
-      <div class="courage-sum-label">SCORE (range ${range.min}–${range.max})</div>
+      <div class="courage-sum-label courage-range-label">SCORE</div>
       <div class="courage-sum-total">—</div>
     </div>
   `;
@@ -1520,7 +1519,11 @@ function buildCourageFamily(family){
     const semis = toSemis(m.pat);
     const semisSet = new Set(semis);
     const total = semis.reduce((a,b)=>a+b,0);
-    const frac = (total - range.min) / (range.max - range.min);
+    // Range = this scale's own rotation family (its modes), as the builder frog uses
+    const famB = getRotationFamily(m.pat).map(p=>bright(p));
+    const fMin = Math.min(...famB), fMax = Math.max(...famB);
+    const frac = fMin===fMax ? 0.5 : (total - fMin) / (fMax - fMin);
+    sumDiv.querySelector('.courage-range-label').textContent = `SCORE (modes of this family: ${fMin}–${fMax})`;
     const hue = 30 + frac * 160;
 
     grid.innerHTML='';
