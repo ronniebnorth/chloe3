@@ -47,3 +47,26 @@ export const waitPattern = (run, ph, cur, pool, rnd = Math.random) => {
   if (rnd() < 0.15) run.hold = run.hold === WAIT_HOLDS[0] ? WAIT_HOLDS[1] : WAIT_HOLDS[0];
   return run.hold;
 };
+
+// The drone's arc, as levels for each layer at fraction f:
+//   pulse   : didgeridoo, earthy and moving with the rhythm
+//   wait    : slowly becomes an airy pad as its tone closes, with a low root held under it
+//             so the missing 3rd stays missing. Done morphing three quarters of the way in
+//   release : blooms into strings, and the drone gains the 3rd too, so the floor changes mood
+// tc = how quickly the levels follow, in seconds
+export const waitDroneMix = (f, drop = (WAIT_DROP_MIN + WAIT_DROP_MAX) / 2) => {
+  const ph = waitPhase(f, drop);
+  if (ph === "pulse") return { didge: 1, pad: 0, strings: 0, third: 0, sub: 0, tone: 1, tc: 3 };
+  if (ph === "release") return { didge: 0, pad: 0, strings: 1, third: 1, sub: 1, tone: 1.2, tc: 2.5 };
+  const whole = (f - WAIT_PULSE_END) / (drop - WAIT_PULSE_END);
+  const x = ease(whole / 0.75) * Math.PI / 2;   // equal power, so the level holds through the morph
+  return { didge: Math.cos(x) < 0.001 ? 0 : Math.cos(x), pad: Math.sin(x), strings: 0, third: 0, sub: Math.sin(x), tone: lerp(1, 0.4, ease(whole)), tc: 5 };
+};
+
+// Where the drone's 3rd sits: this far above the root, folded up out of the mud
+export const waitThirdFreq = (root, third) => {
+  let fr = root * 2 ** (third / 12);
+  while (fr < 165) fr *= 2;
+  while (fr > 330) fr /= 2;
+  return fr;
+};

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "rea
 import { Soundfont, DrumMachine } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
 import { isSuspended, isSusQuery, susChord, susCoverage, SUS_INTERVAL, nextSusStop } from "./suspended.js";
-import { waitVals, waitPhase, waitPattern, WAIT_VOICE, WAIT_DROP_MIN, WAIT_DROP_MAX } from "./wait.js";
+import { waitVals, waitPhase, waitPattern, waitDroneMix, waitThirdFreq, WAIT_VOICE, WAIT_DROP_MIN, WAIT_DROP_MAX } from "./wait.js";
 
 /* ═══════════════════════════════════════════════════════
    SCALE ENGINE
@@ -2342,7 +2342,7 @@ const HELP_SECTIONS = [
   { title: "SOUND", body: "All instruments are synthesised in the browser using Web Audio. piano = detuned triangle oscillators with harmonic decay. guitar = Karplus-Strong style noise burst. xylo = marimba-ratio harmonic partials. space = detuned sines with LFO vibrato. VOL sets note volume. REV adds convolution reverb. DEL sets delay wet level. D.T sets delay time in seconds (try 0.125, 0.25, 0.375, 0.5 for rhythmic values). A= sets concert pitch (432–440 Hz). BPM sets tempo." },
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
   { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from the pool you choose (named scales, all scales, or suspended, which travels through every suspended scale before repeating any), varying root note, rhythm, arpeggio direction, chord voicing, BPM, reverb, delay level, and delay time every 12–16 seconds. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
-  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat); Wait = a steady pulse through suspended scales, then the drums fall away and one suspended scale holds with no 3rd, slowing and widening, until late in the journey the 3rd arrives, major or minor, and the pulse returns (it turns on a drone and, if there's no beat, a downtempo one). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
+  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat); Wait = a steady pulse through suspended scales, then the drums fall away and one suspended scale holds with no 3rd, slowing and widening, until late in the journey the 3rd arrives, major or minor, and the pulse returns (it turns on a drone and, if there's no beat, a downtempo one. The drone travels too: a didgeridoo under the pulse, slowly becoming an airy pad over a low root, then blooming into strings at the drop, with the same 3rd. Untick Drone Type in ⚙ to keep your own drone instead). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
   { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
   { title: "EEG HEADBAND", body: "Chloe reads a headband through BERM Bridge (berm.live), which works with a Muse 2 or Muse S and serves the brain data on this computer (localhost:8520). When it's coming in, the World row says 'headband on'. What it drives: the thunderstorm's WEATHER. Calm it = a busy mind (beta + gamma against alpha + theta) brings the storm on and settling clears it; Ride it = the reverse. It learns your own range over ~20 s and the storm follows over ~20 s. Journeys keep their own shape (the headband doesn't steer them). In the Studio, the brightness bar shows the EEG target, and the session log records your brain alongside the scales. A heart rate from the headband shows as a ♥ BPM button in the playback controls." },
@@ -3737,8 +3737,10 @@ export default function Chloe() {
   const noteFreq = (semi, ri) => aRef * 2 ** ((60 + OFFS[ri] - 69) / 12) * tunedRatio(semi, tuning);
 
   /* ── Drone ── */
+  // The Wait morphs its own drone (below), unless Drone Type is unticked in Auto's ⚙
+  const waitDroneOn = droneOn && autoOn && JOURNEYS[journey]?.wait && autoLocks.droneWave;
   useEffect(() => {
-    if (!droneOn) return;
+    if (!droneOn || waitDroneOn) return;
     const ac = getCtx();
     const rev = getOrCreateReverb(ac);
     const del = getOrCreateDelay(ac);
@@ -3779,7 +3781,76 @@ export default function Chloe() {
       }, out * 1000 + 20);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [droneOn, droneWave, aRef, recycleGen, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
+  }, [droneOn, waitDroneOn, droneWave, aRef, recycleGen, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
+
+  // The Wait's drone: layers whose levels come from the journey's clock (waitDroneMix),
+  // not from long fades, so the morph carries straight on across a context swap.
+  // A layer only exists while it's sounding. A change of root rebuilds it with a crossfade.
+  const droneToneRef = useRef(droneTone);
+  useEffect(() => { droneToneRef.current = droneTone; }, [droneTone]);
+  useEffect(() => {
+    if (!waitDroneOn) return;
+    const ac = getCtx();
+    const rev = getOrCreateReverb(ac), del = getOrCreateDelay(ac), an = getOrCreateAnalyser(ac);
+    const root = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
+    let low = root; while (low > 110) low /= 2;   // the held root stays low whatever the drone octave
+    const f = ac.createBiquadFilter(); f.type = "lowpass";
+    const toneHz = t => 200 * Math.pow(40, droneToneRef.current) * t;
+    const vol = ac.createGain();
+    const swapped = Date.now() - swapAtRef.current < 2000, SWAP_FADE = 3;
+    const fade = () => autoOnRef.current || demoOnRef.current ? 6 * smoothRef.current : 0;
+    vol.gain.setValueAtTime(0, ac.currentTime);
+    vol.gain.linearRampToValueAtTime(droneVol, ac.currentTime + (swapped ? SWAP_FADE : 0.08 + fade()));
+    droneGainRef.current = vol;
+    f.connect(vol); vol.connect(masterOut(ac)); vol.connect(rev.convolver); vol.connect(del.delayNode); vol.connect(an.node);
+    const opts = { scale: () => toSemis(stRef.current.sel?.pattern || 0), bpm: () => stRef.current.bpm, stepHook: beatStepHookRef };
+    const LAYER = { didge: () => [root, "didge", 1], pad: () => [root, "pad", 1], strings: () => [root, "strings", 1], sub: () => [low, "sine", 0.7],
+      third: () => [waitThirdFreq(root, journeyRef.current?.third ?? 4), "strings", 0.6] };
+    const layers = {};
+    const mixNow = () => {
+      const J = journeyRef.current;
+      if (!J?.drop) return waitDroneMix(0);
+      return waitDroneMix(Math.min(1, (Date.now() - J.startMs) / ((J.mins ?? 15) * 60000)), J.drop);
+    };
+    const tick = (first) => {
+      const m = mixNow(), now = ac.currentTime;
+      f.frequency.setTargetAtTime(toneHz(m.tone), now, first ? 0.01 : m.tc);
+      for (const k of Object.keys(LAYER)) {
+        const lv = m[k], L = layers[k];
+        if (lv > 0 && !L) {
+          const [fr, type, gain] = LAYER[k]();
+          const voice = synthDrone(ac, fr, type, opts), g = ac.createGain(), gb = ac.createGain();
+          g.gain.value = gb.gain.value = first ? lv * gain : 0;
+          voice.node.connect(g); g.connect(f);
+          if (voice.bright) { voice.bright.connect(gb); gb.connect(vol); }   // past the tone filter, as usual
+          layers[k] = { voice, g, gb, gain };
+        }
+        const on = layers[k];
+        if (!on) continue;
+        on.g.gain.setTargetAtTime(lv * on.gain, now, m.tc); on.gb.gain.setTargetAtTime(lv * on.gain, now, m.tc);
+        if (lv === 0 && on.g.gain.value < 0.002) {
+          try { on.voice.stop(); } catch {}
+          try { on.g.disconnect(); on.gb.disconnect(); } catch {}
+          delete layers[k];
+        }
+      }
+    };
+    tick(true);
+    const id = setInterval(() => tick(false), 1000);
+    return () => {
+      clearInterval(id);
+      const now = ac.currentTime, out = ctxRef.current === ac ? 0.08 + fade() : SWAP_FADE;
+      vol.gain.cancelScheduledValues(now);
+      vol.gain.setValueAtTime(vol.gain.value, now);
+      vol.gain.linearRampToValueAtTime(0, now + out);
+      if (droneGainRef.current === vol) droneGainRef.current = null;
+      setTimeout(() => {
+        for (const L of Object.values(layers)) { try { L.voice.stop(); } catch {} try { L.g.disconnect(); L.gb.disconnect(); } catch {} }
+        try { f.disconnect(); vol.disconnect(); } catch {}
+      }, out * 1000 + 20);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waitDroneOn, rootIdx, droneOct, aRef, recycleGen, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
 
   // Glide drone frequency smoothly when root or octave changes
   useEffect(() => {
