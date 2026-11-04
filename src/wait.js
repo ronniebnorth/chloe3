@@ -70,3 +70,25 @@ export const waitThirdFreq = (root, third) => {
   while (fr > 330) fr /= 2;
   return fr;
 };
+
+// The jet: one, high and distant, passing overhead at the drop. t = seconds from
+// the moment it's overhead. It's real flyby geometry, slowed so the pass is felt
+// rather than startling: distance sets the level and how much top end the air
+// lets through; its speed toward or away from you sets the Doppler bend.
+export const JET_APPROACH = 75, JET_RECEDE = 70;
+const JET_HEIGHT = 2500, JET_SPEED = 120, SOUND_SPEED = 340;
+const doppler = t => { const x = JET_SPEED * t; return SOUND_SPEED / (SOUND_SPEED + JET_SPEED * x / Math.hypot(x, JET_HEIGHT)); };
+export const jetAt = (t) => {
+  if (t <= -JET_APPROACH || t >= JET_RECEDE) return null;
+  const x = JET_SPEED * t, r = Math.hypot(x, JET_HEIGHT), near = JET_HEIGHT / r;
+  const edges = Math.min(1, (t + JET_APPROACH) / 20) * Math.min(1, (JET_RECEDE - t) / 25);
+  return {
+    level: Math.pow(near, 1.5) * edges,
+    lp: 400 + 4600 * near * near,
+    pan: 0.85 * x / r,
+    // The whine's pitch relative to where it ends up: the bend comes down onto the root
+    bend: doppler(t) / doppler(JET_RECEDE),
+  };
+};
+// The whine's final pitch: the root, up in the range where a far-off turbine sits
+export const jetWhineBase = root => { let fr = root; while (fr < 500) fr *= 2; while (fr > 1000) fr /= 2; return fr; };

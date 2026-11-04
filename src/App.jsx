@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "rea
 import { Soundfont, DrumMachine } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
 import { isSuspended, isSusQuery, susChord, susCoverage, SUS_INTERVAL, nextSusStop } from "./suspended.js";
-import { waitVals, waitPhase, waitPattern, waitDroneMix, waitThirdFreq, WAIT_VOICE, WAIT_DROP_MIN, WAIT_DROP_MAX } from "./wait.js";
+import { waitVals, waitPhase, waitPattern, waitDroneMix, waitThirdFreq, jetAt, jetWhineBase, WAIT_VOICE, WAIT_DROP_MIN, WAIT_DROP_MAX } from "./wait.js";
 
 /* ═══════════════════════════════════════════════════════
    SCALE ENGINE
@@ -1968,7 +1968,7 @@ const MIX_PATTERNS = [
   [5, 4, 5, 5, 4, 5, 4], [5, 4, 5, 5, 4, 4, 5],
 ];
 // Settings Auto may change; unticked ones in the ⚙ panel are left alone
-const AUTO_LOCKS_DEFAULT = { sound:true, rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true, tuning:false, beat:true };
+const AUTO_LOCKS_DEFAULT = { sound:true, rootNote:true, rhythm:true, arpDir:true, chordVoice:true, melMode:true, grouping:true, bpm:true, reverb:true, delay:true, delayTime:true, sustain:true, droneOn:true, droneVol:true, droneOct:true, droneWave:true, tuning:false, beat:true, jet:true };
 const isOutsideId = (id) => !!id && id.startsWith("x-");
 
 // Longest run of consecutive semitones (circular) — 3..8 for outside scales
@@ -2342,7 +2342,7 @@ const HELP_SECTIONS = [
   { title: "SOUND", body: "All instruments are synthesised in the browser using Web Audio. piano = detuned triangle oscillators with harmonic decay. guitar = Karplus-Strong style noise burst. xylo = marimba-ratio harmonic partials. space = detuned sines with LFO vibrato. VOL sets note volume. REV adds convolution reverb. DEL sets delay wet level. D.T sets delay time in seconds (try 0.125, 0.25, 0.375, 0.5 for rhythmic values). A= sets concert pitch (432–440 Hz). BPM sets tempo." },
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
   { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from the pool you choose (named scales, all scales, or suspended, which travels through every suspended scale before repeating any), varying root note, rhythm, arpeggio direction, chord voicing, BPM, reverb, delay level, and delay time every 12–16 seconds. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
-  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat); Wait = a steady pulse through suspended scales, then the drums fall away and one suspended scale holds with no 3rd, slowing and widening, until late in the journey the 3rd arrives, major or minor, and the pulse returns (it turns on a drone and, if there's no beat, a downtempo one. The drone travels too: a didgeridoo under the pulse, slowly becoming an airy pad over a low root, then blooming into strings at the drop, with the same 3rd. Untick Drone Type in ⚙ to keep your own drone instead). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
+  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat); Wait = a steady pulse through suspended scales, then the drums fall away and one suspended scale holds with no 3rd, slowing and widening, until late in the journey the 3rd arrives, major or minor, and the pulse returns (it turns on a drone and, if there's no beat, a downtempo one. The drone travels too: a didgeridoo under the pulse, slowly becoming an airy pad over a low root, then blooming into strings at the drop, with the same 3rd. Untick Drone Type in ⚙ to keep your own drone instead. One high, distant jet approaches through the last minute of the wait and passes overhead at the drop; untick Jet in ⚙ to leave it out). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
   { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
   { title: "EEG HEADBAND", body: "Chloe reads a headband through BERM Bridge (berm.live), which works with a Muse 2 or Muse S and serves the brain data on this computer (localhost:8520). When it's coming in, the World row says 'headband on'. What it drives: the thunderstorm's WEATHER. Calm it = a busy mind (beta + gamma against alpha + theta) brings the storm on and settling clears it; Ride it = the reverse. It learns your own range over ~20 s and the storm follows over ~20 s. Journeys keep their own shape (the headband doesn't steer them). In the Studio, the brightness bar shows the EEG target, and the session log records your brain alongside the scales. A heart rate from the headband shows as a ♥ BPM button in the playback controls." },
@@ -3851,6 +3851,76 @@ export default function Chloe() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waitDroneOn, rootIdx, droneOct, aRef, recycleGen, getCtx, getOrCreateReverb, getOrCreateDelay, getOrCreateAnalyser]);
+
+  // The Wait's jet: one, high and distant, overhead at the drop (jetAt). Noise for the
+  // roar, a thin detuned turbine whine that bends down onto the root, panned across
+  // the sky. Follows the journey's clock, so a context swap just rebuilds it in place.
+  const waitJetOn = autoOn && JOURNEYS[journey]?.wait && autoLocks.jet;
+  useEffect(() => {
+    if (!waitJetOn) return;
+    const ac = getCtx();
+    const rev = getOrCreateReverb(ac);
+    const base = jetWhineBase(aRef * 2 ** ((60 + OFFS[rootIdx] - 69) / 12));
+    const dir = (journeyRef.current?.seed ?? 1) % 2 ? 1 : -1;   // which way it crosses
+    let jet = null;
+    const build = () => {
+      const out = ac.createGain(); out.gain.value = 0;
+      const pan = ac.createStereoPanner();
+      const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 0.3;
+      // Roar: brown noise, looped
+      const buf = ac.createBuffer(1, ac.sampleRate * 6, ac.sampleRate), d = buf.getChannelData(0);
+      let last = 0;
+      for (let i = 0; i < d.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
+      const noise = ac.createBufferSource(); noise.buffer = buf; noise.loop = true;
+      const roar = ac.createGain(); roar.gain.value = 1;
+      // The air: a slow, uneven flutter on the level
+      const fl1 = ac.createOscillator(), fl2 = ac.createOscillator(), flG1 = ac.createGain(), flG2 = ac.createGain();
+      fl1.frequency.value = 0.13; fl2.frequency.value = 0.31; flG1.gain.value = 0.18; flG2.gain.value = 0.09;
+      fl1.connect(flG1); fl2.connect(flG2); flG1.connect(roar.gain); flG2.connect(roar.gain);
+      // Whine: two detuned triangles and a partial a fifth up, very quiet
+      const whine = ac.createGain(); whine.gain.value = 0.08;
+      const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1; bp.frequency.value = base * 1.3;
+      const oscs = [[1, -5], [1, 6], [1.5, 0]].map(([m, det]) => {
+        const o = ac.createOscillator(); o.type = "triangle"; o.detune.value = det; o.connect(bp);
+        return { o, m };
+      });
+      noise.connect(roar); roar.connect(lp); bp.connect(whine); whine.connect(lp); lp.connect(pan); pan.connect(out);
+      const send = ac.createGain(); send.gain.value = 0.5;
+      out.connect(masterOut(ac)); out.connect(send); send.connect(rev.convolver);
+      noise.start(); fl1.start(); fl2.start(); oscs.forEach(x => x.o.start());
+      return { out, pan, lp, bp, oscs, stop: () => {
+        for (const n of [noise, fl1, fl2, ...oscs.map(x => x.o)]) { try { n.stop(); } catch {} }
+        for (const n of [out, pan, lp, bp, whine, roar, noise, fl1, fl2, flG1, flG2, send]) { try { n.disconnect(); } catch {} }
+      } };
+    };
+    const JET_LEVEL = 0.14;   // under the drone even when overhead: big in space, not loud
+    const tick = () => {
+      const J = journeyRef.current, now = ac.currentTime;
+      const v = J?.drop ? jetAt((Date.now() - J.startMs) / 1000 - J.drop * (J.mins ?? 15) * 60) : null;
+      if (!v) { if (jet) { jet.stop(); jet = null; } return; }
+      const fresh = !jet;
+      if (fresh) jet = build();
+      const tc = fresh ? 0.01 : 0.15;
+      jet.lp.frequency.setTargetAtTime(v.lp, now, tc);
+      jet.pan.pan.setTargetAtTime(dir * v.pan, now, tc);
+      jet.bp.frequency.setTargetAtTime(base * v.bend * 1.3, now, tc);
+      jet.oscs.forEach(x => x.o.frequency.setTargetAtTime(base * v.bend * x.m, now, tc));
+      // Coming in on a swap: crossfade with the old context's jet instead of cutting in
+      jet.out.gain.setTargetAtTime(v.level * JET_LEVEL, now, fresh ? 1 : 0.15);
+    };
+    tick();
+    const id = setInterval(tick, 200);
+    return () => {
+      clearInterval(id);
+      if (!jet) return;
+      const j = jet, now = ac.currentTime, fade = ctxRef.current === ac ? 0.5 : 3;
+      j.out.gain.cancelScheduledValues(now);
+      j.out.gain.setValueAtTime(j.out.gain.value, now);
+      j.out.gain.linearRampToValueAtTime(0, now + fade);
+      setTimeout(() => j.stop(), fade * 1000 + 20);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waitJetOn, rootIdx, aRef, recycleGen, getCtx, getOrCreateReverb]);
 
   // Glide drone frequency smoothly when root or octave changes
   useEffect(() => {
@@ -8961,6 +9031,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 { key: "droneVol",  label: "Drone Volume" },
                 { key: "droneOct",  label: "Drone Octave" },
                 { key: "droneWave", label: "Drone Type" },
+                { key: "jet",       label: "Jet (The Wait)" },
               ]},
             ].map(group => (
               <div key={group.label} style={{ marginBottom: 14 }}>
