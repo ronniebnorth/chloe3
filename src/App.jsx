@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "rea
 import { Soundfont, DrumMachine } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
 import { isSuspended, isSusQuery, susChord, susCoverage, SUS_INTERVAL, nextSusStop } from "./suspended.js";
+import { NOISE_TYPES, noiseBuffer } from "./noise.js";
 import { waitVals, waitPhase, waitPattern, waitDroneMix, waitThirdFreq, waitJetNow, jetWhineBase, WAIT_VOICE, WAIT_DROP_MIN, WAIT_DROP_MAX } from "./wait.js";
 
 /* ═══════════════════════════════════════════════════════
@@ -504,7 +505,18 @@ function synthJawHarp(ac, freq, opts) {
   };
 }
 
+// Noise as a drone: no pitch, so it stays put through a change of key
+const NOISE_LEVEL = { white: 0.1, pink: 0.16, brown: 0.3 };   // about equally loud to the ear, which hears hiss first
+const DRONE_TYPES = ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam", "chant", "didge", ...NOISE_TYPES];
+// The tone control's low-pass, opened well up for noise: at the usual 1.3 kHz, white wouldn't be white
+const droneToneHz = (tone, type) => Math.min(20000, 200 * Math.pow(40, tone) * (NOISE_TYPES.includes(type) ? 8 : 1));
 function synthDrone(ac, freq, type, opts) {
+  if (NOISE_TYPES.includes(type)) {
+    const src = ac.createBufferSource(), node = ac.createGain();
+    src.buffer = noiseBuffer(ac, type); src.loop = true; node.gain.value = NOISE_LEVEL[type];
+    src.connect(node); src.start();
+    return { node, oscs: [], stop: () => { try { src.stop(); src.disconnect(); node.disconnect(); } catch {} } };
+  }
   if (type === "throat") return synthThroat(ac, freq, opts);
   if (type === "jawharp") return synthJawHarp(ac, freq, opts);
   if (type === "juno") return synthJuno(ac, freq, opts);
@@ -2772,7 +2784,7 @@ export default function Chloe() {
         aRef:       parseInt(p.get("a") ?? "440"),
         droneOct:   p.has("do") ? parseInt(p.get("do")) : null,
         droneOn:    p.get("dr") === "1",
-        droneWave:  ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam", "chant", "didge"].includes(p.get("dw")) ? p.get("dw") : undefined,
+        droneWave:  DRONE_TYPES.includes(p.get("dw")) ? p.get("dw") : undefined,
         melMode:    p.get("m") === "1",
         autoOff:    p.get("al") ?? "",
         autoOn:     p.get("an") ?? "",
@@ -3754,7 +3766,7 @@ export default function Chloe() {
     const del = getOrCreateDelay(ac);
     const an = getOrCreateAnalyser(ac);
     const f = ac.createBiquadFilter();
-    f.type = "lowpass"; f.frequency.value = 200 * Math.pow(40, droneTone);
+    f.type = "lowpass"; f.frequency.value = droneToneHz(droneTone, droneWave);
     droneFilterRef.current = f;
     const dFreq = aRef * 2 ** ((60 + OFFS[rootIdx] + droneOct - 69) / 12);
     const voice = synthDrone(ac, dFreq, droneWave, {
@@ -3959,7 +3971,7 @@ export default function Chloe() {
 
   // Keep drone tone in sync with droneTone slider
   useEffect(() => {
-    if (droneFilterRef.current) droneFilterRef.current.frequency.value = 200 * Math.pow(40, droneTone);
+    if (droneFilterRef.current) droneFilterRef.current.frequency.value = droneToneHz(droneTone, droneWave);
   }, [droneTone]);
 
   /* ── Beat ── */
@@ -6440,7 +6452,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (AL.droneOn   && choice.droneOn   != null) setDroneOn(!!choice.droneOn);
       if (AL.droneVol  && choice.droneVol  != null) setDroneVol(Math.max(0, Math.min(2, choice.droneVol)));
       if (AL.droneOct  && choice.droneOct  != null) setDroneOct([0, -12, -24, -36].includes(choice.droneOct) ? choice.droneOct : -24);
-      if (AL.droneWave && choice.droneWave != null && ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam", "chant", "didge"].includes(choice.droneWave)) setDroneWave(choice.droneWave);
+      if (AL.droneWave && choice.droneWave != null && DRONE_TYPES.includes(choice.droneWave)) setDroneWave(choice.droneWave);
       setArpOn(true);
       // Commentary and requests go to chat panel; banner shows parameter summary only
       const chatParts = [choice.commentary, choice.request ? `✦ ${choice.request}` : null].filter(Boolean);
@@ -6781,7 +6793,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // In a world, Auto picks among the world's own drones
       const drones0 = sleepJ ? ["sine", "pad", "dam"] : epicJ ? ["organ", "strings"] : ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam"];
       const drones = WORLDS[stRef.current.world]?.drones ?? drones0;
-      if (_al.droneWave && (sleepJ || epicJ) && !drones0.includes(stRef.current.droneWave)) later(() => setDroneWave(sleepJ ? "pad" : "organ"));
+      // Noise is only ever chosen by you, so Auto leaves it alone
+      const droneNoise = NOISE_TYPES.includes(stRef.current.droneWave);
+      if (droneNoise) { /* stays */ }
+      else if (_al.droneWave && (sleepJ || epicJ) && !drones0.includes(stRef.current.droneWave)) later(() => setDroneWave(sleepJ ? "pad" : "organ"));
       else if (_al.droneWave && maybe()) { const w = likedPick(likes, "drone", drones) ?? drones[Math.floor(Math.random() * drones.length)]; later(() => setDroneWave(w)); }
       if (_al.droneOct && maybe())  { const o = [-12, -24, -36][Math.floor(Math.random() * 3)]; later(() => setDroneOct(o)); }
       if (_al.droneVol && maybe())  { const v = parseFloat((0.3 + Math.random() * 0.7).toFixed(2)); later(() => setDroneVol(v)); }
@@ -7220,7 +7235,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (journey === "off") setJourney(J);
       if (J === "endless") {
         setSmooth(Math.max(smooth, 0.9));   // sleep: hide every seam
-        if (!["sine", "pad", "dam"].includes(droneWave)) setDroneWave("pad");   // no tanpura buzz
+        if (!["sine", "pad", "dam", ...NOISE_TYPES].includes(droneWave)) setDroneWave("pad");   // no tanpura buzz
       }
       else if (JOURNEYS[J].epic) setSmooth(0.5);   // lively
       else if (!smooth) setSmooth(0.7);
@@ -8265,13 +8280,13 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Drone type */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-              <span title="Drone sound type — sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude. throat: Mongolian throat singing, a buzzing voice with a whistled overtone melody on the root's own harmonics (only those in the scale), a growl an octave under, breathing every 15-25 s. jaw harp: a plucked reed in a gallop or straight rhythm, the mouth jumping between its harmonics; plucks on the beat when drums play. dam: a second duduk holding the home note, as under Armenian duduk melodies, breathing and swelling. juno: an 80s polysynth pad, root/fifth/octave (+9th) detuned saws through a stereo chorus. chant: monks on a low om. didge: a didgeridoo, the tongue shaping the drone in a loose rhythm, a breath now and then." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
+              <span title="Drone sound type — white, pink, brown: noise, with no pitch, from hissy to a soft low rumble (DRONE TONE darkens it; Auto leaves it alone). sine: clean + sub-octave. organ: additive harmonic series. pad: detuned shimmer. strings: bowed saws with tremolo. tanpura: root/fifth/octaves with pulsing amplitude. throat: Mongolian throat singing, a buzzing voice with a whistled overtone melody on the root's own harmonics (only those in the scale), a growl an octave under, breathing every 15-25 s. jaw harp: a plucked reed in a gallop or straight rhythm, the mouth jumping between its harmonics; plucks on the beat when drums play. dam: a second duduk holding the home note, as under Armenian duduk melodies, breathing and swelling. juno: an 80s polysynth pad, root/fifth/octave (+9th) detuned saws through a stereo chorus. chant: monks on a low om. didge: a didgeridoo, the tongue shaping the drone in a loose rhythm, a breath now and then." style={{ color: K.t2, fontSize: 9, letterSpacing: 2, flexShrink: 0, cursor: "help" }}>DRONE TYPE</span>
               <select value={droneWave} onChange={e => setDroneWave(e.target.value)} style={{
                 marginLeft: "auto", background: K.bg3, color: K.txt, border: `1px solid ${K.br}`,
                 borderRadius: 3, padding: "3px 6px", fontSize: 9, fontFamily: "inherit",
                 cursor: "pointer", letterSpacing: 1,
               }}>
-                {["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam", "chant", "didge"].map(w => (
+                {DRONE_TYPES.map(w => (
                   <option key={w} value={w}>{w === "jawharp" ? "jaw harp" : w}</option>
                 ))}
               </select>
