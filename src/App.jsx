@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "rea
 import { Soundfont, DrumMachine } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
 import { isSuspended, isSusQuery, susChord, susCoverage, SUS_INTERVAL, nextSusStop } from "./suspended.js";
+import { waitVals, waitPhase, waitPattern, WAIT_VOICE, WAIT_DROP_MIN, WAIT_DROP_MAX } from "./wait.js";
 
 /* ═══════════════════════════════════════════════════════
    SCALE ENGINE
@@ -2234,6 +2235,10 @@ JOURNEYS.map = { label: "map", home: 1709, survey: true,
     const dn = Math.floor(ms / 120000), dr = shuffled(6, seed * 7919 + 5 * 104729 + Math.floor(dn / 6))[dn % 6] < 3;
     return { b: lvl(1, 90000, 0.15, 0.85), t: lvl(2, 150000, 0.7, 1.3), e: lvl(3, 210000, 0, 0.8), tn: lvl(4, 270000, 0, 0.5), dr, rv: 0.6, su: 1 };
   } };
+// The Wait: see wait.js. Its shape depends on a drop point that varies per run
+JOURNEYS.wait = { label: "wait", home: 1189, wait: true, steady: true, bpm: 84,
+  tip: "Waiting for the drop: a steady pulse through suspended scales, then the drums fall away and one suspended scale holds, slowing and widening, with no 3rd anywhere. Late in the journey the 3rd finally arrives, one note, major or minor, and the pulse returns.",
+  at: (f, drop) => waitVals(f, drop) };
 const ENDLESS_WINDOW = 40 * 60000;   // how much of Endless a card or the stage draws
 const JOURNEY_MINS  = [5, 15, 30, 60];
 // Sleep timer: stop after this many minutes, fading out over the last SLEEP_FADE seconds
@@ -2247,6 +2252,7 @@ const RISE_RIFFS = [{ f: "rise_riff_1.wav", bpm: 114.8 }, { f: "rise_riff_2.wav"
 const RIFF_BPM = 116, RIFF_ROOT = 4, RIFF_BARS = 2, RIFF_GAIN = 0.6, RIFF_PRE = 0.004;
 const journeyAt = (j, f, run) => {
   if (j.endless) return j.at(f * ENDLESS_WINDOW);
+  if (j.wait) return j.at(f, run?.drop);
   if (j.survey) return j.at(f * (run?.mins ?? 30) * 60000, run?.seed);   // a card draws a 30-minute run; the stage, this one
   const p = j.pts;
   let i = 0;
@@ -2336,7 +2342,7 @@ const HELP_SECTIONS = [
   { title: "SOUND", body: "All instruments are synthesised in the browser using Web Audio. piano = detuned triangle oscillators with harmonic decay. guitar = Karplus-Strong style noise burst. xylo = marimba-ratio harmonic partials. space = detuned sines with LFO vibrato. VOL sets note volume. REV adds convolution reverb. DEL sets delay wet level. D.T sets delay time in seconds (try 0.125, 0.25, 0.375, 0.5 for rhythmic values). A= sets concert pitch (432–440 Hz). BPM sets tempo." },
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
   { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from the pool you choose (named scales, all scales, or suspended, which travels through every suspended scale before repeating any), varying root note, rhythm, arpeggio direction, chord voicing, BPM, reverb, delay level, and delay time every 12–16 seconds. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
-  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
+  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat); Wait = a steady pulse through suspended scales, then the drums fall away and one suspended scale holds with no 3rd, slowing and widening, until late in the journey the 3rd arrives, major or minor, and the pulse returns (it turns on a drone and, if there's no beat, a downtempo one). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
   { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
   { title: "EEG HEADBAND", body: "Chloe reads a headband through BERM Bridge (berm.live), which works with a Muse 2 or Muse S and serves the brain data on this computer (localhost:8520). When it's coming in, the World row says 'headband on'. What it drives: the thunderstorm's WEATHER. Calm it = a busy mind (beta + gamma against alpha + theta) brings the storm on and settling clears it; Ride it = the reverse. It learns your own range over ~20 s and the storm follows over ~20 s. Journeys keep their own shape (the headband doesn't steer them). In the Studio, the brightness bar shows the EEG target, and the session log records your brain alongside the scales. A heart rate from the headband shows as a ♥ BPM button in the playback controls." },
@@ -3305,8 +3311,18 @@ export default function Chloe() {
     }
     const j = JOURNEYS[journey];
     // Changing only the length keeps the clock running; a new journey starts over
-    if (!journeyRef.current || journeyRef.current.id !== journey)
+    if (!journeyRef.current || journeyRef.current.id !== journey) {
       journeyRef.current = { id: journey, startMs: Date.now(), homeBpm: j.bpm ?? stRef.current.bpm, arrived: false, ending: false, seed: 1 + Math.floor(Math.random() * 1e6) };
+      if (j.wait) {
+        // When the 3rd arrives and which one: a surprise each run
+        journeyRef.current.drop = WAIT_DROP_MIN + Math.random() * (WAIT_DROP_MAX - WAIT_DROP_MIN);
+        journeyRef.current.third = Math.random() < 0.5 ? 3 : 4;
+        if (!smoothRef.current) setSmooth(0.7);   // so the drums fall away instead of stopping dead
+        // It needs a pulse to take away, and a drone to hold the root through the wait
+        if (autoLocksRef.current.droneOn) setDroneOn(true);
+        if (autoLocksRef.current.beat && stRef.current.beatStyle === "off") { setBeatStyle("downtempo"); getKit(getCtx()); }
+      }
+    }
     const J = journeyRef.current;
     J.mins = journeyMins;
     const tick = () => {
@@ -3314,7 +3330,7 @@ export default function Chloe() {
       const el = Date.now() - J.startMs;
       // Endless never arrives; f is just where it is in the drawn window
       const f = j.endless ? (el % ENDLESS_WINDOW) / ENDLESS_WINDOW : Math.min(1, el / (J.mins * 60000));
-      J.vals = j.endless ? j.at(el) : j.survey ? j.at(el, J.seed) : journeyAt(j, f);
+      J.vals = j.endless ? j.at(el) : j.survey ? j.at(el, J.seed) : journeyAt(j, f, J);
       setLeadTarget(J.vals.b);
       if (!j.endless && f >= 1 && !J.arrived) {
         J.arrived = true;
@@ -3334,9 +3350,10 @@ export default function Chloe() {
   const endJourney = (J, j) => {
     const timers = endTimersRef.current;
     J.ending = true;
-    const fam = FAMILIES.find(fm => !fm.outside && fm.modes.includes(j.home));
-    if (fam) pick(fam, fam.modes.indexOf(j.home), j.home);
-    setLeadTarget(normalizedBrightness(j.home));
+    const home = J.release ?? j.home;
+    const fam = FAMILIES.find(fm => !fm.outside && fm.modes.includes(home));
+    if (fam) pick(fam, fam.modes.indexOf(home), home);
+    setLeadTarget(normalizedBrightness(home));
     setLoopOn(true);   // Auto stops picking
     const ac = getCtx(), g = ac.__masterTap?.gain;
     const settle = Math.max(4, 480 / stRef.current.bpm);
@@ -6342,7 +6359,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     const doBurst = () => {
       if (cancelled) return;
       const st = stRef.current;
-      if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm || JOURNEYS[journeyRef.current?.id]?.endless || riffHoldRef.current > Date.now()) { scheduleBurst(); return; }
+      if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm || JOURNEYS[journeyRef.current?.id]?.endless || JOURNEYS[journeyRef.current?.id]?.steady || riffHoldRef.current > Date.now()) { scheduleBurst(); return; }
       // Rise only ever pushes forward
       const fwd = JOURNEYS[journeyRef.current?.id]?.epic ? BURSTS.filter(x => x.f > 1) : BURSTS;
       const pool = smoothRef.current >= 0.5 ? fwd.filter(x => !x.snap) : fwd;
@@ -6382,8 +6399,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const catalogue = all.filter(e => !e.fam.outside);
 
       // Now and then, a passing outside scale (only when the outside toggle is on)
+      // The Wait picks its own scales, whatever the pool, and holds still once the pulse is over
+      const waitRun = JOURNEYS[journeyRef.current?.id]?.wait ? journeyRef.current : null;
+      const waitEl = waitRun ? Date.now() - waitRun.startMs : 0;
+      const waitPh = waitRun ? waitPhase(Math.min(1, waitEl / ((waitRun.mins ?? 15) * 60000)), waitRun.drop) : null;
+      const waitHold = !!waitRun && waitPh !== "pulse";
+
       let entry = null;
-      if (outsideOpts.length && !susPoolRef.current && Math.random() < OUTSIDE_CHANCE)
+      if (outsideOpts.length && !susPoolRef.current && !waitRun && Math.random() < OUTSIDE_CHANCE)
         entry = pickOutside(outsideOpts);
 
       // Journey: walk toward its brightness target one note at a time (a one-note
@@ -6401,7 +6424,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // Suspended pool: travel through every suspended scale before any repeats.
       // This comes before the worlds, likes, journey and EEG, which pick scales of
       // their own. A journey still leans the order toward its brightness.
-      if (susPoolRef.current) {
+      if (waitRun) {
+        const regular = activeFamiliesRef.current.filter(fm => !fm.outside);
+        const pool = regular.filter(fm => fm.n >= 5).flatMap(fm => fm.modes.map((pat, i) => ({ fam: fm, modeIdx: i, pat }))).filter(e => isSuspended(e.pat));
+        const pat = waitPattern(waitRun, waitPh, cur?.pattern ?? null, pool);
+        const fam = regular.find(fm => fm.modes.includes(pat));
+        if (fam) entry = { fam, modeIdx: fam.modes.indexOf(pat), pat };
+        setSusTour(null);
+      } else if (susPoolRef.current) {
         const sus = all.filter(e => isSuspended(e.pat));
         const stop = nextSusStop(sus, susSeenRef.current, cur?.pattern ?? null,
           jb === null ? undefined : e => 4 * Math.abs(normalizedBrightness(e.pat) - jb));
@@ -6455,7 +6485,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const rhythm     = RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
       const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
       const voices = susPoolRef.current ? SUS_VOICES : VOICES;
-      const chordVoice = voices[Math.floor(Math.random() * voices.length)];
+      const chordVoice = waitRun ? WAIT_VOICE[waitPh] : voices[Math.floor(Math.random() * voices.length)];
       const likeT = likes.length ? likedMean(likes, "bpm", true) : null;
       const bendT = b => { if (likeT) b *= Math.pow(likeT.v / b, likeT.k * 0.5); return desert ? b * Math.pow(66 / b, 0.5) : ocean ? b * Math.pow(60 / b, 0.5) : jungle ? b * Math.pow(96 / b, 0.5) : thunder ? b * Math.pow(72 / b, 0.5) : cave ? b * Math.pow(68 / b, 0.5) : temple ? b * Math.pow(60 / b, 0.5) : arctic ? b * Math.pow(64 / b, 0.5) : mountain ? b * Math.pow(88 / b, 0.5) : carnival ? b * Math.pow(120 / b, 0.6) : celtic ? b * Math.pow(116 / b, 0.6) : nightdrive ? b * Math.pow(112 / b, 0.6) : fire ? b * Math.pow(100 / b, 0.6) : b; };
       let bpm          = Math.round(bendT(driftBpm(stRef.current.bpm)));
@@ -6463,14 +6493,16 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const ac = getCtx();
       if (ac.state === "suspended") ac.resume();
 
-      pick(entry.fam, entry.modeIdx, entry.fam.modes[entry.modeIdx]);
+      // (picking the scale already playing would restart the arpeggio)
+      if (!waitRun || cur?.pattern !== entry.pat) pick(entry.fam, entry.modeIdx, entry.fam.modes[entry.modeIdx]);
       const _al = autoLocksRef.current;
+      if (waitRun && _al.chordVoice) setChordVoice(chordVoice);
       const J0 = journeyRef.current;
       const gap = monasticModeRef.current ? 180000 : 12000 + Math.random() * 4000;
       // Smooth: each setting changes on fewer picks (down to 40%) and at its own
       // moment somewhere in the gap before the next pick, never all at once
       const sm = smoothRef.current;
-      const maybe = () => Math.random() < 1 - 0.6 * sm;
+      const maybe = () => !waitHold && Math.random() < 1 - 0.6 * sm;   // The Wait: nothing else moves once the pulse is over
       const later = (fn) => {
         if (!sm) { fn(); return; }
         laterTs.push(setTimeout(() => { if (!cancelled) fn(); }, Math.random() * sm * gap * 0.9));
@@ -6487,7 +6519,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const epicJ = !!J0?.vals && JOURNEYS[J0.id]?.epic;
       const SOFT = ["space", "space", "sine", "piano", "triangle", "duduk"];
       const BOLD = ["guitar", "guitar", "sawtooth", "sawtooth", "piano", "square", "xylo"];
-      const only = sleepJ ? SOFT : epicJ ? BOLD : null;
+      const only = sleepJ || waitRun ? SOFT : epicJ ? BOLD : null;
       const curSnd = stRef.current.instrument || stRef.current.timbre;
       if (_al.sound && only && !only.includes(curSnd)) {
         const s = only[Math.floor(Math.random() * only.length)];
@@ -6544,7 +6576,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         }
       }
       // Smooth: the beat sometimes rests for 1-3 picks, fading out and back in
-      if (_al.beat && sm && stRef.current.beatStyle !== "off") {
+      if (_al.beat && sm && stRef.current.beatStyle !== "off" && !waitRun) {
         if (beatRestRef.current) { if (Date.now() > beatRestRef.current) beatRestRef.current = 0; }
         else if (Math.random() < 0.25 * sm) { const until = Date.now() + gap * (1 + Math.floor(Math.random() * 3)); later(() => { beatRestRef.current = until; }); }
       } else beatRestRef.current = 0;
@@ -6555,7 +6587,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.bpm && J?.vals && riffHoldRef.current > Date.now()) { /* a Rise riff owns the tempo */ }
       else if (_al.bpm && J?.vals) {
         const jb = bendT(J.homeBpm * J.vals.t);
-        const to = Math.round(Math.min(240, Math.max(40, stRef.current.autoTempo === "drift" ? jb * (0.95 + Math.random() * 0.1) : jb)));
+        const to = Math.round(Math.min(240, Math.max(40, stRef.current.autoTempo === "drift" && !JOURNEYS[J.id]?.steady ? jb * (0.95 + Math.random() * 0.1) : jb)));
         bpm = to;
         later(() => { if (burstHome !== null) burstHome = to; else setBpm(to); });
       } else if (_al.bpm && stRef.current.autoTempo === "drift" && maybe()) later(() => setBpm(bpm));
@@ -6584,7 +6616,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (delayRef.current) { const fb = J?.vals?.fb ?? 0.4; later(() => glideParam(delayRef.current?.feedbackGain.gain, fb)); }
       if (_al.sustain && J?.vals) { const su = parseFloat((J.vals.su * (0.85 + Math.random() * 0.3)).toFixed(2)); later(() => setSustainMult(su)); }
       else if (_al.sustain && maybe()) { const su = [0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.2, 1.5, 2.0][Math.floor(Math.random() * 9)]; later(() => setSustainMult(su)); }
-      if (_al.droneOn && maybe())   { const on = likedPick(likes, "droneOn") ?? Math.random() > (epicJ ? 0.15 : 0.35); later(() => setDroneOn(on)); }
+      if (_al.droneOn && !waitRun && maybe())   { const on = likedPick(likes, "droneOn") ?? Math.random() > (epicJ ? 0.15 : 0.35); later(() => setDroneOn(on)); }
       // In a world, Auto picks among the world's own drones
       const drones0 = sleepJ ? ["sine", "pad", "dam"] : epicJ ? ["organ", "strings"] : ["sine", "organ", "pad", "strings", "tanpura", "throat", "jawharp", "juno", "dam"];
       const drones = WORLDS[stRef.current.world]?.drones ?? drones0;
@@ -6628,7 +6660,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         ts: Date.now(),
       }, ...prev].slice(0, 200));
 
-      timeout = setTimeout(pickNext, gap);
+      // The Wait: never sleep past the drop
+      const toDrop = waitRun && waitPh !== "release" ? waitRun.drop * (waitRun.mins ?? 15) * 60000 - waitEl + 50 : Infinity;
+      timeout = setTimeout(pickNext, Math.max(200, Math.min(gap, toDrop)));
     };
 
     const laterTs = [];
@@ -7017,6 +7051,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       rise: "Builds and builds: bright, driving and big. For energy.",
       endless: "Never ends. A slow, calm wander, for sleep.",
       map: "For measuring with a headband: everything takes a turn, in a shuffled order.",
+      wait: "A pulse falls away, and the music holds with no 3rd, waiting. Then one note arrives.",
     };
     const play = () => {
       wake();
