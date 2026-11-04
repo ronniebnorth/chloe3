@@ -2354,7 +2354,7 @@ function Lbl({ children, K }) {
 // Help modal
 const HELP_SECTIONS = [
   { title: "WHAT IS CHLOE?", body: "Chloe generates every possible scale from 3 to 8 notes. Scales with 3 or more notes in a row a semitone apart are kept apart as outside scales: they're hidden unless you switch on outside, under the scale search, and then Auto uses them about one pick in three, like passing tones. Use it to hear how different scales sound over a drone note and develop your ear for modal colour. It has two doors: Listen, where you pick a journey and press play, and the Studio, with every scale and setting. This help covers both." },
-  { title: "LISTEN", body: "The simple page: pick a journey, press ▶, and Chloe plays it. The stage at the top shows the light show, the journey's path and a dot for where you are on it. Under the journey cards: LENGTH (5, 15, 30 or 60 minutes; Endless has none), and orchestra, drums and drone switches. The world row sets the surroundings (see WORLDS). While drums are on, a row picks their feel; wander lets them roam across every style. The sleep timer (15 to 90 minutes) stops the music, fading out over the last 90 seconds. While it plays, ♥ more of this steers Chloe toward what you're hearing; in Map it only marks the moment. ⏺ record this journey saves a WAV. On the DRAW card, draw your line straight on the stage, and clear and copy link appear beside LENGTH. STUDIO → goes to the full app, and LISTEN in the Studio's top bar comes back." },
+  { title: "LISTEN", body: "The simple page: pick a journey, press ▶, and Chloe plays it. The stage at the top shows the light show, the journey's path and a dot for where you are on it. Under the journey cards: LENGTH (5, 15, 30 or 60 minutes; Endless has none), and orchestra, drums and drone switches. The world row sets the surroundings (see WORLDS). While drums are on, a row picks their feel; wander lets them roam across every style. The sleep timer (15 to 90 minutes) stops the music, fading out over the last 90 seconds. While it plays, ♥ more of this steers Chloe toward what you're hearing; in Map it only marks the moment. ⏺ record this journey saves a WAV. copy link beside LENGTH copies a link to the journey with your current sound; whoever opens it presses ▶, and Auto makes its own picks, so the shape is the same but not every note. On the DRAW card, draw your line straight on the stage; clear appears beside LENGTH, and the link carries your line. STUDIO → goes to the full app, and LISTEN in the Studio's top bar comes back." },
   { title: "BINARY NOTATION", body: "Each scale is a 12-bit binary string, one bit per chromatic semitone from the root. 1 = active, 0 = inactive. The number in brackets e.g. (2741) is the decimal value of that string. Scales are grouped into families sharing the same interval structure - e.g. hep-6 contains all 7 standard modes." },
   { title: "BRIGHTNESS SORTING", body: "Within each family, modes are sorted bright to dark by summing their active semitone positions (raw brightness). Lydian scores highest (raised 4th), Locrian lowest (flatted 2nd and 5th). This mirrors the circle-of-fifths: Lydian → Ionian → Mixolydian → Dorian → Aeolian → Phrygian → Locrian. The sidebar and scale list show the raw brightness score (e.g. Dorian = 36). The EEG system uses a separate normalized brightness (0.0–1.0) that adjusts for note count, so pentatonics and tetratonics are comparable to heptatonics — Dorian normalizes to exactly 0.5 as the neutral midpoint." },
   { title: "SCALE WHEEL", body: "The circle shows all 12 chromatic notes. Active tones are highlighted and connected by a polygon. Wide polygons = sparse scales. Compact polygons = denser chromatic scales. A perfect regular polygon = equal temperament." },
@@ -2882,7 +2882,7 @@ export default function Chloe() {
     return drawnLine;
   });
   const [drawTouched, setDrawTouched] = useState(() => !!decodeLine(new URLSearchParams(window.location.search).get("jl")));
-  const [drawCopied, setDrawCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState("");   // Listen page: "", "copied" or "couldn't copy"
   const drawLast = useRef(null);
   const showLine = (l) => { drawnLine = l; setDrawLine(l); };
   // The stage's line sits in a 600 × 120 box with 10 of padding
@@ -7411,10 +7411,17 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 18 }}>
           {J === "endless" ? <span style={{ color: K.t2, fontSize: 11 }}>∞ plays until you stop it</span>
             : JOURNEY_MINS.map(m => <button key={m} onClick={() => setJourneyMins(m)} style={chip(journeyMins === m)}>{m} min</button>)}
-          {J === "draw" && <>
-            <button onClick={() => { showLine(defaultLine()); setDrawTouched(false); }} title="Back to the gentle hill" style={chip(false)}>clear</button>
-            <button onClick={() => { const u = new URL(buildURL()); u.searchParams.set("view", "listen"); u.searchParams.set("jo", "draw"); u.searchParams.set("jl", encodeLine(drawnLine)); navigator.clipboard?.writeText(u.toString()); setDrawCopied(true); setTimeout(() => setDrawCopied(false), 2000); }} title="Copy a link that plays this line" style={chip(false)}>{drawCopied ? "copied" : "copy link"}</button>
-          </>}
+          {J === "draw" && <button onClick={() => { showLine(defaultLine()); setDrawTouched(false); }} title="Back to the gentle hill" style={chip(false)}>clear</button>}
+          <button onClick={() => {
+            // Set the journey outright: the page shows Dawn while nothing is chosen yet
+            const u = new URL(buildURL());
+            u.searchParams.set("view", "listen");
+            u.searchParams.set("jo", J);
+            if (journeyMins !== 15) u.searchParams.set("jm", journeyMins); else u.searchParams.delete("jm");
+            if (J === "draw") u.searchParams.set("jl", encodeLine(drawnLine));
+            const done = msg => { setLinkCopied(msg); setTimeout(() => setLinkCopied(""), 2000); };
+            (navigator.clipboard ? navigator.clipboard.writeText(u.toString()) : Promise.reject()).then(() => done("copied"), () => done("couldn't copy"));
+          }} title="Copy a link to this journey with your current sound" style={chip(false)}>{linkCopied || "copy link"}</button>
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSymphonic(v => !v); if (!symphonic) getOrchestra(getCtx()); }} style={chip(symphonic)}>orchestra</button>
           <button onClick={() => { const v = beatStyle === "off" ? (J === "endless" ? "brushes" : JOURNEYS[J].epic ? "drive" : "downtempo") : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
