@@ -2906,9 +2906,7 @@ export default function Chloe() {
   const toggleRecRef = useRef(null);
   const energyRef = useRef(0);        // orchestra tension energy, shared with Auto
   const autoOnRef = useRef(false);
-  const tempoSnapRef = useRef(false); // next BPM change jumps instead of gliding
   const beatStepHookRef = useRef(null); // the jaw harp plucks on the beat's 16ths: (ac, time, step, stepDur)
-  const leadTempoRef = useRef(1);       // lead-only burst: the lead plays at this × the band's tempo
   const [morphSemis, setMorphSemis] = useState(null);
   const [expanded,   setExpanded]   = useState(new Set(["hep"]));
   const [sidebarW,   setSidebarW]   = useState(_u.sidebarW   ?? 520);
@@ -3320,6 +3318,8 @@ export default function Chloe() {
         if (!smoothRef.current) setSmooth(0.7);   // so the drums fall away instead of stopping dead
         // It needs a pulse to take away, and a drone to hold the root through the wait
         if (autoLocksRef.current.droneOn) setDroneOn(true);
+        if (autoLocksRef.current.rhythm) setRhythm("even");
+        if (autoLocksRef.current.grouping) setGrouping(0);
         if (autoLocksRef.current.beat && stRef.current.beatStyle === "off") { setBeatStyle("downtempo"); getKit(getCtx()); }
       }
     }
@@ -3900,11 +3900,6 @@ export default function Chloe() {
       const { bpm: target, tempoGlide: on } = stRef.current;
       const now = performance.now();
       if (!on || tg.cur === null) { tg.cur = tg.from = tg.to = target; tg.dur = 0; return target; }
-      if (target !== tg.to && tempoSnapRef.current) {
-        tempoSnapRef.current = false;
-        tg.cur = tg.from = tg.to = target; tg.dur = 0;
-        return target;
-      }
       if (target !== tg.to) {
         tg.from = tg.cur; tg.to = target; tg.t0 = now;
         tg.dur = 1000 * (1 + smoothRef.current) * Math.max(4, Math.min(30, 12 * Math.abs(Math.log2(target / tg.from))));
@@ -4300,7 +4295,7 @@ export default function Chloe() {
       for (let o = 0; o < aOct; o++) baseNotes.forEach(n => notes.push(n + o * 12));
       melPrevRef.current = Math.min(melPrevRef.current, notes.length - 1);
       // Celtic: the melody runs in jig triplets (three to the beat)
-      const eighth = 60000 / (playBpm() * leadTempoRef.current) / (isCeltic(stRef.current) ? 3 : 2);
+      const eighth = 60000 / playBpm() / (isCeltic(stRef.current) ? 3 : 2);
       const isChord = cv !== "off";  // "rand" also counts as chord
       const G = stRef.current.grouping || 0;
       // Group size changed mid-group (Auto or a click): start a fresh group,
@@ -6342,17 +6337,15 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       return Math.round(Math.min(240, Math.max(60, next)));
     };
 
-    // Bursts: tempo holds at home; every 20-60 s a 2-4 bar surprise, then back.
-    // Double/half time snap in and out; push/pull glide.
+    // Bursts: tempo holds at home; every so often a 4-8 bar push or pull, gliding there
+    // and back. (Double and half time used to snap in and out; they broke the groove.)
     // Every 45-120 s (longer with Smooth), 4-8 bars. With Smooth at half or more,
     // no double/half-time snaps, only the gentle push and pull. Double and half
     // time are mostly the lead's alone (it races or lags over a band that keeps
     // its tempo); now and then, and for push and pull, everything moves.
     const BURSTS = [
-      { f: 2,    snap: true,  w: 30 },  // double time
-      { f: 1.15, snap: false, w: 35 },  // push
-      { f: 0.87, snap: false, w: 25 },  // pull back
-      { f: 0.5,  snap: true,  w: 10 },  // half time
+      { f: 1.15, w: 35 },  // push
+      { f: 0.87, w: 25 },  // pull back
     ];
     let burstT = null, burstHome = null;
     const scheduleBurst = () => { burstT = setTimeout(doBurst, (45000 + Math.random() * 75000) * (1 + smoothRef.current)); };
@@ -6362,28 +6355,16 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (st.autoTempo !== "bursts" || !autoLocksRef.current.bpm || JOURNEYS[journeyRef.current?.id]?.endless || JOURNEYS[journeyRef.current?.id]?.steady || riffHoldRef.current > Date.now()) { scheduleBurst(); return; }
       // Rise only ever pushes forward
       const fwd = JOURNEYS[journeyRef.current?.id]?.epic ? BURSTS.filter(x => x.f > 1) : BURSTS;
-      const pool = smoothRef.current >= 0.5 ? fwd.filter(x => !x.snap) : fwd;
-      let r = Math.random() * pool.reduce((a, x) => a + x.w, 0), b = pool[0];
-      for (const x of pool) { if ((r -= x.w) < 0) { b = x; break; } }
+      let r = Math.random() * fwd.reduce((a, x) => a + x.w, 0), b = fwd[0];
+      for (const x of fwd) { if ((r -= x.w) < 0) { b = x; break; } }
       const bars = 4 + Math.floor(Math.random() * 5);
-      if (b.snap && Math.random() < 0.75) {
-        leadTempoRef.current = Math.min(480, Math.max(40, st.bpm * b.f)) / st.bpm;
-        burstT = setTimeout(() => {
-          if (cancelled) return;
-          leadTempoRef.current = 1;
-          scheduleBurst();
-        }, bars * 4 * 60000 / st.bpm);
-        return;
-      }
       burstHome = st.bpm;
       const to = Math.round(Math.min(480, Math.max(40, burstHome * b.f)));
-      tempoSnapRef.current = b.snap;
       setBpm(to);
       burstT = setTimeout(() => {
         if (cancelled) return;
         // A Rise riff took the tempo over mid-burst: leave it there
         if (riffHoldRef.current > Date.now()) { burstHome = null; scheduleBurst(); return; }
-        tempoSnapRef.current = b.snap;
         setBpm(burstHome); burstHome = null;
         scheduleBurst();
       }, bars * 4 * 60000 / to);
@@ -6403,7 +6384,6 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const waitRun = JOURNEYS[journeyRef.current?.id]?.wait ? journeyRef.current : null;
       const waitEl = waitRun ? Date.now() - waitRun.startMs : 0;
       const waitPh = waitRun ? waitPhase(Math.min(1, waitEl / ((waitRun.mins ?? 15) * 60000)), waitRun.drop) : null;
-      const waitHold = !!waitRun && waitPh !== "pulse";
 
       let entry = null;
       if (outsideOpts.length && !susPoolRef.current && !waitRun && Math.random() < OUTSIDE_CHANCE)
@@ -6502,15 +6482,16 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       // Smooth: each setting changes on fewer picks (down to 40%) and at its own
       // moment somewhere in the gap before the next pick, never all at once
       const sm = smoothRef.current;
-      const maybe = () => !waitHold && Math.random() < 1 - 0.6 * sm;   // The Wait: nothing else moves once the pulse is over
+      const maybe = () => !waitRun && Math.random() < 1 - 0.6 * sm;   // The Wait: only its shape moves, so the pulse can become a clock
+      const rarely = () => Math.random() < 0.25 && maybe();   // rhythm and groups can't blend, so they change about once a minute
       const later = (fn) => {
         if (!sm) { fn(); return; }
         laterTs.push(setTimeout(() => { if (!cancelled) fn(); }, Math.random() * sm * gap * 0.9));
       };
-      if (_al.rhythm && maybe())     later(() => setRhythm(rhythm));
+      if (_al.rhythm && rarely())    later(() => setRhythm(rhythm));
       if (_al.arpDir && maybe())     later(() => setArpDir(arpDir));
       // Off ~27% of the time; 5s, 6s and bar-filling mixes favoured
-      if (_al.grouping && maybe())   { const g = [0, 0, 0, 3, 5, 5, 6, 6, 7, "mix", "mix"][Math.floor(Math.random() * 11)]; later(() => setGrouping(g)); }
+      if (_al.grouping && rarely())  { const g = [0, 0, 0, 3, 5, 5, 6, 6, 7, "mix", "mix"][Math.floor(Math.random() * 11)]; later(() => setGrouping(g)); }
       if (_al.chordVoice && maybe()) later(() => setChordVoice(chordVoice));
       // Sound changes on ~40% of picks so it doesn't jump every time; instruments favoured over raw waves
       // Endless: soft sounds only, and a harsh one playing now is swapped out right away
@@ -6668,8 +6649,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     const laterTs = [];
     pickNext();
     return () => {
-      cancelled = true; clearTimeout(timeout); clearTimeout(burstT); laterTs.forEach(clearTimeout); beatRestRef.current = 0; leadTempoRef.current = 1;
-      if (burstHome !== null) { tempoSnapRef.current = false; setBpm(burstHome); }
+      cancelled = true; clearTimeout(timeout); clearTimeout(burstT); laterTs.forEach(clearTimeout); beatRestRef.current = 0;
+      if (burstHome !== null) setBpm(burstHome);
     };
   }, [autoOn]); // reads live state via stRef; getCtx/pick/set* are stable
 
@@ -7061,7 +7042,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         setSmooth(Math.max(smooth, 0.9));   // sleep: hide every seam
         if (!["sine", "pad", "dam"].includes(droneWave)) setDroneWave("pad");   // no tanpura buzz
       }
-      else if (JOURNEYS[J].epic) setSmooth(0.5);   // lively, but no double/half-time snaps
+      else if (JOURNEYS[J].epic) setSmooth(0.5);   // lively
       else if (!smooth) setSmooth(0.7);
       setDemoOn(false); setAutoOn(true);
     };
