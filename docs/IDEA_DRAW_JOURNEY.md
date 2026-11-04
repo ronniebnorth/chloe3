@@ -49,3 +49,27 @@ heard; fine detail won't. This is why it probably suits longer journeys. Not yet
 5. **Playing it on a Fire TV.** You can't draw there, but a link should open it. Untested.
 6. **Light.** The drawn line could also shape Bright, or the screen as room light. See the Light
    and Sound doc.
+
+## Ronnie's vision, after first playing it (2026-11-04)
+
+His words: *"Chloe just got a whole lot better, this is a trip. I imagine a future with multiple
+touch screens, drawing lines for each instrument as the music flows, orchestrating by the
+brightness and darkness of each. And a child can draw a line, which makes a song. I have a lot of
+testing to do, to make sure it works best, but it does work. Probably need a user calibration
+feature, but that's later. Hell, I could make a webcam follow a conductor's hands and do the same."*
+
+Nothing here is built. Notes for when he gets to it, after his testing:
+
+- **A line per instrument.** The catch: Chloe plays one scale at a time, so if each instrument's
+  brightness picked its own scale they'd clash. Options: one master line sets the scale, and the
+  others set each instrument's register, density or level; or every instrument shares a root and
+  takes a different mode of it, which is richer but riskier. Try by ear; the second is the
+  interesting experiment.
+- **Live drawing.** Today's line is drawn ahead of the music, though it can be redrawn while it
+  plays. Drawing right at the moving dot turns it into playing an instrument.
+- **Conductor's hands by webcam.** Browser hand tracking (e.g. MediaPipe Hands) runs on an ordinary
+  webcam with no new hardware. Hand height feeds the line live, and two hands could mean two lines.
+  Slow moves suit it, since Chloe's scale picks take 12-16 s; tempo or level could respond faster.
+- **User calibration.** He hasn't said what it should calibrate yet: ask.
+- **"A child can draw a line, which makes a song."** Possibly the clearest one-sentence description
+  of Chloe so far.
