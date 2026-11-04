@@ -1109,14 +1109,15 @@ function makeHandDrum(ac, d) {
 // bendT s; the bayan's loose skin bends much more. click = the fingertip's
 // broadband tick ahead of the tone. damp = what's left of the drum's previous
 // ring when this stroke lands (fingers resting on the skin mute it: ti and ke
-// stop it dead, na's ring finger takes most of it, tin and tun lift off).
+// cut it hard but not dead, or a ti-ra-ki-ta leaves a moment of nothing; na's ring finger
+// takes most of it, tin and tun lift off).
 const TABLA_STROKES = {
   na:  { h: [0.3, 1, 0.75, 0.5, 0.35, 0.18], decay: 0.45, slap: 0.3, slapHz: 4200, click: 0.5, bend: 0.015, bendT: 0.025, beat: 1.6, damp: 0.25, g: 0.8 },
   tin: { h: [1, 0.55, 0.3, 0.15, 0.08],      decay: 0.6,  slap: 0.12, slapHz: 2800, click: 0.3, bend: 0.012, bendT: 0.03, beat: 1.2, damp: 0.5, g: 0.7 },
   tun: { h: [1, 0.3, 0.12, 0.05],            decay: 1.0,  slap: 0.06, slapHz: 2000, click: 0.2, bend: 0.01, bendT: 0.04, beat: 0.8, damp: 0.6, g: 0.75 },
-  ti:  { h: [0.6, 0.5, 0.3, 0.1],            decay: 0.03, slap: 0.55, slapHz: 1800, click: 0.6, bend: 0, bendT: 0.02, beat: 0, damp: 0, g: 0.45 },
+  ti:  { h: [0.6, 0.5, 0.3, 0.1],            decay: 0.03, slap: 0.55, slapHz: 1800, click: 0.6, bend: 0, bendT: 0.02, beat: 0, damp: 0.35, g: 0.45 },
   ge:  { h: [1, 0.3, 0.12], r: [1, 1.58, 2.3], decay: 0.55, slap: 0.08, slapHz: 900, click: 0.25, bend: 0.05, bendT: 0.06, beat: 0.6, damp: 0.4, g: 1 },
-  ke:  { h: [1, 0.2], r: [1, 1.58],          decay: 0.03, slap: 0.65, slapHz: 650, click: 0.4, bend: 0.03, bendT: 0.02, beat: 0, damp: 0, g: 0.55 },
+  ke:  { h: [1, 0.2], r: [1, 1.58],          decay: 0.03, slap: 0.65, slapHz: 650, click: 0.4, bend: 0.03, bendT: 0.02, beat: 0, damp: 0.4, g: 0.55 },
 };
 const TABLA_BAYAN = new Set(["ge", "ke"]);
 const TABLA_BUILT = { sr: 0, bufs: null };   // the built strokes, kept across AudioContext swaps
@@ -2365,7 +2366,7 @@ const HELP_SECTIONS = [
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
   { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from the pool you choose (named scales, all scales, or suspended, which travels through every suspended scale before repeating any), with a new pick every 12–16 seconds. A pick can change the arpeggio direction, chord voicing, sound, BPM, reverb, delay level and delay time. Rhythm and groups can't blend, so they change on only about 1 pick in 4. The key changes on about 1 pick in 8, mostly up a 4th or a 5th, but not in The Wait, Endless, Map or Rise (Celtic has its own lift of a whole step). AUTO TEMPO sets how the tempo moves: drift wanders in small steps, and bursts holds your BPM with a short push or pull now and then. The ⚙ menu has a tick for each thing Auto may change. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
   { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat); Wait = a steady pulse through suspended scales, then the drums fall away and one suspended scale holds with no 3rd, slowing and widening, until late in the journey the 3rd arrives, major or minor, and the pulse returns (it turns on a drone and, if there's no beat, a downtempo one. The drone travels too: a didgeridoo under the pulse, slowly becoming an airy pad over a low root, then blooming into strings at the drop, with the same 3rd. Untick Drone Type in ⚙ to keep your own drone instead. A very faint jet crosses during the pulse, and a high, distant one approaches through the last minute of the wait and passes overhead at the drop; untick Jet in ⚙ to leave them out). Draw = your own journey: draw a line on the Listen stage, high for bright, faster and drier, low for dark, slower and deeper; a gentle slope changes scales a note at a time and a steep cliff jumps; copy link shares it; Endless = no destination, a slow, calm wander that leans dark, with soft sounds, long notes, deep reverb and slow echoes, no tempo surprises or key changes, and percussion coming and going on its own. It never arrives, so it plays until you stop it (or the sleep timer does); Map = for measuring with a headband: brightness, tempo, energy and tension each move around their whole range on clocks of their own, the drums come and go and the worlds take turn about, so everything gets heard early and late in the session and ◇ patterns can compare them fairly. Best at 30 or 60 minutes, sitting still; it keeps shuffling until you stop it. LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto, and all but Endless and Map switch to Melody (untick Melody Mode in ⚙ to choose your own). Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
-  { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
+  { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later, or with the tabla, thins out to a few soft strokes and fills back in (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
   { title: "WORLDS", body: "A world brings a lead, a rhythm, a drone and its own leanings (scales, tempo, reverb) that belong together, and many add their own surroundings. Steppe: Mongolian fiddle and lute, shaman drums, throat singing or jaw harp. Desert: the duduk, a daf, the dam drone, Hijaz and friends. Ocean: whale song over waves, gulls and a buoy bell, no drums. Jungle: a kalimba over tuned log drums, insects, monkeys, gibbon songs, birds and frogs. Thunderstorm: a felt piano indoors while it rains; the storm builds with the music's tension, or with your mind through WEATHER if a headband is on (see EEG HEADBAND). Cave: a handpan, water drips tuned to the scale, the wind's breath, no drums. Temple: a bamboo flute, the wooden fish, monks chanting, singing bowls, the great bell. Arctic: a glass harmonica, wind over the ice, singing ice, wolves now and then. Mountain: a hammered dulcimer, birds, leaves, a brook, cowbells, an alphorn. Carnival: a steel pan over a samba drum section, the whistle, the crowd. Celtic: tin whistle and fiddle reels over a bodhrán in 6/8. Night drive: synthwave, a big saw lead, arpeggios, four on the floor. Fire circle: kalimba and wooden flute, a circle of hand drums, the didgeridoo, the fire, crickets. New wave: a DX7 electric piano, 1980s drums and synth bass, the Juno pad. Picking one sets its beat and drone; change them afterwards and the world stays, keeping its lead. WANDER drifts from world to world. WORLD is in the Studio's controls and on the Listen page." },
   { title: "ORCHESTRA", body: "SYMPHONIC in the Studio, orchestra on the Listen page, adds an orchestra under the line: a string section swells on chords built from the current scale, cellos drive a low pulse, a double bass holds the roots, timpani and taiko hit the changes, and violin and flute weave fast runs through it, all in a cathedral reverb. It uses real recorded samples, a one-time download of about 30 MB in all the first time you switch it on. It follows the music's energy, so it's at its fullest at the peak of Storm, and choosing Rise on the Listen page turns it on and marches it." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
@@ -4959,7 +4960,7 @@ export default function Chloe() {
     // scale while the bayan keeps the claps. Calm plays it softer and leaves the
     // ge's wrist alone; tension adds ti-ra-ki-ta flourishes (32nds) and pushes
     // the bayan up on the claps. ±10 velocity, ±4 ms.
-    const tb = { tarang: null };
+    const tb = { tarang: null, thin: 0 };
     const tablaSa = (st) => {   // the MIDI base putting Sa in 200-400 Hz
       let b = 48;
       const hz = b2 => st.aRef * 2 ** ((b2 + OFFS[st.rootIdx] - 69) / 12);
@@ -5025,7 +5026,15 @@ export default function Chloe() {
       src.onended = () => { try { p.disconnect(); rs.disconnect(); } catch {} };
     };
     const tablaStep = (K0, ac, i, bar, t, sd, st) => {
-      const calm = energy < 0.25, tense = energy > 0.6, soft = calm ? 0.8 : 1;
+      const calm = energy < 0.25, tense = energy > 0.6;
+      // Auto's rest thins the tabla out over a few bars and back instead of silencing it:
+      // the odd 16ths go first, then the even ones, the beats keep on, softer
+      const resting = beatRestRef.current && Date.now() < beatRestRef.current;
+      tb.thin += ((resting ? 1 : 0) - tb.thin) * 0.02;
+      const th = tb.thin, full = th < 0.2;
+      if (i % 4 && th > (i % 2 ? 0.33 : 0.66)) return;
+      // Calm eases it softer as the energy falls, rather than a step at one level
+      const soft = (0.8 + 0.2 * Math.min(1, energy / 0.4)) * (1 - 0.4 * th);
       const vv = v => (v + (Math.random() - 0.5) * 20) * soft, tt = () => t + (Math.random() - 0.5) * 0.008;
       const { b, f } = tablaSa(st), fb = f / 4 < 70 ? f / 2 : f / 4;
       const bol = (name, v, at = tt(), glide = 0) => {
@@ -5034,25 +5043,29 @@ export default function Chloe() {
       const tali = i === 0 || i === 4 || i === 12;
       const lift = !calm && tali && Math.random() < (tense ? 0.6 : 0.25) ? 1.06 + Math.random() * 0.06 : 0;
       // Tihai into the next sam
-      if (bar % 8 === 7 && i >= 1) {
+      if (full && bar % 8 === 7 && i >= 1) {
         if (i === 1) { bol("ge", vv(66)); return; }
         const k = (i - 2) % 5, rep = Math.floor((i - 2) / 5);
-        // The finger strokes are quiet and dry: played harder, so the line holds up against the theka
+        // The finger strokes are quiet and dry: played harder, so the line holds up against the
+        // theka, with a soft ge under each phrase so the low drum doesn't vanish for the bar
         bol(["ti", "ra", "ki", "ta", "dha"][k], [92, 88, 92, 78, 100][k] + rep * 8);
+        if (k === 0 || k === 2) bol("ge", vv(62));
         return;
       }
       // Tarang: the dayan sings the scale
-      if (i === 0) tb.tarang = lastBase?.length && (bar % 8 === 3 || (bar % 8 === 5 && Math.random() < 0.3))
+      if (i === 0) tb.tarang = full && lastBase?.length && (bar % 8 === 3 || (bar % 8 === 5 && Math.random() < 0.3))
         ? TARANG[Math.floor(Math.random() * TARANG.length)] : null;
       if (tb.tarang) {
         tabla(K0, ac, i % 2 ? "tin" : "na", scaleHz(st, tb.tarang[i], b), vv(i % 4 === 0 ? 94 : 78), tt());
+        // The claps, and a soft ge between them so the floor stays under the scale
         if (tali) tabla(K0, ac, "ge", fb, vv(84), tt(), lift);
+        else if (i % 2 === 0) tabla(K0, ac, "ge", fb, vv(62), tt());
         return;
       }
       const name = TEENTAL[i];
       bol(name, vv(i === 0 ? 112 : tali ? 98 : i === 8 ? 90 : 76), tt(), lift);
       // Tension: a ti-ra-ki-ta flourish in 32nds leading back to the claps
-      if (tense && (i === 3 || i === 11 || i === 15) && Math.random() < 0.35)
+      if (full && tense && (i === 3 || i === 11 || i === 15) && Math.random() < 0.35)
         ["ti", "ra", "ki", "ta"].forEach((s, j) => j && bol(s, vv(58 + j * 6), t + j * sd / 4));
     };
     // A synthesized hand drum through the kit's volume, distance and fade; to
@@ -6089,7 +6102,8 @@ export default function Chloe() {
       try {
         const st = stRef.current, sm = smoothRef.current, F = 1 + 7 * sm;
         const jv = journeyRef.current?.vals, style = st.beatStyle === "off" && jv?.dr === true ? "brushes" : st.beatStyle;   // map brings brushes to a drumless world
-        const resting = (beatRestRef.current && Date.now() < beatRestRef.current) || jv?.perc === false || jv?.dr === false;
+        // Auto's rest fades the drums out, except the tabla, which thins out instead (tablaStep)
+        const resting = (beatRestRef.current && Date.now() < beatRestRef.current && style !== "tabla") || jv?.perc === false || jv?.dr === false;
         const want = style === "off" || resting ? "off" : style;
         drumsNowRef.current = want;
         const playing = beatStyleNow !== null && beatStyleNow !== "off";
