@@ -1230,7 +1230,7 @@ function luteBuffer(ac, freq) {
   return buf;
 }
 
-function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend, analyserSend, out) {
+function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delaySend, analyserSend, out, when = 0) {
   vel *= SOUND_GAIN[instrument || timbre] ?? 1;
   // reverbSend / delaySend / analyserSend: AudioNode or null
   const dest = out || masterOut(ac);
@@ -1245,8 +1245,8 @@ function synthNote(ac, freq, vel, instrument, timbre, beatDur, reverbSend, delay
     if (delaySend) node.connect(delaySend);
     if (analyserSend) node.connect(analyserSend);
   };
-  const cleanup = (dur) => setTimeout(() => nodes.forEach(n => { try { n.disconnect(); } catch {} }), (dur + 0.5) * 1000);
-  const now = ac.currentTime;
+  const now = Math.max(when, ac.currentTime);
+  const cleanup = (dur) => setTimeout(() => nodes.forEach(n => { try { n.disconnect(); } catch {} }), (dur + 0.5 + now - ac.currentTime) * 1000);
 
   if (instrument === "piano") {
     const g = mkG();
@@ -4126,7 +4126,26 @@ export default function Chloe() {
     };
 
     let steppeInst = "lute", celticInst = "whistle", celticLeft = 32, fireInst = "kalimba", fireLeft = 32;
-    const playNote = (semi, dur, vel) => {
+    // The lead's clock: each note has an exact time on the audio clock, set from the
+    // last note's, and the timer only wakes up a little ahead of it. (A chain of
+    // plain timers lands a few ms late every note, and the lateness adds up, so the
+    // line slides against the drums.) With drums playing, the time is also nudged
+    // toward their nearest step, too little per note to hear, so the two stay locked.
+    const MEL_AHEAD = 0.06;
+    let melAt = 0, melAc = null;
+    const beatGrid = { ac: null, next: 0, step: 0 };   // kept by the beat loop while drums play
+    const melAfter = (ms) => {
+      const ac = getCtx();
+      // First note, a new audio context, or a long stall: start the clock from now
+      if (ac !== melAc || melAt < ac.currentTime - 0.25) { melAc = ac; melAt = ac.currentTime + 0.02; }
+      melAt += ms / 1000;
+      if (beatGrid.ac === ac && beatGrid.step > 0) {
+        const err = beatGrid.next + Math.round((melAt - beatGrid.next) / beatGrid.step) * beatGrid.step - melAt;
+        if (Math.abs(err) < beatGrid.step * 0.45) melAt += Math.max(-0.012, Math.min(0.012, err));
+      }
+      melTimeout = setTimeout(melTick, Math.max(0, (melAt - MEL_AHEAD - ac.currentTime) * 1000));
+    };
+    const playNote = (semi, dur, vel, strum = 0) => {
       const { rootIdx: ri, timbre: t, noteVol: nv, aRef: ar, tuning: tu } = stRef.current;
       const b = tg.cur ?? stRef.current.bpm;
       let inst = stRef.current.instrument;
@@ -4154,6 +4173,7 @@ export default function Chloe() {
       else if (isDesert(stRef.current)) inst = "duduk";
       leadNowRef.current = inst ?? t;
       const ac = getCtx();
+      const when = ac === melAc ? melAt + strum : ac.currentTime + strum;
       const rev = getOrCreateReverb(ac);
       const del = getOrCreateDelay(ac);
       const an = getOrCreateAnalyser(ac);
@@ -4178,8 +4198,8 @@ export default function Chloe() {
       // High notes are where it gets piercing: softer the higher they go (-3 dB an octave above F5)
       if (freq > 700) vel *= Math.sqrt(700 / freq);
       const delSend = sleep ? null : del.delayNode;  // ...and the dark bus its own delay send
-      if (sb.from) synthNote(ac, freq, vel * nv * Math.cos(x * Math.PI / 2), sb.from.inst, sb.from.t, beatDur, revSend, delSend, an.node, out);
-      synthNote(ac, freq, vel * nv * (sb.from ? Math.sin(x * Math.PI / 2) : 1), inst, t, beatDur, revSend, delSend, an.node, out);
+      if (sb.from) synthNote(ac, freq, vel * nv * Math.cos(x * Math.PI / 2), sb.from.inst, sb.from.t, beatDur, revSend, delSend, an.node, out, when);
+      synthNote(ac, freq, vel * nv * (sb.from ? Math.sin(x * Math.PI / 2) : 1), inst, t, beatDur, revSend, delSend, an.node, out, when);
       noteCountRef.current++;
       setPlaying(((semi % 12) + 12) % 12);  // grouped runs can dip below the root
     };
@@ -4203,10 +4223,8 @@ export default function Chloe() {
       const tones = buildChord(notes, rootNoteIdx, cv);
       // Slightly lower velocity per voice to avoid clipping
       const vMult = cv === "all" ? 0.4 : cv === "7th" ? 0.65 : cv === "triad" ? 0.7 : (cv === "sus2" || cv === "sus4") ? 0.72 : 0.8;
-      tones.forEach((semi, i) => {
-        // Very slight strum delay (0-18ms) for natural feel
-        setTimeout(() => playNote(semi, dur, vel * vMult), i * 18);
-      });
+      // Very slight strum (18 ms a note) for natural feel
+      tones.forEach((semi, i) => playNote(semi, dur, vel * vMult, i * 0.018));
       // Show all chord tones on the wheel
       setPlaying(tones[0] % 12);
     };
@@ -4268,7 +4286,7 @@ export default function Chloe() {
     let desertLeft = 5, desertHarm = 0, oceanLeft = 3, oceanFar = false, templeLeft = 2;
     let hushUntil = 0;   // a close thunder crack: the lead holds its breath
     const melTickBody = () => {
-      if (Date.now() < hushUntil) { setPlaying(null); melTimeout = setTimeout(melTick, hushUntil - Date.now()); return; }
+      if (Date.now() < hushUntil) { setPlaying(null); melAfter(hushUntil - Date.now()); return; }
       // Check for pending scale transition
       const pending = pendingSelRef.current;
       if (pending) {
@@ -4282,7 +4300,7 @@ export default function Chloe() {
           melPrevRef.current = 0;
           grp.pos = 0; grp.start = 0; grp.motif = null; grp.left = 0; grp.tick = 0; grp.pat = null;
           // Brief pause (breath) then continue
-          melTimeout = setTimeout(melTick, 350);
+          melAfter(350);
           return;
         }
       }
@@ -4313,12 +4331,12 @@ export default function Chloe() {
           oceanLeft = 2 + Math.floor(Math.random() * 4);
           oceanFar = Math.random() < 0.33;
           setPlaying(null);
-          melTimeout = setTimeout(melTick, eighth * (8 + Math.random() * 12));
+          melAfter(eighth * (8 + Math.random() * 12));
           return;
         }
         const durUnits = oceanLeft === 0 ? 12 : [4, 6, 6, 8, 10][Math.floor(Math.random() * 5)];
         playNote(pickMelNote(notes) - (oceanFar ? 24 : 12), durUnits, (0.16 + Math.random() * 0.1) * (oceanFar ? 0.6 : 1));
-        melTimeout = setTimeout(melTick, eighth * durUnits);
+        melAfter(eighth * durUnits);
         return;
       }
       // Temple: the flute plays a breath of 1-3 long notes, then silence (3-7 beats)
@@ -4326,12 +4344,12 @@ export default function Chloe() {
         if (--templeLeft < 0) {
           templeLeft = 1 + Math.floor(Math.random() * 3);
           setPlaying(null);
-          melTimeout = setTimeout(melTick, eighth * (6 + Math.random() * 8));
+          melAfter(eighth * (6 + Math.random() * 8));
           return;
         }
         const durUnits = templeLeft === 0 ? 10 + Math.floor(Math.random() * 4) : [4, 6, 6, 8][Math.floor(Math.random() * 4)];
         playNote(pickMelNote(notes), durUnits, 0.16 + Math.random() * 0.1);
-        melTimeout = setTimeout(melTick, eighth * durUnits);
+        melAfter(eighth * durUnits);
         return;
       }
       if (isDesert(stRef.current)) {
@@ -4340,7 +4358,7 @@ export default function Chloe() {
           const r = Math.random();
           desertHarm = r < 0.3 ? 2 : r < 0.6 ? -2 : 0;
           setPlaying(null);
-          melTimeout = setTimeout(melTick, eighth * (4 + Math.random() * 8));
+          melAfter(eighth * (4 + Math.random() * 8));
           return;
         }
         const durUnits = desertLeft === 0 ? 8 : [2, 3, 4, 4, 6][Math.floor(Math.random() * 5)];
@@ -4349,7 +4367,7 @@ export default function Chloe() {
         const li = melPrevRef.current, hi = li + desertHarm;   // pickMelNote's index (its octave lift kept)
         const NL = notes.length, hw = ((hi % NL) + NL) % NL;   // past either end: wrap an octave
         if (desertHarm) playNote(notes[hw] + 12 * Math.floor(hi / NL) + semi - notes[li], durUnits, vel * 0.6);
-        melTimeout = setTimeout(melTick, eighth * durUnits);
+        melAfter(eighth * durUnits);
         return;
       }
 
@@ -4418,7 +4436,7 @@ export default function Chloe() {
         playNote(degSemi(k), 1, vel);
         grp.pos = (grp.pos + 1) % grp.size;
         grp.tick++;
-        melTimeout = setTimeout(melTick, eighth);
+        melAfter(eighth);
       } else if (!mm) {
         // Arpeggio/chord step mode
         const { arpDir: ad, rhythm: rhy } = stRef.current;
@@ -4437,10 +4455,10 @@ export default function Chloe() {
         rhythmIdxRef.current++;
         if (isChord) {
           playChord(idx, mult * 2, 0.22, notes);
-          melTimeout = setTimeout(melTick, eighth * mult * 2);
+          melAfter(eighth * mult * 2);
         } else {
           playNote(notes[idx], mult, 0.22);
-          melTimeout = setTimeout(melTick, eighth * mult);
+          melAfter(eighth * mult);
         }
       } else {
         // Melody mode
@@ -4451,10 +4469,10 @@ export default function Chloe() {
           const vel = 0.14 + Math.random() * 0.12;
           if (Math.random() < 0.06) {
             setPlaying(null);
-            melTimeout = setTimeout(melTick, eighth * durUnits);
+            melAfter(eighth * durUnits);
           } else {
             playChord(idx, durUnits, vel, notes);
-            melTimeout = setTimeout(melTick, eighth * durUnits);
+            melAfter(eighth * durUnits);
           }
         } else {
           const semi = pickMelNote(notes);
@@ -4465,10 +4483,10 @@ export default function Chloe() {
           const vel = 0.12 + Math.random() * 0.16 + 0.06 * urg;
           if (Math.random() < 0.08 * (1 - urg)) {
             setPlaying(null);
-            melTimeout = setTimeout(melTick, eighth * durUnits);
+            melAfter(eighth * durUnits);
           } else {
             playNote(semi, durUnits, vel);
-            melTimeout = setTimeout(melTick, eighth * durUnits);
+            melAfter(eighth * durUnits);
           }
         }
       }
@@ -4480,7 +4498,7 @@ export default function Chloe() {
     // A style change cuts on a downbeat without stopping the clock: the next
     // bar for a click, the bar after a fill for Auto. With Smooth up, on/off
     // (and Auto's rests) fade over 1-8 s. beatStyleNow is the style actually playing.
-    let oceanT = null, beatT = null, beatNext = 0, beatStep = 0, beatBar = 0, beatStyleNow = null;
+    let oceanT = null, beatT = null, beatNext = 0, beatStep = 0, beatBar = 0, beatStyleNow = null, beatPrevT = 0;
     // Rise riffs (RISE_RIFFS): at the peaks, now and then, on a kit beat. The
     // tempo picks the key: the riff is sped up or slowed by whole semitones to
     // the one nearest the current tempo, Chloe's root moves to the riff's key (so
@@ -5913,19 +5931,21 @@ export default function Chloe() {
             if (want !== "off") rampBeat(getKit(ac), ac, 1, F / 2);
           }
         }
-        if (beatStyleNow === "off" || beatStyleNow === null) { beatNext = 0; }
+        if (beatStyleNow === "off" || beatStyleNow === null) { beatNext = 0; beatPrevT = 0; beatGrid.ac = null; beatGrid.step = 0; }
         else {
           const K0 = getKit(ac), { kit, snareKit } = K0;
           // Far and dreamy in Endless, fairly far for brushes, up close otherwise
           setBeatDistance(K0, JOURNEYS[journeyRef.current?.id]?.endless ? 0.9 : beatStyleNow === "brushes" ? 0.7 : 0);
           // A fresh context (the periodic swap) restarts its clock near 0: carry on
           // from where the pattern is instead of waiting for the old clock time
-          if (ac !== beatAc) { if (beatAc) beatNext = ac.currentTime + 0.05; beatAc = ac; }
+          if (ac !== beatAc) { if (beatAc) beatNext = ac.currentTime + 0.05; beatAc = ac; beatPrevT = 0; beatGrid.step = 0; }
           if (beatNext < ac.currentTime) {
             beatNext = ac.currentTime + 0.05; beatStep = 0; beatBar = 0;
             beatNoCrash = sm > 0 || beatInSoft;   // fading in: no crash on the way in
           }
           while (beatNext < ac.currentTime + 0.12) {
+            if (beatGrid.ac === ac && beatPrevT && beatNext > beatPrevT) beatGrid.step = beatNext - beatPrevT;
+            beatGrid.ac = ac; beatGrid.next = beatPrevT = beatNext;
             // The new style comes in on the downbeat with a crash, in time with the old one
             if (beatSwapTo && beatStep === 0 && (!beatPhraseRef.current || beatBar % 4 === 0)) {
               beatStyleNow = beatSwapTo; beatSwapTo = null; beatBar = 0; beatNoCrash = false;
@@ -6348,6 +6368,9 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       { f: 0.87, w: 25 },  // pull back
     ];
     let burstT = null, burstHome = null;
+    // Key changes: mostly up a 4th or a 5th (the root's closest neighbours), now and then a whole step
+    const KEY_MOVES = [5, 5, 5, 7, 7, 7, 2, 10];
+    const KEY_CHANCE = 1 / 8;   // of a pick: about every 2 minutes
     const scheduleBurst = () => { burstT = setTimeout(doBurst, (45000 + Math.random() * 75000) * (1 + smoothRef.current)); };
     const doBurst = () => {
       if (cancelled) return;
@@ -6579,6 +6602,12 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       if (_al.reverb && celtic) { const rv = parseFloat((0.35 + Math.random() * 0.15).toFixed(2)); later(() => setReverbAmt(rv)); }   // the session
       // ...and now and then the tune lifts a whole step
       if (_al.rootNote && celtic && Math.random() < 0.15) later(() => setRootIdx(r => (r + 2) % 12));
+      // Key changes, apart from where something else owns the root or it should hold still:
+      // Celtic (above), Rise (its riffs), Endless (sleep), The Wait, Map (it's measuring)
+      else if (_al.rootNote && !celtic && !sleepJ && !epicJ && !waitRun && !JOURNEYS[J?.id]?.survey && Math.random() < KEY_CHANCE) {
+        const mv = KEY_MOVES[Math.floor(Math.random() * KEY_MOVES.length)];
+        later(() => setRootIdx(r => (r + mv) % 12));
+      }
       if (_al.reverb && carnival) { const rv = parseFloat((0.3 + Math.random() * 0.15).toFixed(2)); later(() => setReverbAmt(rv)); }   // in the street
       if (_al.reverb && mountain) { const rv = parseFloat((0.45 + Math.random() * 0.15).toFixed(2)); later(() => setReverbAmt(rv)); }   // open air
       if (_al.reverb && arctic) { const rv = parseFloat((0.88 + Math.random() * 0.1).toFixed(2)); later(() => setReverbAmt(rv)); }   // the open ice
@@ -8847,7 +8876,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 { key: "delay",     label: "Delay" },
                 { key: "delayTime", label: "Delay Time" },
                 { key: "sustain",   label: "Sustain" },
-                { key: "rootNote",  label: "Root Note", demoOnly: true },
+                { key: "rootNote",  label: "Key Changes" },
               ]},
               { label: "ARPEGGIO / MELODY", items: [
                 { key: "rhythm",     label: "Rhythm" },
