@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { Soundfont, DrumMachine } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
-import { isSuspended, isSusQuery, susChord, susCoverage, SUS_INTERVAL } from "./suspended.js";
+import { isSuspended, isSusQuery, susChord, susCoverage, SUS_INTERVAL, nextSusStop } from "./suspended.js";
 
 /* ═══════════════════════════════════════════════════════
    SCALE ENGINE
@@ -2335,7 +2335,7 @@ const HELP_SECTIONS = [
   { title: "PLAYBACK", body: "Drone sustains the root note. DRONE OCT drops it 1–3 octaves. DRONE VOL sets its level independently. DRONE TYPE sets the drone sound: sine (clean + sub-octave), organ (additive harmonics), pad (detuned shimmer), strings (bowed saws with tremolo), tanpura (Indian root/fifth/octave pulsing). Play steps through the scale in Arpeggio or Melody mode. OCTAVES (1–3) expands playback across multiple octaves. Click the direction button to cycle: ascending, descending, or random. RHYTHM sets the note-spacing pattern: even, swing, gallop, waltz, or clave. Melody uses a weighted random walk with octave leaps. CHORD layers multiple scale tones per step: power (root+5th), sus2, triad, 7th, or all notes at once. If a heart rate sensor is connected, a ♥ button appears showing live BPM — click it to instantly set tempo to your heart rate." },
   { title: "SOUND", body: "All instruments are synthesised in the browser using Web Audio. piano = detuned triangle oscillators with harmonic decay. guitar = Karplus-Strong style noise burst. xylo = marimba-ratio harmonic partials. space = detuned sines with LFO vibrato. VOL sets note volume. REV adds convolution reverb. DEL sets delay wet level. D.T sets delay time in seconds (try 0.125, 0.25, 0.375, 0.5 for rhythmic values). A= sets concert pitch (432–440 Hz). BPM sets tempo." },
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
-  { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from all named scales, varying root note, rhythm, arpeggio direction, chord voicing, BPM, reverb, delay level, and delay time every 12–16 seconds. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
+  { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from the pool you choose (named scales, all scales, or suspended, which travels through every suspended scale before repeating any), varying root note, rhythm, arpeggio direction, chord voicing, BPM, reverb, delay level, and delay time every 12–16 seconds. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
   { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto. Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
   { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
@@ -3486,6 +3486,12 @@ export default function Chloe() {
   const [showAutoLocks, setShowAutoLocks] = useState(false);
   const customNamesRef = useRef({});
   useEffect(() => { customNamesRef.current = customNames; }, [customNames]);
+  // A third scale pool beside named / all: only suspended scales, toured in full
+  const [susPool, setSusPool] = useState(() => new URLSearchParams(window.location.search).get("pool") === "sus");
+  const susPoolRef = useRef(susPool);
+  useEffect(() => { susPoolRef.current = susPool; }, [susPool]);
+  const susSeenRef = useRef(new Set());   // heard this lap
+  const [susTour, setSusTour] = useState(null);  // { heard, total, lap } while touring
   const demoAllScalesRef = useRef(true);
   useEffect(() => { demoAllScalesRef.current = demoAllScales; }, [demoAllScales]);
   const selRowRef = useRef(null);
@@ -6037,7 +6043,7 @@ export default function Chloe() {
       for (const fam of activeFamiliesRef.current) {
         fam.modes.forEach((pat, mi) => {
           const name = KNOWN[pat] || cNames[pat];
-          if (name || allScales) {
+          if (susPoolRef.current ? isSuspended(pat) : (name || allScales)) {
             const semis = toSemis(pat);
             const ivs = semis.slice(1).map((v, i) => v - semis[i]).concat(12 - semis[semis.length - 1]);
             catalogue.push({ familyId: fam.id, modeIdx: mi, name: name || `${fam.id}.${mi}`, notes: fam.n, intervals: ivs.join("-"), pattern: pat });
@@ -6290,15 +6296,18 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (!autoOn) return;
     let cancelled = false;
     let timeout = null;
+    let susLap = 1;
+    susSeenRef.current = new Set();
 
     // Rebuilt each pick so the outside / all-scales toggles take effect mid-run
     const buildCatalogue = () => activeFamiliesRef.current.flatMap(fam =>
       fam.modes.map((pat, i) => ({ fam, modeIdx: i, pat }))
-    ).filter(({ fam, pat }) => fam.outside || demoAllScalesRef.current || KNOWN[pat] || customNamesRef.current[pat]);
+    ).filter(({ fam, pat }) => fam.outside || susPoolRef.current || demoAllScalesRef.current || KNOWN[pat] || customNamesRef.current[pat]);
 
     const RHYTHMS = ["even", "swing", "gallop", "waltz", "clave"];
     const DIRS    = ["asc", "desc", "rand"];
     const VOICES  = ["off", "off", "off", "power", "sus2", "triad"];
+    const SUS_VOICES = ["off", "off", "off", "sus2", "sus4"];   // a triad or power chord would add what these scales leave out
 
     // Tempo drifts: each pick moves at most ~±10% from the current BPM, pulled
     // a quarter of the way back toward the tempo Auto started at (in log space)
@@ -6367,7 +6376,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
 
       // Now and then, a passing outside scale (only when the outside toggle is on)
       let entry = null;
-      if (outsideOpts.length && Math.random() < OUTSIDE_CHANCE)
+      if (outsideOpts.length && !susPoolRef.current && Math.random() < OUTSIDE_CHANCE)
         entry = pickOutside(outsideOpts);
 
       // Journey: walk toward its brightness target one note at a time (a one-note
@@ -6382,6 +6391,17 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const afterStorm = thunder && Date.now() - stormRef.current.peakAt < 180000 && stormRef.current.I < 0.4;
       const bend = b => { if (b === null) return b; if (likeB) b += likeB.k * 0.6 * (likeB.v - b); return neon ? b + 0.35 * (0.7 - b) : b; };
       const jv = journeyRef.current?.vals, jb = jv ? bend(jv.b) : null;
+      // Suspended pool: travel through every suspended scale before any repeats.
+      // This comes before the worlds, likes, journey and EEG, which pick scales of
+      // their own. A journey still leans the order toward its brightness.
+      if (susPoolRef.current) {
+        const sus = all.filter(e => isSuspended(e.pat));
+        const stop = nextSusStop(sus, susSeenRef.current, cur?.pattern ?? null,
+          jb === null ? undefined : e => 4 * Math.abs(normalizedBrightness(e.pat) - jb));
+        entry = stop.entry;
+        if (stop.lapped) susLap++;
+        setSusTour({ heard: sus.filter(e => susSeenRef.current.has(e.pat)).length, total: sus.length, lap: susLap });
+      } else setSusTour(null);
       // Desert: mostly a Middle Eastern scale (in a journey, one near its brightness)
       if (!entry && (desert || ocean || jungle || thunder || cave || temple || arctic || mountain || carnival || celtic || nightdrive || fire) && Math.random() < 0.7) {
         const cands = (ocean || afterStorm ? OCEAN_SCALES : jungle ? JUNGLE_SCALES : thunder ? THUNDER_SCALES : cave ? CAVE_SCALES : temple ? TEMPLE_SCALES : arctic ? ARCTIC_SCALES : mountain ? MOUNTAIN_SCALES : carnival ? CARNIVAL_SCALES : celtic ? CELTIC_SCALES : nightdrive ? NIGHT_SCALES : fire ? FIRE_SCALES : DESERT_SCALES).map(([pat, w]) => ({ e: catalogue.find(e => e.pat === pat), w }))
@@ -6427,7 +6447,8 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       }
       const rhythm     = RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
       const arpDir     = DIRS[Math.floor(Math.random() * DIRS.length)];
-      const chordVoice = VOICES[Math.floor(Math.random() * VOICES.length)];
+      const voices = susPoolRef.current ? SUS_VOICES : VOICES;
+      const chordVoice = voices[Math.floor(Math.random() * voices.length)];
       const likeT = likes.length ? likedMean(likes, "bpm", true) : null;
       const bendT = b => { if (likeT) b *= Math.pow(likeT.v / b, likeT.k * 0.5); return desert ? b * Math.pow(66 / b, 0.5) : ocean ? b * Math.pow(60 / b, 0.5) : jungle ? b * Math.pow(96 / b, 0.5) : thunder ? b * Math.pow(72 / b, 0.5) : cave ? b * Math.pow(68 / b, 0.5) : temple ? b * Math.pow(60 / b, 0.5) : arctic ? b * Math.pow(64 / b, 0.5) : mountain ? b * Math.pow(88 / b, 0.5) : carnival ? b * Math.pow(120 / b, 0.6) : celtic ? b * Math.pow(116 / b, 0.6) : nightdrive ? b * Math.pow(112 / b, 0.6) : fire ? b * Math.pow(100 / b, 0.6) : b; };
       let bpm          = Math.round(bendT(driftBpm(stRef.current.bpm)));
@@ -6830,6 +6851,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (bpm !== 100) p.set("b",  bpm);
     if (filter)      p.set("f",  filter);
     if (sel)         p.set("s",  sel.id);
+    if (susPool)     p.set("pool", "sus");
     if (aRef !== 440) p.set("a", aRef);
     if (droneOct)    p.set("do", droneOct);
     if (droneOn)     p.set("dr", "1");
@@ -6857,7 +6879,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, beatWander, world, worldWander, weatherBrain, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
+  }, [susPool, rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, beatWander, world, worldWander, weatherBrain, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
 
   // Record button: start tapping the master output; stop → download the WAV
   const toggleRec = useCallback(async () => {
@@ -8099,18 +8121,30 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Scale pool toggle */}
             <div style={{ display: "flex", gap: 0, border: `1px solid ${K.br}`, borderRadius: 4, overflow: "hidden", marginBottom: 6 }}>
-              {[{ l: "named scales", v: false }, { l: "all scales", v: true }].map(opt => (
-                <button key={String(opt.v)} onClick={() => setDemoAllScales(opt.v)} style={{
-                  flex: 1, background: demoAllScales === opt.v ? K.bg3 : "transparent",
-                  color: demoAllScales === opt.v ? K.a : K.t2,
-                  border: "none", borderRight: !opt.v ? `1px solid ${K.br}` : "none",
-                  padding: "4px 4px", fontSize: 9, cursor: "pointer",
-                  fontFamily: "inherit", letterSpacing: 0.5,
-                  fontWeight: demoAllScales === opt.v ? 600 : 400,
-                  transition: "all .15s",
-                }}>{opt.l}</button>
-              ))}
+              {[{ l: "named scales", v: false }, { l: "all scales", v: true }, { l: "suspended", v: "sus" }].map(opt => {
+                const on = opt.v === "sus" ? susPool : !susPool && demoAllScales === opt.v;
+                return (
+                  <button key={String(opt.v)} title={opt.v === "sus" ? "Auto travels through every suspended scale (no 3rd, a 5th, a 2nd or 4th) before repeating any" : undefined}
+                    onClick={() => {
+                      if (opt.v === "sus") { if (!susPool) susSeenRef.current = new Set(); setSusPool(true); }
+                      else { setSusPool(false); setDemoAllScales(opt.v); }
+                    }} style={{
+                    flex: 1, background: on ? K.bg3 : "transparent",
+                    color: on ? K.a : K.t2,
+                    border: "none", borderRight: opt.v !== "sus" ? `1px solid ${K.br}` : "none",
+                    padding: "4px 4px", fontSize: 9, cursor: "pointer",
+                    fontFamily: "inherit", letterSpacing: 0.5,
+                    fontWeight: on ? 600 : 400,
+                    transition: "all .15s",
+                  }}>{opt.l}</button>
+                );
+              })}
             </div>
+            {autoOn && susPool && susTour && (
+              <div style={{ color: K.t2, fontSize: 9, marginBottom: 6 }}>
+                Suspended tour: {susTour.heard} of {susTour.total} heard{susTour.lap > 1 ? ` · lap ${susTour.lap}` : ""}
+              </div>
+            )}
             {/* Loop button — visible when Demo or Auto is running */}
             {(demoOn || autoOn) && (
               <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>

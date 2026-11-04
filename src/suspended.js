@@ -31,3 +31,24 @@ export const susCoverage = (p, voice) => {
   }
   return { full, n };
 };
+
+const bitsDiff = (a, b) => { let n = 0, x = a ^ b; while (x) { n += x & 1; x >>= 1; } return n; };
+
+// The next stop on a tour of the suspended scales: only scales not yet heard
+// this lap, leaning toward the fewest changed notes so it travels rather than
+// jumps. weigh(entry) can add a cost (a journey's brightness target, say).
+// seen is a Set of patterns; when everything's been heard it clears for a new
+// lap. Returns { entry, lapped }; entry is null with nothing to choose from.
+export const nextSusStop = (sus, seen, curPat, weigh = () => 0, rnd = Math.random) => {
+  let left = sus.filter(e => !seen.has(e.pat) && e.pat !== curPat);
+  const lapped = !left.length;
+  if (lapped) { seen.clear(); left = sus.filter(e => e.pat !== curPat); }
+  if (!left.length) return { entry: null, lapped: false };
+  let best = null, bestCost = Infinity;
+  for (const e of left) {
+    const cost = (curPat == null ? 0 : bitsDiff(e.pat, curPat)) + weigh(e) + rnd() * 1.5;
+    if (cost < bestCost) { bestCost = cost; best = e; }
+  }
+  seen.add(best.pat);
+  return { entry: best, lapped };
+};
