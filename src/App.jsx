@@ -3,6 +3,7 @@ import { Soundfont, DrumMachine } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
 import { isSuspended, isSusQuery, susChord, susCoverage, SUS_INTERVAL, nextSusStop } from "./suspended.js";
 import { NOISE_TYPES, noiseBuffer } from "./noise.js";
+import { defaultLine, drawnVals, paintLine, smoothLine, encodeLine, decodeLine } from "./drawn.js";
 import { waitVals, waitPhase, waitPattern, waitDroneMix, waitThirdFreq, waitJetNow, jetWhineBase, WAIT_VOICE, WAIT_DROP_MIN, WAIT_DROP_MAX } from "./wait.js";
 
 /* ═══════════════════════════════════════════════════════
@@ -2251,6 +2252,12 @@ JOURNEYS.map = { label: "map", home: 1709, survey: true,
 JOURNEYS.wait = { label: "wait", home: 1189, wait: true, steady: true, bpm: 84,
   tip: "Waiting for the drop: a steady pulse through suspended scales, then the drums fall away and one suspended scale holds, slowing and widening, with no 3rd anywhere. Late in the journey the 3rd finally arrives, one note, major or minor, and the pulse returns.",
   at: (f, drop) => waitVals(f, drop) };
+// Draw: a journey whose shape you draw on the Listen stage. The line lives here so the
+// journey clock, the cards and the stage all read the same one; it can change mid-journey.
+let drawnLine = defaultLine();
+JOURNEYS.draw = { label: "draw", drawn: true, steady: true, home: 1709,
+  tip: "Your own journey: draw a line on the Listen stage. High is bright, faster, drier; low is dark, slower, deeper. A gentle slope changes scales a note at a time, a steep cliff jumps.",
+  at: (f) => drawnVals(drawnLine, f) };
 const ENDLESS_WINDOW = 40 * 60000;   // how much of Endless a card or the stage draws
 const JOURNEY_MINS  = [5, 15, 30, 60];
 // Sleep timer: stop after this many minutes, fading out over the last SLEEP_FADE seconds
@@ -2265,6 +2272,7 @@ const RIFF_BPM = 116, RIFF_ROOT = 4, RIFF_BARS = 2, RIFF_GAIN = 0.6, RIFF_PRE = 
 const journeyAt = (j, f, run) => {
   if (j.endless) return j.at(f * ENDLESS_WINDOW);
   if (j.wait) return j.at(f, run?.drop);
+  if (j.drawn) return j.at(f);
   if (j.survey) return j.at(f * (run?.mins ?? 30) * 60000, run?.seed);   // a card draws a 30-minute run; the stage, this one
   const p = j.pts;
   let i = 0;
@@ -2354,7 +2362,7 @@ const HELP_SECTIONS = [
   { title: "SOUND", body: "All instruments are synthesised in the browser using Web Audio. piano = detuned triangle oscillators with harmonic decay. guitar = Karplus-Strong style noise burst. xylo = marimba-ratio harmonic partials. space = detuned sines with LFO vibrato. VOL sets note volume. REV adds convolution reverb. DEL sets delay wet level. D.T sets delay time in seconds (try 0.125, 0.25, 0.375, 0.5 for rhythmic values). A= sets concert pitch (432–440 Hz). BPM sets tempo." },
   { title: "SHARE / URL", body: "The share button encodes all settings into the URL and copies it to clipboard. Paste or bookmark to restore the exact session: scale, root, instrument, BPM, tuning, chord mode, and more." },
   { title: "⟲ AUTO MODE", body: "Auto mode explores scales automatically without needing an API key. It randomly picks from the pool you choose (named scales, all scales, or suspended, which travels through every suspended scale before repeating any), varying root note, rhythm, arpeggio direction, chord voicing, BPM, reverb, delay level, and delay time every 12–16 seconds. Each choice is logged in the demo log panel; click any entry to jump back to that scale. Use Loop to freeze on a scale you like, and Save to capture it." },
-  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat); Wait = a steady pulse through suspended scales, then the drums fall away and one suspended scale holds with no 3rd, slowing and widening, until late in the journey the 3rd arrives, major or minor, and the pulse returns (it turns on a drone and, if there's no beat, a downtempo one. The drone travels too: a didgeridoo under the pulse, slowly becoming an airy pad over a low root, then blooming into strings at the drop, with the same 3rd. Untick Drone Type in ⚙ to keep your own drone instead. A very faint jet crosses during the pulse, and a high, distant one approaches through the last minute of the wait and passes overhead at the drop; untick Jet in ⚙ to leave them out). LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto, and all but Endless and Map switch to Melody (untick Melody Mode in ⚙ to choose your own). Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
+  { title: "◇ JOURNEYS", body: "JOURNEY in the playback controls gives Auto a destination instead of wandering. Dawn = dark to bright; Dusk = bright to dark, slowing, with longer notes and deeper reverb; Descent = bright, down into the dark and back up; Storm = calm, a storm of clashing scales and faster tempo peaking about 60% of the way in (the orchestra at full energy if it's on), then calm; Rise = epic and energizing, a build to a big bright peak with one breath on the way, starting at its own 116 BPM, bold sounds, the orchestra driving and marching (choosing it in Listen turns on the orchestra and a drive beat); Wait = a steady pulse through suspended scales, then the drums fall away and one suspended scale holds with no 3rd, slowing and widening, until late in the journey the 3rd arrives, major or minor, and the pulse returns (it turns on a drone and, if there's no beat, a downtempo one. The drone travels too: a didgeridoo under the pulse, slowly becoming an airy pad over a low root, then blooming into strings at the drop, with the same 3rd. Untick Drone Type in ⚙ to keep your own drone instead. A very faint jet crosses during the pulse, and a high, distant one approaches through the last minute of the wait and passes overhead at the drop; untick Jet in ⚙ to leave them out). Draw = your own journey: draw a line on the Listen stage, high for bright, faster and drier, low for dark, slower and deeper; a gentle slope changes scales a note at a time and a steep cliff jumps; copy link shares it. LENGTH sets 5, 15, 30 or 60 minutes. Choosing a journey starts Auto, and all but Endless and Map switch to Melody (untick Melody Mode in ⚙ to choose your own). Near the target, scales change one note at a time (a note moves, or one is added or dropped), and tempo, reverb and note length follow the shape; everything else ticked in ⚙ still changes. Progress shows next to BRIGHT. On arrival it holds at the destination and keeps playing, unless ⏺ rec is running: then it settles on a home scale, fades out over 10 seconds and saves the WAV. Share links carry jo= and jm=." },
   { title: "SMOOTH", body: "The SMOOTH slider in Auto's ⚙ menu hides where Auto's changes happen. At 0 every setting changes together on each pick. Turned up, each setting changes at its own moment between picks, fewer change each time (about 4 in 10 at 100%), reverb, delay and drone levels glide, the sound crossfade stretches to 12 seconds, scales morph note by note at up to half speed, the drone fades in and out, and the beat fades instead of cutting. Now and then Auto rests the beat: it fades out and comes back in a little later (untick Beat Style in ⚙ to stop that). Links carry it as sm= (0-100)." },
   { title: "★ DEMO MODE", body: "Demo mode uses the Claude AI API to autonomously explore scales with live commentary. Claude controls root, rhythm, direction, chord voicing, BPM, reverb, delay level, and delay time — choosing musically varied combinations and explaining its thinking. Commentary and feature requests (✦) appear in the Claude Chat panel, not the banner — the banner shows a one-line parameter summary only. If an EEG headband is connected (see EEG MODE), the scale is pre-selected algorithmically by brightness matching before Claude is called — Claude then articulates the selection rather than picking freely, and can override with justification. Without EEG, Claude picks scales freely. A chat box appears while Demo is running: type anything to direct the music — e.g. 'play something dark and slow', 'go to Lydian', or 'sync BPM to my heart rate'. Claude can lock BPM to your live heart rate and track it each cycle until you ask it to stop. Enter your Anthropic API key when prompted (console.anthropic.com → API Keys). Your key is stored in your browser only." },
   { title: "EEG HEADBAND", body: "Chloe reads a headband through BERM Bridge (berm.live), which works with a Muse 2 or Muse S and serves the brain data on this computer (localhost:8520). When it's coming in, the World row says 'headband on'. What it drives: the thunderstorm's WEATHER. Calm it = a busy mind (beta + gamma against alpha + theta) brings the storm on and settling clears it; Ride it = the reverse. It learns your own range over ~20 s and the storm follows over ~20 s. Journeys keep their own shape (the headband doesn't steer them). In the Studio, the brightness bar shows the EEG target, and the session log records your brain alongside the scales. A heart rate from the headband shows as a ♥ BPM button in the playback controls." },
@@ -2862,6 +2870,21 @@ export default function Chloe() {
   // Journey — see JOURNEYS above. journeyRef holds the live run while Auto plays one
   const [journey,     setJourney]     = useState(_u.journey ?? "off");
   const [journeyMins, setJourneyMins] = useState(_u.journeyMins ?? 15);
+  // The drawn line, from a link if it brought one
+  const [drawLine, setDrawLine] = useState(() => {
+    const l = decodeLine(new URLSearchParams(window.location.search).get("jl"));
+    if (l) drawnLine = l;
+    return drawnLine;
+  });
+  const [drawTouched, setDrawTouched] = useState(() => !!decodeLine(new URLSearchParams(window.location.search).get("jl")));
+  const [drawCopied, setDrawCopied] = useState(false);
+  const drawLast = useRef(null);
+  const showLine = (l) => { drawnLine = l; setDrawLine(l); };
+  // The stage's line sits in a 600 × 120 box with 10 of padding
+  const drawPoint = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return { f: ((e.clientX - r.left) / r.width * 600 - 10) / 580, h: 1 - ((e.clientY - r.top) / r.height * 120 - 10) / 100 };
+  };
   // 0 = off. Remembered between visits; a link can set it with sl=
   const [sleepMins, setSleepMins] = useState(() => {
     if (_u.sleepMins) return _u.sleepMins;
@@ -7086,6 +7109,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (worldWander) p.set("ww", "1");
     if (weatherBrain !== "off") p.set("wb", weatherBrain);
     if (world !== "off" || ["shaman", "desert", "newwave", "jungle"].includes(beatStyle) || ["throat", "jawharp", "juno", "dam"].includes(droneWave)) p.set("wo", world);
+    if (journey === "draw") p.set("jl", encodeLine(drawLine));
     if (journey !== "off") { p.set("jo", journey); if (journeyMins !== 15) p.set("jm", journeyMins); if (sleepMins) p.set("sl", sleepMins); }
     if (smooth) p.set("sm", Math.round(smooth * 100));
     // Only differences from the defaults travel: al = unticked, an = ticked-but-off-by-default
@@ -7096,7 +7120,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
     if (sidebarW !== 520) p.set("sw", sidebarW);
     const qs = p.toString();
     return window.location.origin + window.location.pathname + (qs ? "?" + qs : "");
-  }, [susPool, rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, beatWander, world, worldWander, weatherBrain, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
+  }, [drawLine, susPool, rootIdx, timbre, instrument, noteVol, reverbAmt, delayAmt, sustainMult, bpm, filter, sel, aRef, droneOct, droneOn, droneWave, melMode, grouping, blend, tempoGlide, soundBlend, tuning, autoTempo, symphonic, beatStyle, beatWander, world, worldWander, weatherBrain, journey, journeyMins, sleepMins, smooth, autoLocks, sidebarW]);
 
   // Record button: start tapping the master output; stop → download the WAV
   const toggleRec = useCallback(async () => {
@@ -7228,6 +7252,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       endless: "Never ends. A slow, calm wander, for sleep.",
       map: "For measuring with a headband: everything takes a turn, in a shuffled order.",
       wait: "A pulse falls away, and the music holds with no 3rd, waiting. Then one note arrives.",
+      draw: "Your own journey. Draw a line on the stage above: high is bright, low is dark.",
     };
     const play = () => {
       wake();
@@ -7265,12 +7290,24 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
           <div style={{ position: "absolute", inset: 0, opacity: playingNow ? 0.85 : 0.25, transition: "opacity 2s" }}>
             <Visualizer analyserRef={analyserRef} playing={playing} rootIdx={rootIdx} active={selSemis} K={K} />
           </div>
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ position: "absolute", left: 0, right: 0, bottom: 0, width: "100%", height: 110 }}>
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ position: "absolute", left: 0, right: 0, bottom: 0, width: "100%", height: J === "draw" ? "100%" : 110 }}>
             {big.hill && <path d={big.hill} fill={JOURNEY_COLOR} opacity={0.12} />}
-            <path d={big.line} fill="none" stroke={JOURNEY_COLOR} strokeWidth={2} opacity={0.35} vectorEffect="non-scaling-stroke" />
+            <path d={big.line} fill="none" stroke={JOURNEY_COLOR} strokeWidth={2} opacity={J === "draw" ? 0.9 : 0.35} vectorEffect="non-scaling-stroke" />
             {dotB !== null && <circle cx={10 + (W - 20) * f} cy={big.y(dotB)} r={5} fill={JOURNEY_COLOR} />}
           </svg>
-          <div style={{ position: "absolute", top: 14, left: 16, right: 16, display: "flex", justifyContent: "space-between", fontSize: 11, color: K.txt, textShadow: "0 1px 4px #000" }}>
+          {/* Draw: paint the line straight on the stage, any time, even while it plays */}
+          {J === "draw" && (
+            <div
+              onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); const p = drawPoint(e); drawLast.current = p; setDrawTouched(true); showLine(paintLine(drawnLine, p.f, p.h, p.f, p.h)); }}
+              onPointerMove={e => { if (!drawLast.current) return; const p = drawPoint(e), q = drawLast.current; drawLast.current = p; showLine(paintLine(drawnLine, q.f, q.h, p.f, p.h)); }}
+              onPointerUp={() => { if (drawLast.current) { drawLast.current = null; showLine(smoothLine(drawnLine)); track("listen/drew"); } }}
+              onPointerCancel={() => { drawLast.current = null; }}
+              title="Draw your journey: left is the start, right is the end, up is bright"
+              style={{ position: "absolute", inset: 0, cursor: "crosshair", touchAction: "none" }}>
+              {!drawTouched && <div style={{ position: "absolute", top: "42%", width: "100%", textAlign: "center", color: K.txt, fontSize: 13, textShadow: "0 1px 4px #000", pointerEvents: "none" }}>draw your journey here</div>}
+            </div>
+          )}
+          <div style={{ position: "absolute", top: 14, left: 16, right: 16, display: "flex", justifyContent: "space-between", fontSize: 11, color: K.txt, textShadow: "0 1px 4px #000", pointerEvents: "none" }}>
             {/* While a scale change moves note by note, the wheel shows the notes sounding now and the name is where it's heading */}
             <span title={morphSemis ? "Changing one note at a time into this scale" : undefined}>
               {playingNow && sel ? (morphSemis ? <><span style={{ color: JOURNEY_COLOR }}>→ </span>{selName || sel.id}</> : (selName || sel.id)) : ""}
@@ -7345,6 +7382,10 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         <div style={{ width: "100%", maxWidth: 720, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 18 }}>
           {J === "endless" ? <span style={{ color: K.t2, fontSize: 11 }}>∞ plays until you stop it</span>
             : JOURNEY_MINS.map(m => <button key={m} onClick={() => setJourneyMins(m)} style={chip(journeyMins === m)}>{m} min</button>)}
+          {J === "draw" && <>
+            <button onClick={() => { showLine(defaultLine()); setDrawTouched(false); }} title="Back to the gentle hill" style={chip(false)}>clear</button>
+            <button onClick={() => { const u = new URL(buildURL()); u.searchParams.set("view", "listen"); u.searchParams.set("jo", "draw"); u.searchParams.set("jl", encodeLine(drawnLine)); navigator.clipboard?.writeText(u.toString()); setDrawCopied(true); setTimeout(() => setDrawCopied(false), 2000); }} title="Copy a link that plays this line" style={chip(false)}>{drawCopied ? "copied" : "copy link"}</button>
+          </>}
           <span style={{ flex: 1 }} />
           <button onClick={() => { setSymphonic(v => !v); if (!symphonic) getOrchestra(getCtx()); }} style={chip(symphonic)}>orchestra</button>
           <button onClick={() => { const v = beatStyle === "off" ? (J === "endless" ? "brushes" : JOURNEYS[J].epic ? "drive" : "downtempo") : "off"; setBeatStyle(v); if (v !== "off") getKit(getCtx()); }} style={chip(beatStyle !== "off")}>drums</button>
