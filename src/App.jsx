@@ -1119,6 +1119,7 @@ const TABLA_STROKES = {
   ke:  { h: [1, 0.2], r: [1, 1.58],          decay: 0.03, slap: 0.65, slapHz: 650, click: 0.4, bend: 0.03, bendT: 0.02, beat: 0, damp: 0, g: 0.55 },
 };
 const TABLA_BAYAN = new Set(["ge", "ke"]);
+const TABLA_BUILT = { sr: 0, bufs: null };   // the built strokes, kept across AudioContext swaps
 function makeTabla(ac, f, d) {
   const sr = ac.sampleRate, dur = Math.max(0.15, d.decay * 3.5), n = Math.floor(sr * dur);
   const buf = ac.createBuffer(1, n, sr), y = buf.getChannelData(0);
@@ -4952,7 +4953,8 @@ export default function Chloe() {
     };
     // Tabla, one matra per 16th: the teental theka, dayan tuned to Sa (folded
     // into 200-400 Hz), the bayan two octaves down (70-140 Hz). Every 8 bars a
-    // tihai: ti-ra-ki-ta-dha three times, the third dha landing on the next sam.
+    // tihai: ti-ra-ki-ta-dha three times, the third dha landing on the next sam,
+    // with a soft ge in the spare 16th before it so the pulse never drops out.
     // Bar 4 of 8 (and now and then bar 6) is a tarang bar: the dayan plays the
     // scale while the bayan keeps the claps. Calm plays it softer and leaves the
     // ge's wrist alone; tension adds ti-ra-ki-ta flourishes (32nds) and pushes
@@ -4972,17 +4974,20 @@ export default function Chloe() {
     // (it schedules only 120 ms ahead; building on the hit made dha skip), so
     // they're built in the background, one every 30 ms, the first time the
     // tabla plays. A stroke not built yet sits out (the beat fades in anyway).
+    // Buffers outlive their context, so the 2-minute swap keeps them and no
+    // stroke sits out there.
     const TABLA_REF = { dayan: [283, 566], bayan: [99] };
     const TABLA_WARM = [["ge", 99], ["na", 283], ["tin", 283], ["ti", 283], ["ke", 99], ["tun", 283], ["na", 566], ["tin", 566]];
     const tablaWarm = (k, ac) => {
-      if (k.tablaQ) return;
-      k.tabla = new Map();
-      k.tablaQ = [...TABLA_WARM, ...TABLA_WARM];   // two takes each
+      if (k.tabla) return;
+      if (TABLA_BUILT.sr === ac.sampleRate) { k.tabla = TABLA_BUILT.bufs; return; }
+      const bufs = k.tabla = new Map(), q = [...TABLA_WARM, ...TABLA_WARM];   // two takes each
+      TABLA_BUILT.sr = ac.sampleRate; TABLA_BUILT.bufs = bufs;
       const step = () => {
-        const [s, ref] = k.tablaQ.shift(), key = s + ":" + ref;
-        if (!k.tabla.has(key)) k.tabla.set(key, []);
-        k.tabla.get(key).push(makeTabla(ac, ref, TABLA_STROKES[s]));
-        if (k.tablaQ.length) setTimeout(step, 30);
+        const [s, ref] = q.shift(), key = s + ":" + ref;
+        if (!bufs.has(key)) bufs.set(key, []);
+        bufs.get(key).push(makeTabla(ac, ref, TABLA_STROKES[s]));
+        if (q.length) setTimeout(step, 30);
       };
       step();
     };
@@ -5030,9 +5035,10 @@ export default function Chloe() {
       const lift = !calm && tali && Math.random() < (tense ? 0.6 : 0.25) ? 1.06 + Math.random() * 0.06 : 0;
       // Tihai into the next sam
       if (bar % 8 === 7 && i >= 1) {
-        if (i === 1) return;
+        if (i === 1) { bol("ge", vv(66)); return; }
         const k = (i - 2) % 5, rep = Math.floor((i - 2) / 5);
-        bol(["ti", "ra", "ki", "ta", "dha"][k], (k === 4 ? 100 : 72) + rep * 8);
+        // The finger strokes are quiet and dry: played harder, so the line holds up against the theka
+        bol(["ti", "ra", "ki", "ta", "dha"][k], [92, 88, 92, 78, 100][k] + rep * 8);
         return;
       }
       // Tarang: the dayan sings the scale
@@ -6124,9 +6130,14 @@ export default function Chloe() {
           const K0 = getKit(ac), { kit, snareKit } = K0;
           // Far and dreamy in Endless, fairly far for brushes, up close otherwise
           setBeatDistance(K0, JOURNEYS[journeyRef.current?.id]?.endless ? 0.9 : beatStyleNow === "brushes" ? 0.7 : 0);
-          // A fresh context (the periodic swap) restarts its clock near 0: carry on
-          // from where the pattern is instead of waiting for the old clock time
-          if (ac !== beatAc) { if (beatAc) beatNext = ac.currentTime + 0.05; beatAc = ac; beatPrevT = 0; beatGrid.step = 0; }
+          // A fresh context (the periodic swap) restarts its clock near 0: carry on from where
+          // the pattern is, the same time ahead as on the old clock, so the groove doesn't lurch.
+          // Its clock takes a moment to start: wait for it, as the old one has notes queued.
+          if (ac !== beatAc) {
+            if (beatAc && ac.currentTime === 0 && beatAc.state !== "closed") { beatT = setTimeout(beatLoop, 5); return; }
+            if (beatAc) beatNext = ac.currentTime + (beatAc.state === "closed" ? 0.05 : Math.max(0.005, beatNext - beatAc.currentTime));
+            beatAc = ac; beatPrevT = 0; beatGrid.step = 0;
+          }
           if (beatNext < ac.currentTime) {
             beatNext = ac.currentTime + 0.05; beatStep = 0; beatBar = 0;
             beatNoCrash = sm > 0 || beatInSoft;   // fading in: no crash on the way in
