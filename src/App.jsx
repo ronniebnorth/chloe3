@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { Soundfont, DrumMachine } from "smplr";
 import { BRIGHTNESS_CONFIG, brightnessScore, normalizedBrightness, targetBrightness, findClosestScale, countBits, randomAtBrightness, diatonicNeighborhood } from './brightness';
+import { isSuspended, isSusQuery, susChord, susCoverage, SUS_INTERVAL } from "./suspended.js";
 
 /* ═══════════════════════════════════════════════════════
    SCALE ENGINE
@@ -2328,7 +2329,7 @@ const HELP_SECTIONS = [
   { title: "BINARY NOTATION", body: "Each scale is a 12-bit binary string, one bit per chromatic semitone from the root. 1 = active, 0 = inactive. The number in brackets e.g. (2741) is the decimal value of that string. Scales are grouped into families sharing the same interval structure - e.g. hep-6 contains all 7 standard modes." },
   { title: "BRIGHTNESS SORTING", body: "Within each family, modes are sorted bright to dark by summing their active semitone positions (raw brightness). Lydian scores highest (raised 4th), Locrian lowest (flatted 2nd and 5th). This mirrors the circle-of-fifths: Lydian → Ionian → Mixolydian → Dorian → Aeolian → Phrygian → Locrian. The sidebar and scale list show the raw brightness score (e.g. Dorian = 36). The EEG system uses a separate normalized brightness (0.0–1.0) that adjusts for note count, so pentatonics and tetratonics are comparable to heptatonics — Dorian normalizes to exactly 0.5 as the neutral midpoint." },
   { title: "SCALE WHEEL", body: "The circle shows all 12 chromatic notes. Active tones are highlighted and connected by a polygon. Wide polygons = sparse scales. Compact polygons = denser chromatic scales. A perfect regular polygon = equal temperament." },
-  { title: "SEARCH & FILTER", body: "The left sidebar has a search box that filters scales by name as you type — results narrow to only matching modes within each family (e.g. searching 'dorian' shows just the Dorian row, not all 7 modes). The number chips (3–8) below it filter by note count — click any to isolate tritonic, pentatonic, heptatonic, etc. These compose with each other and with the header filter bar. The header filter accepts comma-separated terms: family ID (hep-6), group prefix (pen, hep, hex), scale name, binary fragment, decimal value, or interval pattern (2-2-1). The star button on any row marks a favourite; the favs button in the header shows starred scales only. Custom names are searchable too." },
+  { title: "SEARCH & FILTER", body: "The left sidebar has a search box that filters scales by name as you type — results narrow to only matching modes within each family (e.g. searching 'dorian' shows just the Dorian row, not all 7 modes). The number chips (3–8) below it filter by note count — click any to isolate tritonic, pentatonic, heptatonic, etc. The sus chip (or searching 'sus' or 'suspended') shows suspended scales: no 3rd, so neither major nor minor, with a 5th and a 2nd or 4th. These compose with each other and with the header filter bar. The header filter accepts comma-separated terms: family ID (hep-6), group prefix (pen, hep, hex), scale name, binary fragment, decimal value, or interval pattern (2-2-1). The star button on any row marks a favourite; the favs button in the header shows starred scales only. Custom names are searchable too." },
   { title: "A/B SCALE COMPARISON", body: "Pin any scale as a reference point using the ⊿ pin button next to its name in the info panel. An A/B panel appears below showing both the pinned scale (B) and your current selection (A). Click either side to jump between them instantly — both play at the same root, tempo, and settings so you can hear the contrast directly. The A side automatically tracks whatever you're playing when you're not on the pinned scale, so browsing the list always updates A. The × button clears the comparison." },
   { title: "NAMING SCALES", body: "Any scale without a built-in name shows a pencil icon (✎) in its row. Click it to open an inline text field and type your own name. Press Enter or click away to save; Escape to cancel. To edit or clear a name, click the pencil next to it. Custom names appear in the info panel, show up in saved moments, and are fully searchable. They persist in your browser across sessions." },
   { title: "PLAYBACK", body: "Drone sustains the root note. DRONE OCT drops it 1–3 octaves. DRONE VOL sets its level independently. DRONE TYPE sets the drone sound: sine (clean + sub-octave), organ (additive harmonics), pad (detuned shimmer), strings (bowed saws with tremolo), tanpura (Indian root/fifth/octave pulsing). Play steps through the scale in Arpeggio or Melody mode. OCTAVES (1–3) expands playback across multiple octaves. Click the direction button to cycle: ascending, descending, or random. RHYTHM sets the note-spacing pattern: even, swing, gallop, waltz, or clave. Melody uses a weighted random walk with octave leaps. CHORD layers multiple scale tones per step: power (root+5th), sus2, triad, 7th, or all notes at once. If a heart rate sensor is connected, a ♥ button appears showing live BPM — click it to instantly set tempo to your heart rate." },
@@ -3470,6 +3471,7 @@ export default function Chloe() {
   const [prePinSel,     setPrePinSel]     = useState(null); // { id, pattern } — A/B comparison A side
   const [listSearch,    setListSearch]    = useState("");   // sidebar name search
   const [noteCountFilter, setNoteCountFilter] = useState(null); // null | 3-8
+  const [susOnly,       setSusOnly]       = useState(false);  // suspended scales only (no 3rd, a 5th, a 2nd or 4th)
   const [showDiatonic,  setShowDiatonic]  = useState(false); // show diatonic neighborhood annotations
   const showDiatonicRef = useRef(false);
   useEffect(() => { showDiatonicRef.current = showDiatonic; }, [showDiatonic]);
@@ -4164,8 +4166,7 @@ export default function Chloe() {
       const v = voice === "rand" ? RAND_VOICES[Math.floor(Math.random() * RAND_VOICES.length)] : voice;
       if (v === "off")   return [notes[rootNoteIdx % n]];
       if (v === "power") return [notes[rootNoteIdx % n], notes[(rootNoteIdx + 2) % n] + (rootNoteIdx + 2 >= n ? 12 : 0)];
-      if (v === "sus2")  return [notes[rootNoteIdx % n], notes[(rootNoteIdx + 1) % n] + (rootNoteIdx + 1 >= n ? 12 : 0), notes[(rootNoteIdx + 4) % n] + (rootNoteIdx + 4 >= n ? 12 : 0)];
-      if (v === "sus4")  return [notes[rootNoteIdx % n], notes[(rootNoteIdx + 3) % n] + (rootNoteIdx + 3 >= n ? 12 : 0), notes[(rootNoteIdx + 4) % n] + (rootNoteIdx + 4 >= n ? 12 : 0)];
+      if (v === "sus2" || v === "sus4") return susChord(notes, rootNoteIdx, v);
       if (v === "triad") return [0, 2, 4].map(s => notes[(rootNoteIdx + s) % n] + (rootNoteIdx + s >= n ? 12 : 0));
       if (v === "7th")   return [0, 2, 4, 6].map(s => notes[(rootNoteIdx + s) % n] + (rootNoteIdx + s >= n ? 12 : 0));
       if (voice === "all")   return notes; // whole scale at once
@@ -6641,6 +6642,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       base = base.filter(f => f.n === noteCountFilter);
     }
 
+    // Sus chip: just the suspended modes of each family
+    if (susOnly) {
+      base = base.map(f => {
+        const keep = f.modes.map((_, i) => i).filter(i => isSuspended(f.modes[i]));
+        return keep.length ? { ...f, modes: keep.map(i => f.modes[i]), origIdxs: keep.map(i => f.origIdxs[i]) } : null;
+      }).filter(Boolean);
+    }
+
     // Sidebar name search — filters modes by name within each family
     if (listSearch.trim()) {
       const q = listSearch.trim().toLowerCase();
@@ -6649,7 +6658,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
         if (noteNum !== null) return f.n === noteNum ? f : null;
         const matchIdxs = f.modes.reduce((acc, m, mi) => {
           const name = (KNOWN[m] || customNames[m] || "").toLowerCase();
-          if (name.includes(q) || f.id.toLowerCase().includes(q) || `${f.id}.${f.origIdxs?.[mi] ?? mi}` === q) acc.push(mi);
+          if (name.includes(q) || (isSusQuery(q) && isSuspended(m)) || f.id.toLowerCase().includes(q) || `${f.id}.${f.origIdxs?.[mi] ?? mi}` === q) acc.push(mi);
           return acc;
         }, []);
         if (!matchIdxs.length) return null;
@@ -6676,7 +6685,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
       const keep = f.origIdxs.map((_, k) => k).filter(k => ids.includes(`${f.id}.${f.origIdxs[k]}`));
       return keep.length ? { ...f, modes: keep.map(k => f.modes[k]), origIdxs: keep.map(k => f.origIdxs[k]) } : null;
     }).filter(Boolean);
-  }, [ACTIVE_FAMILIES, FAMILIES, filter, favs, favsOnly, customNames, listSearch, noteCountFilter]);
+  }, [ACTIVE_FAMILIES, FAMILIES, filter, favs, favsOnly, customNames, listSearch, noteCountFilter, susOnly]);
 
   const grouped = useMemo(() => {
     const g = {};
@@ -6806,7 +6815,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
   const selName = sel ? (KNOWN[sel.pattern] || customNames[sel.pattern] || null) : null;
 
   const toggleGrp = k => setExpanded(p => { const s = new Set(p); s.has(k) ? s.delete(k) : s.add(k); return s; });
-  const isExp = k => (filter.trim() || listSearch.trim() || noteCountFilter !== null) ? true : expanded.has(k);
+  const isExp = k => (filter.trim() || listSearch.trim() || noteCountFilter !== null || susOnly) ? true : expanded.has(k);
   const wake = () => getCtx();
 
   const buildURL = useCallback(() => {
@@ -7773,8 +7782,17 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                 cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.5,
               }}>{n}</button>
             ))}
-            {(listSearch || noteCountFilter !== null) && (
-              <button onClick={() => { setListSearch(""); setNoteCountFilter(null); }} style={{
+            <button onClick={() => setSusOnly(p => !p)}
+              title="Suspended scales only: no 3rd, so neither major nor minor, with a 5th and a 2nd or 4th"
+              style={{
+                background: susOnly ? K.a : K.bg3,
+                color: susOnly ? "#000" : K.txt,
+                border: `1px solid ${susOnly ? K.a : K.br}`,
+                borderRadius: 3, padding: "2px 7px", fontSize: 9,
+                cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.5,
+              }}>sus</button>
+            {(listSearch || noteCountFilter !== null || susOnly) && (
+              <button onClick={() => { setListSearch(""); setNoteCountFilter(null); setSusOnly(false); }} style={{
                 background: "none", border: `1px solid ${K.br}`, color: K.t2,
                 borderRadius: 3, padding: "2px 6px", fontSize: 9,
                 cursor: "pointer", fontFamily: "inherit", marginLeft: 2,
@@ -8485,7 +8503,7 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Chord voicing */}
             <div style={{ marginBottom: 2 }}>
-              <div title="Chord voicing: off, power (root+5th), sus2 (root+2nd+5th), sus4 (root+4th+5th), triad, 7th, all (whole scale). Notes strum with a slight delay." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>CHORD</div>
+              <div title="Chord voicing: off, power (root+5th), sus2 (root+2nd+5th), sus4 (root+4th+5th), triad, 7th, all (whole scale). Sus chords use real intervals and leave out any note the scale doesn't have. Notes strum with a slight delay." style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, marginBottom: 5, cursor: "help" }}>CHORD</div>
               <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                 {[
                   { l: "off",   v: "off" },
@@ -8508,6 +8526,14 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   }}>{opt.l}</button>
                 ))}
               </div>
+              {sel && SUS_INTERVAL[chordVoice] && (() => {
+                const { full, n } = susCoverage(sel.pattern, chordVoice);
+                return full < n && (
+                  <div style={{ color: K.t2, fontSize: 9, marginTop: 5, lineHeight: 1.4 }}>
+                    {full === 0 ? `No full ${chordVoice} in this scale` : `Full ${chordVoice} on ${full} of ${n} notes`}: the rest play only the notes the scale has
+                  </div>
+                );
+              })()}
             </div>
           </Sec>
 
