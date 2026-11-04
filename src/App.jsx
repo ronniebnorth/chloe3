@@ -3491,6 +3491,13 @@ export default function Chloe() {
   const susPoolRef = useRef(susPool);
   useEffect(() => { susPoolRef.current = susPool; }, [susPool]);
   const susSeenRef = useRef(new Set());   // heard this lap
+  const SCALE_POOLS = [{ l: "named scales", v: false }, { l: "all scales", v: true }, { l: "suspended", v: "sus" }];
+  const SUS_POOL_TIP = "Auto travels through every suspended scale (no 3rd, a 5th, a 2nd or 4th) before repeating any";
+  const scalePoolOn = v => v === "sus" ? susPool : !susPool && demoAllScales === v;
+  const chooseScalePool = v => {
+    if (v === "sus") { if (!susPool) susSeenRef.current = new Set(); setSusPool(true); }
+    else { setSusPool(false); setDemoAllScales(v); }
+  };
   const [susTour, setSusTour] = useState(null);  // { heard, total, lap } while touring
   const demoAllScalesRef = useRef(true);
   useEffect(() => { demoAllScalesRef.current = demoAllScales; }, [demoAllScales]);
@@ -8121,14 +8128,11 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
             </div>
             {/* Scale pool toggle */}
             <div style={{ display: "flex", gap: 0, border: `1px solid ${K.br}`, borderRadius: 4, overflow: "hidden", marginBottom: 6 }}>
-              {[{ l: "named scales", v: false }, { l: "all scales", v: true }, { l: "suspended", v: "sus" }].map(opt => {
-                const on = opt.v === "sus" ? susPool : !susPool && demoAllScales === opt.v;
+              {SCALE_POOLS.map(opt => {
+                const on = scalePoolOn(opt.v);
                 return (
-                  <button key={String(opt.v)} title={opt.v === "sus" ? "Auto travels through every suspended scale (no 3rd, a 5th, a 2nd or 4th) before repeating any" : undefined}
-                    onClick={() => {
-                      if (opt.v === "sus") { if (!susPool) susSeenRef.current = new Set(); setSusPool(true); }
-                      else { setSusPool(false); setDemoAllScales(opt.v); }
-                    }} style={{
+                  <button key={String(opt.v)} title={opt.v === "sus" ? SUS_POOL_TIP : undefined}
+                    onClick={() => chooseScalePool(opt.v)} style={{
                     flex: 1, background: on ? K.bg3 : "transparent",
                     color: on ? K.a : K.t2,
                     border: "none", borderRight: opt.v !== "sus" ? `1px solid ${K.br}` : "none",
@@ -8764,6 +8768,21 @@ Diatonic neighborhood: currentState.diatonicNeighborhood shows which standard di
                   style={{ background: "none", border: `1px solid ${K.br}`, color: K.t2, borderRadius: 3, padding: "2px 7px", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>all off</button>
                 <button onClick={() => setShowAutoLocks(false)}
                   style={{ background: "none", border: "none", color: K.t2, fontSize: 16, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <div title="Which scales Auto and Claude choose from" style={{ color: K.lbl, fontSize: 9, letterSpacing: 2, marginBottom: 7, cursor: "help" }}>SCALES</div>
+              <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                {SCALE_POOLS.map(opt => {
+                  const on = scalePoolOn(opt.v);
+                  return (
+                    <button key={String(opt.v)} title={opt.v === "sus" ? SUS_POOL_TIP : undefined} onClick={() => chooseScalePool(opt.v)} style={{
+                      background: on ? K.a : K.bg3, color: on ? "#000" : K.txt,
+                      border: `1px solid ${on ? K.a : K.br}`, borderRadius: 3, padding: "3px 6px",
+                      fontSize: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: on ? 600 : 400,
+                    }}>{opt.l}</button>
+                  );
+                })}
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>
