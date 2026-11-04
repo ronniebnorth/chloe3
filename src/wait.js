@@ -92,3 +92,14 @@ export const jetAt = (t) => {
 };
 // The whine's final pitch: the root, up in the range where a far-off turbine sits
 export const jetWhineBase = root => { let fr = root; while (fr < 500) fr *= 2; while (fr > 1000) fr /= 2; return fr; };
+
+// Which jet is in the sky at el seconds into the journey: the main pass at the drop, or
+// the faint one during the pulse that plants the idea (farther off, darker, crossing the
+// other way). Both are at f fractions of a journey lasting total seconds.
+export const JET_FAINT_LEVEL = 0.3;
+export const waitJetNow = (el, total, drop, faint) => {
+  const main = jetAt(el - drop * total);
+  if (main) return { ...main, side: 1 };
+  const v = faint == null ? null : jetAt(el - faint * total);
+  return v && { ...v, level: v.level * JET_FAINT_LEVEL, lp: v.lp * 0.5, side: -1 };
+};
