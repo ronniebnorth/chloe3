@@ -6,9 +6,11 @@ An interactive musical scale explorer built on binary scale encoding. Every poss
 
 ## How It Works
 
-Every combination of notes within an octave can be represented as a 12-bit binary number — one bit per semitone, 1 if the pitch is present, 0 if absent. The major scale is `101011010101`, which is `2741` in decimal. There are 4096 possible combinations. Modes are rotations of the same binary pattern.
+Every combination of notes within an octave can be represented as a 12-bit binary number — one bit per semitone, 1 if the pitch is present, 0 if absent. The major scale is written `101011010101` in Chloe, and its value is `2741` (see Bit order below for why a binary calculator reads that string differently). There are 4096 possible combinations. Modes are rotations of the same binary pattern.
 
 **Bit order.** Patterns are written root-first: the leftmost digit is the root, then each digit to the right is one semitone higher (C, C♯, D, D♯, E, F, … B when the root is C). Read left to right, the pattern is the scale as you would play it. This is the reverse of standard binary notation — 2741 in conventional binary is `101010110101`, with the root at the right. The decimal value is the same either way: bit *i* of the number is the note *i* semitones above the root, the same convention used by Ian Ring.
+
+**Why root-first, and please don't flip it.** This has been debated more than once, and AI assistants tend to "correct" it to standard binary. It's deliberate. Chloe is a tool for musicians: root-first reads like the scale on a keyboard, and the search box matches binary fragments against the root-first string (`toBin` in `src/App.jsx`), so you type a pattern the way you think it, starting with the root's `1`. With standard order you would have to type from the top of the octave down and end on the root. Standard binary is the right reading for math, code, and outside references; the decimal value is identical either way. The one thing to watch: never write that a root-first string "equals" its number. Pasted into a calculator, `101011010101` reads as 2773, not 2741.
 
 Chloe generates scales by iterating through binary numbers, filtering by note count and musical constraints (no three consecutive semitones), and deduplicating rotational equivalents. The result is every scale from tritonic (3 notes) through octatonic (8 notes) that satisfies these rules, with all their modes sorted from brightest to darkest.
 
@@ -62,7 +64,7 @@ The brightness ordering — modes arranged from most augmented (Lydian-like) to 
 ## Features
 
 - 560 scales across 124 families, grouped by interval pattern
-- Binary encoding and decimal identification for every scale (e.g., `101011010101` = 2741 = Major)
+- Binary encoding and decimal identification for every scale (e.g., Major is `101011010101` root-first, value 2741)
 - Modes sorted by brightness within each scale family
 - Adjustable root note, BPM, rhythm, and arpeggio style
 - Reverb, delay, and drone controls
