@@ -85,16 +85,18 @@ The same score orders the modes of every scale family — pentatonic, hexatonic,
 Chloe has been in continuous development since December 2017 across three major iterations:
 
 - **Chloe 1** (Dec 2017): Original scale explorer with MIDI playback
-- **Chloe 2** (Dec 2017): Introduced binary scale encoding and brightness sorting. First shared publicly on the Facebook Music Theory group on December 14, 2017
+- **Chloe 2** (Dec 2017): Generated every scale family as binary, sorted each family's modes bright to dark (first committed 04:56 EST, December 14, 2017). First shared publicly on the Facebook Music Theory group the same day
 - **Chloe 3** (2024–present): Major refactor. Formalised the brightness/courage framework, added environment-based emotional framing, the brave frog metaphor, printable A5 educational booklet, rendered MP4 animation, and AI-powered features
 
 ## Provenance
 
-Binary scale encoding — representing scales as 12-bit numbers, modes as rotations, with decimal values as unique identifiers — was developed independently for Chloe in December 2017. The same encoding was previously published by Ian Ring in his 2009 essay *[A Study of Scales](https://ianring.com/musictheory/scales/)*. The independent convergence on the same representation reflects the natural mathematical structure of the 12-tone system.
+Binary scale encoding (scales as 12-bit numbers, modes as rotations, decimal values as identifiers) was found independently for Chloe in December 2017. It was not new. Ian Ring had published the same numbering, with the root as the lowest bit and the major scale as 2741, in a scale calculator committed to his public code library on November 8, 2015 (his original repository is gone; a copy survives at [imarco/PHPMusicXML](https://github.com/imarco/PHPMusicXML), which GitHub dates to December 14, 2015). That became his essay *[A Study of Scales](https://ianring.com/musictheory/scales/)*, whose preface dates it to 2009. Ring's 2015 code cites William Zeitler's list of scales, and Rich Cochrane's *Scale and Arpeggio Resources* (2012) also writes scales as binary.
 
-The earliest verifiable public record of Chloe's binary encoding is a [Facebook post to the Music Theory group](docs/provenance/) dated December 14, 2017. The earliest verifiable code commit is [December 20, 2017](https://github.com/ronniebnorth/ronniebnorth.github.io/commit/afe96127d9daed61222eb4783f810e6c29291e2e).
+Chloe's record: Chloe 1 (first commit December 8, 2017) already wrote modes as hand-made rows of 0s and 1s. The first code that generates every scale family, rotates each into its modes and sorts them is [commit 4613095](https://github.com/ronniebnorth/ronniebnorth.github.io/commit/4613095), at 04:56 EST on December 14, 2017; [commit b86e37c](https://github.com/ronniebnorth/ronniebnorth.github.io/commit/b86e37c2a14c3775ebba1fe27ae7116d36b011e4) added the binary strings and decimal values at 07:04 the same morning. The [Facebook post to the Music Theory group](docs/provenance/) followed that day.
 
-The brightest-to-darkest order of the seven diatonic modes is long-standing music-theory teaching. What is original to Chloe — applying a brightness score to order the modes of all 124 scale families, the courage framework, the brave frog metaphor, the environment-based emotional framing, and the interactive exploration approach — is documented in [chloe_scale_explorer_provenance.docx](docs/provenance/chloe_scale_explorer_provenance.docx).
+What is Chloe's own: sorting each family's modes by their binary number, and the observation that this lays them out from bright to dark, used from the first version as the explorer's organising principle. In 2017 the numbers counted the root as the highest bit (major = 2773) and the order came from the sort itself, with no brightness formula; the sum-of-positions score came later and is a known measure. No publication stating that the binary sort gives the brightness order was found in a November 2026 search, and neither Ring's code nor his essay ranks scales by brightness. The bright-to-dark order of the seven diatonic modes is long-standing teaching. Later original work: the courage framework, the brave frog metaphor, the environment-based emotional framing, felt brightness and the generative journeys.
+
+The March 2026 documents in [docs/provenance/](docs/provenance/) predate the 2015 evidence and carry errors; see the correction notice at the top of each.
 
 ## Support
 
